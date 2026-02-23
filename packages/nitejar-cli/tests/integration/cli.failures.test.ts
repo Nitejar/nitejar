@@ -27,6 +27,28 @@ afterEach(async () => {
   }
 })
 
+async function getFreePort(): Promise<number> {
+  return await new Promise<number>((resolve, reject) => {
+    const server = createServer()
+    server.on('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address()
+      if (!address || typeof address === 'string') {
+        reject(new Error('Failed to resolve open port'))
+        return
+      }
+      const port = address.port
+      server.close((error) => {
+        if (error) {
+          reject(error)
+          return
+        }
+        resolve(port)
+      })
+    })
+  })
+}
+
 async function setupRuntimeServer(options?: {
   fixtureOptions?: Parameters<typeof createRuntimeFixtureArchive>[2]
   sha256Override?: string
@@ -161,8 +183,9 @@ describe('cli integration failure paths', () => {
 
   it('fails when bundled migrator is missing', async () => {
     const fixture = await setupRuntimeServer({ fixtureOptions: { missingMigrator: true } })
+    const port = await getFreePort()
 
-    const result = await runCli(['up', '--data-dir', fixture.dataDir], {
+    const result = await runCli(['up', '--data-dir', fixture.dataDir, '--port', String(port)], {
       env: {
         NITEJAR_RELEASES_BASE_URL: fixture.releaseBaseUrl,
       },
@@ -175,8 +198,9 @@ describe('cli integration failure paths', () => {
 
   it('blocks startup when migrations fail and writes a failure receipt', async () => {
     const fixture = await setupRuntimeServer()
+    const port = await getFreePort()
 
-    const result = await runCli(['up', '--data-dir', fixture.dataDir], {
+    const result = await runCli(['up', '--data-dir', fixture.dataDir, '--port', String(port)], {
       env: {
         NITEJAR_RELEASES_BASE_URL: fixture.releaseBaseUrl,
         NITEJAR_TEST_MIGRATION_FAIL: '1',
@@ -196,8 +220,9 @@ describe('cli integration failure paths', () => {
 
   it('blocks migrate when migration lock already exists', async () => {
     const fixture = await setupRuntimeServer()
+    const port = await getFreePort()
 
-    const up = await runCli(['up', '--data-dir', fixture.dataDir], {
+    const up = await runCli(['up', '--data-dir', fixture.dataDir, '--port', String(port)], {
       env: {
         NITEJAR_RELEASES_BASE_URL: fixture.releaseBaseUrl,
       },
@@ -248,7 +273,7 @@ describe('cli integration failure paths', () => {
     })
     await new Promise<void>((resolve, reject) => {
       blocker.once('error', reject)
-      blocker.listen(0, '127.0.0.1', () => resolve())
+      blocker.listen(0, '0.0.0.0', () => resolve())
     })
 
     const address = blocker.address()
