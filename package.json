@@ -17,6 +17,7 @@
     "changeset": "changeset",
     "changeset:status": "changeset status --verbose",
     "changeset:version": "changeset version",
+    "release:create-tag": "node scripts/release/create-version-tag.mjs",
     "db:generate": "pnpm --filter @nitejar/database db:generate",
     "db:migrate": "pnpm --filter @nitejar/database db:migrate",
     "db:studio": "pnpm --filter @nitejar/database db:studio",
