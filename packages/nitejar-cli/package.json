@@ -4,8 +4,13 @@
   "private": false,
   "license": "Apache-2.0",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nitejar/nitejar",
+    "directory": "packages/nitejar-cli"
+  },
   "bin": {
-    "nitejar": "./dist/index.js"
+    "nitejar": "dist/index.js"
   },
   "files": [
     "dist"
