@@ -80,9 +80,16 @@ export function stageRuntimeBundle(options) {
   const publicDir = path.join(options.root, 'apps/web/public')
   const dbDistDir = path.join(options.root, 'packages/database/dist')
   const dbMigrationsDir = path.join(options.root, 'packages/database/migrations')
-  const deployedDatabaseDir = path.join(stageDir, 'packages', 'database')
+  const deployedDatabaseDir = path.resolve(
+    options.root,
+    '.tmp',
+    'release-stage',
+    'deployed-database',
+    options.platform
+  )
 
   if (!options.skipBuild) {
+    rmSync(deployedDatabaseDir, { recursive: true, force: true })
     runCommand('pnpm', ['--filter', '@nitejar/database', 'build'], options.root)
     runCommand('pnpm', ['--filter', '@nitejar/web', 'build'], options.root)
     runCommand(
@@ -133,6 +140,15 @@ export function stageRuntimeBundle(options) {
       'deployed runtime migrator'
     )
     assertExists(path.join(deployedDatabaseDir, 'migrations'), 'deployed database migrations')
+
+    // Ensure the staged runtime uses the deployed database package, including its
+    // isolated node_modules (native deps like better-sqlite3 are required at runtime).
+    rmSync(path.join(stageDir, 'packages', 'database'), { recursive: true, force: true })
+    cpSync(deployedDatabaseDir, path.join(stageDir, 'packages', 'database'), {
+      recursive: true,
+      force: true,
+      verbatimSymlinks: true,
+    })
   }
 
   writeFileSync(

@@ -73,6 +73,7 @@ jobs:
           export ENCRYPTION_KEY="0000000000000000000000000000000000000000000000000000000000000000"
           export BETTER_AUTH_SECRET="release-smoke-secret"
           export APP_BASE_URL="http://127.0.0.1:${SMOKE_PORT}"
+          export NODE_PATH="${SMOKE_DIR}/packages/database/node_modules:${NODE_PATH:-}"
 
           node "${SMOKE_DIR}/apps/web/server.js" > "${SMOKE_DIR}/server.log" 2>&1 &
           SERVER_PID=$!
