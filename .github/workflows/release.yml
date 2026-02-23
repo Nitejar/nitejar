@@ -123,7 +123,7 @@ jobs:
       - name: Generate release manifest
         env:
           NITEJAR_VERSION: ${{ github.event.inputs.version || github.ref_name }}
-          NITEJAR_RELEASES_BASE_URL: https://releases.nitejar.dev
+          NITEJAR_RELEASES_BASE_URL: https://github.com/nitejar/nitejar/releases/download
         run: |
           node scripts/release/generate-manifest.mjs \
             --version "${NITEJAR_VERSION}" \

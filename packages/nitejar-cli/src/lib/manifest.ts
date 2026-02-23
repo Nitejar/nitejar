@@ -8,10 +8,43 @@ import process from 'node:process'
 
 import type { ReleaseManifest } from './types.js'
 
-export const DEFAULT_RELEASES_BASE_URL = 'https://releases.nitejar.dev'
+export const DEFAULT_RELEASES_BASE_URL = 'https://github.com/nitejar/nitejar/releases/latest/download'
 
 export function getReleasesBaseUrl(): string {
   return process.env.NITEJAR_RELEASES_BASE_URL ?? DEFAULT_RELEASES_BASE_URL
+}
+
+function trimTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, '')
+}
+
+function normalizeReleaseTag(version: string): string {
+  if (version.startsWith('v')) return version
+  return `v${version}`
+}
+
+function versionsMatch(requested: string, manifestVersion: string): boolean {
+  const normalize = (value: string) => value.replace(/^v/, '')
+  return normalize(requested) === normalize(manifestVersion)
+}
+
+function isGitHubLatestDownloadBaseUrl(baseUrl: string): boolean {
+  return /\/releases\/latest\/download\/?$/.test(baseUrl)
+}
+
+function resolvePreferredManifestUrl(releasesBaseUrl: string, version: string): string {
+  const base = trimTrailingSlash(releasesBaseUrl)
+
+  if (version === 'latest') {
+    return `${base}/manifest.json`
+  }
+
+  if (isGitHubLatestDownloadBaseUrl(base)) {
+    const tag = normalizeReleaseTag(version)
+    return `${base.replace(/\/releases\/latest\/download$/, `/releases/download/${tag}`)}/manifest.json`
+  }
+
+  return `${base}/${version}/manifest.json`
 }
 
 export function sha256File(filePath: string): string {
@@ -34,10 +67,7 @@ export async function fetchManifest(
 ): Promise<{ manifest: ReleaseManifest; manifestUrl: string }> {
   const fetchImpl = options?.fetchImpl ?? fetch
   const releasesBaseUrl = options?.baseUrl ?? getReleasesBaseUrl()
-  const preferredUrl =
-    version === 'latest'
-      ? `${releasesBaseUrl}/manifest.json`
-      : `${releasesBaseUrl}/${version}/manifest.json`
+  const preferredUrl = resolvePreferredManifestUrl(releasesBaseUrl, version)
 
   const preferredResponse = await fetchImpl(preferredUrl)
   if (preferredResponse.ok) {
@@ -46,7 +76,7 @@ export async function fetchManifest(
   }
 
   if (version !== 'latest') {
-    const fallbackUrl = `${releasesBaseUrl}/manifest.json`
+    const fallbackUrl = `${trimTrailingSlash(releasesBaseUrl)}/manifest.json`
     const fallbackResponse = await fetchImpl(fallbackUrl)
     if (!fallbackResponse.ok) {
       throw new Error(
@@ -54,7 +84,7 @@ export async function fetchManifest(
       )
     }
     const manifest = (await fallbackResponse.json()) as ReleaseManifest
-    if (manifest.version !== version) {
+    if (!versionsMatch(version, manifest.version)) {
       throw new Error(
         `Requested version ${version} but release manifest version is ${manifest.version}.`
       )

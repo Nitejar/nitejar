@@ -24,6 +24,44 @@ function sha256(filePath: string): string {
 }
 
 describe('generate-manifest script', () => {
+  it('defaults base URL to GitHub release download path for the selected version', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'nitejar-release-manifest-default-'))
+    const artifactsDir = path.join(dir, 'artifacts')
+    const output = path.join(dir, 'manifest.json')
+    mkdirSync(artifactsDir, { recursive: true })
+    tempDirs.push(dir)
+
+    const linuxArtifact = path.join(artifactsDir, 'nitejar-runtime-linux-x64.tar.gz')
+    writeFileSync(linuxArtifact, 'linux-runtime', 'utf8')
+
+    const run = spawnSync(
+      'node',
+      [
+        path.join(repoRoot, 'scripts/release/generate-manifest.mjs'),
+        '--version',
+        'v2.3.4',
+        '--artifacts-dir',
+        artifactsDir,
+        '--output',
+        output,
+      ],
+      {
+        cwd: repoRoot,
+        encoding: 'utf8',
+      }
+    )
+
+    expect(run.status, run.stderr || run.stdout).toBe(0)
+
+    const manifest = JSON.parse(readFileSync(output, 'utf8')) as {
+      artifacts: Record<string, { url: string }>
+    }
+
+    expect(manifest.artifacts['linux-x64']?.url).toBe(
+      'https://github.com/nitejar/nitejar/releases/download/v2.3.4/nitejar-runtime-linux-x64.tar.gz'
+    )
+  })
+
   it('produces schema-compatible manifest with deterministic platform ordering', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'nitejar-release-manifest-'))
     const artifactsDir = path.join(dir, 'artifacts')

@@ -10,10 +10,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, '..', '..')
 
 export function parseArgs(argv = process.argv, env = process.env, root = repoRoot) {
+  const defaultBaseUrl = 'https://github.com/nitejar/nitejar/releases/download'
+  const version = env.NITEJAR_VERSION ?? env.GITHUB_REF_NAME ?? 'dev'
+  const envBaseUrl = env.NITEJAR_RELEASES_BASE_URL
+  let baseUrlLocked = typeof envBaseUrl === 'string' && envBaseUrl.length > 0
   const args = {
-    version: env.NITEJAR_VERSION ?? env.GITHUB_REF_NAME ?? 'dev',
+    version,
     artifactsDir: path.resolve(root, 'dist', 'release'),
-    baseUrl: env.NITEJAR_RELEASES_BASE_URL ?? 'https://releases.nitejar.dev',
+    baseUrl: envBaseUrl ?? defaultBaseUrl,
     output: path.resolve(root, 'dist', 'release', 'manifest.json'),
   }
 
@@ -31,6 +35,7 @@ export function parseArgs(argv = process.argv, env = process.env, root = repoRoo
     }
     if (token === '--base-url') {
       args.baseUrl = argv[i + 1] ?? args.baseUrl
+      baseUrlLocked = true
       i += 1
       continue
     }

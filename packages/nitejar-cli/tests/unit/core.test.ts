@@ -201,6 +201,36 @@ describe('platform and parsing helpers', () => {
 })
 
 describe('manifest fetch behavior', () => {
+  it('resolves pinned manifest URL from GitHub latest/download base', async () => {
+    const calls: string[] = []
+    const fetchImpl = ((input: string | URL) => {
+      const url = String(input)
+      calls.push(url)
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            version: 'v1.2.3',
+            releasedAt: '2026-01-01T00:00:00.000Z',
+            artifacts: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }
+        )
+      )
+    }) as typeof fetch
+
+    const result = await fetchManifest('1.2.3', {
+      baseUrl: 'https://github.com/nitejar/nitejar/releases/latest/download',
+      fetchImpl,
+    })
+
+    expect(calls).toEqual(['https://github.com/nitejar/nitejar/releases/download/v1.2.3/manifest.json'])
+    expect(result.manifestUrl).toBe('https://github.com/nitejar/nitejar/releases/download/v1.2.3/manifest.json')
+    expect(result.manifest.version).toBe('v1.2.3')
+  })
+
   it('falls back to latest manifest for pinned version when version path is missing', async () => {
     const calls: string[] = []
     const fetchImpl = ((input: string | URL) => {
@@ -235,6 +265,35 @@ describe('manifest fetch behavior', () => {
       'https://releases.example.com/manifest.json',
     ])
     expect(result.manifestUrl).toBe('https://releases.example.com/manifest.json')
+    expect(result.manifest.version).toBe('v1.2.3')
+  })
+
+  it('accepts semver pin when fallback manifest uses v-prefixed version', async () => {
+    const fetchImpl = ((input: string | URL) => {
+      const url = String(input)
+      if (url.endsWith('/1.2.3/manifest.json')) {
+        return Promise.resolve(new Response('not found', { status: 404, statusText: 'Not Found' }))
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            version: 'v1.2.3',
+            releasedAt: '2026-01-01T00:00:00.000Z',
+            artifacts: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }
+        )
+      )
+    }) as typeof fetch
+
+    const result = await fetchManifest('1.2.3', {
+      baseUrl: 'https://releases.example.com',
+      fetchImpl,
+    })
+
     expect(result.manifest.version).toBe('v1.2.3')
   })
 
