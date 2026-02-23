@@ -36,7 +36,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
           cache: pnpm
 
       - name: Install dependencies
@@ -196,7 +196,6 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -206,7 +205,10 @@ jobs:
 
       - name: Publish @nitejar/cli
         working-directory: packages/nitejar-cli
-        run: npm publish --access public --provenance
+        run: |
+          unset NODE_AUTH_TOKEN
+          npm config delete //registry.npmjs.org/:_authToken || true
+          npm publish --access public --provenance
 
   publish-container:
     needs: artifact-contract-check
