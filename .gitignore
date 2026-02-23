@@ -83,3 +83,4 @@ dev-debug.log
 
 .codex/config.toml
 .codex/environments/environment.toml
+.husky/_

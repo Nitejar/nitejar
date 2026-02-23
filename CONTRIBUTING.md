@@ -115,7 +115,9 @@ After that, `npm publish --provenance` in GitHub Actions works using the workflo
 1. Ensure all tests pass: `pnpm test`
 2. Ensure linting passes: `pnpm lint`
 3. Ensure type checking passes: `pnpm typecheck`
-4. Commit your changes with a descriptive message
+4. Commit using Conventional Commits with required scope: `<type>(<scope>): <summary>`
+   - Example: `feat(marketing): add shared OG endpoint`
+   - Allowed types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`, `build`, `perf`, `revert`
 5. Push to your fork
 6. Open a Pull Request
 

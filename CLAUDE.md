@@ -181,6 +181,13 @@ These are default behavior rules for multi-agent conversations across plugin-bac
 - **Use tRPC for admin UI data flows** - add procedures in `apps/web/server/routers`, wire through `apps/web/server/routers/_app.ts`, and consume via `apps/web/lib/trpc.ts` + `apps/web/app/(app)/Providers.tsx`
 - **For publishable package changes, add a changeset** - if you change user-facing behavior in `@nitejar/cli`, `@nitejar/plugin-sdk`, or `create-nitejar-plugin`, add a `.changeset/*.md` entry via `pnpm changeset`
 
+### Commit message convention
+
+- Use Conventional Commits with a required scope: `<type>(<scope>): <summary>`
+- Common examples: `feat(marketing): add OG image endpoint`, `fix(web): handle empty plugin state`
+- Allowed `type` values: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`, `build`, `perf`, `revert`
+- Commit messages are validated by a `commit-msg` hook via commitlint
+
 **Verifying changes:**
 
 1. `pnpm format` — format all code
