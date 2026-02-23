@@ -23,6 +23,16 @@ import { ensureRuntimeRelease } from './lib/runtime.js'
 import { shouldRunWizard, runWizard } from './lib/wizard.js'
 import type { WizardResult } from './lib/wizard.js'
 
+function getLocalAppUrl(port: number): string {
+  return `http://localhost:${port}`
+}
+
+function formatTerminalLink(url: string): string {
+  if (!process.stdout.isTTY) return url
+  if (process.env.TERM === 'dumb') return url
+  return `\u001B]8;;${url}\u0007${url}\u001B]8;;\u0007`
+}
+
 function buildRuntimeEnv(
   baseEnv: Record<string, string>,
   dataPath: string,
@@ -60,6 +70,7 @@ export async function commandUp(options: {
   const version = options.version ?? 'latest'
   let requestedPort = options.port ?? '3000'
   let fixedPort = requestedPort === 'auto' ? null : parsePort(requestedPort)
+  let autoPortSearchStart = 3000
 
   const paths = resolvePaths(options.dataDir)
   ensureDirs(paths)
@@ -87,7 +98,7 @@ export async function commandUp(options: {
 
   const resolveSelectedPort = async (): Promise<number> => {
     if (fixedPort != null) return fixedPort
-    return await resolveAutoPort()
+    return await resolveAutoPort(autoPortSearchStart)
   }
 
   const platform = resolvePlatformKey()
@@ -129,13 +140,18 @@ export async function commandUp(options: {
 
     const startEnvFile = ensureBaseEnv(paths, port, wizardResult)
     const env = buildRuntimeEnv(startEnvFile, paths.data, port, paths.currentRuntimeLink)
+    const localUrl = getLocalAppUrl(port)
 
-      try {
-        await startDaemon(paths, env, release.version, port)
-        console.log(`Nitejar is running at ${env.APP_BASE_URL ?? `http://localhost:${port}`}`)
-        console.log(`Logs: ${paths.logFile}`)
-        if (receipt) {
-          console.log(
+    try {
+      await startDaemon(paths, env, release.version, port)
+      console.log('Nitejar is running.')
+      console.log(`Open: ${formatTerminalLink(localUrl)}`)
+      if (env.APP_BASE_URL && env.APP_BASE_URL !== localUrl) {
+        console.log(`Configured APP_BASE_URL: ${env.APP_BASE_URL}`)
+      }
+      console.log(`Logs: ${paths.logFile}`)
+      if (receipt) {
+        console.log(
           `Migration status: ${receipt.migrationStatus}, cutover: ${receipt.cutoverStatus}`
         )
       }
@@ -145,6 +161,7 @@ export async function commandUp(options: {
       const isPortInUse = /Port \d+ is already in use/.test(message)
       if (requestedPort === 'auto' && isPortInUse && attempt < maxStartAttempts) {
         lastStartError = error
+        autoPortSearchStart = port + 1
         continue
       }
       throw error

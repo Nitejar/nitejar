@@ -127,7 +127,8 @@ describe('cli integration happy paths', () => {
     })
 
     expect(up.code).toBe(0)
-    expect(up.stdout).toContain(`Nitejar is running at http://localhost:${port}`)
+    expect(up.stdout).toContain('Nitejar is running.')
+    expect(up.stdout).toContain(`Open: http://localhost:${port}`)
 
     expect(existsSync(path.join(fixture.paths.data, 'nitejar.db'))).toBe(false)
     expect(existsSync(fixture.paths.envFile)).toBe(true)
@@ -183,7 +184,8 @@ describe('cli integration happy paths', () => {
     expect(payload.running).toBe(true)
     expect(payload.port).toBeTypeOf('number')
     expect(payload.port).toBeGreaterThan(0)
-    expect(up.stdout).toContain(`Nitejar is running at http://localhost:${payload.port}`)
+    expect(up.stdout).toContain('Nitejar is running.')
+    expect(up.stdout).toContain(`Open: http://localhost:${payload.port}`)
 
     const down = await runCli(['down', '--data-dir', fixture.dataDir], {
       env: {
@@ -221,6 +223,32 @@ describe('cli integration happy paths', () => {
     const secondPid = Number.parseInt(readFileSync(fixture.paths.pidFile, 'utf8').trim(), 10)
     expect(secondPid).not.toBe(999999)
     expect(secondPid).not.toBe(firstPid)
+
+    const down = await runCli(['down', '--data-dir', fixture.dataDir], {
+      env: {
+        NITEJAR_RELEASES_BASE_URL: fixture.releaseBaseUrl,
+      },
+    })
+    expect(down.code).toBe(0)
+  })
+
+  it('prints local open url even when APP_BASE_URL points elsewhere', async () => {
+    const fixture = await createFixtureRelease()
+    const port = await getFreePort()
+
+    mkdirSync(path.dirname(fixture.paths.envFile), { recursive: true })
+    writeFileSync(fixture.paths.envFile, 'APP_BASE_URL=http://localhost:4000\n', 'utf8')
+
+    const up = await runCli(['up', '--data-dir', fixture.dataDir, '--port', String(port)], {
+      env: {
+        NITEJAR_RELEASES_BASE_URL: fixture.releaseBaseUrl,
+      },
+      timeoutMs: 20_000,
+    })
+
+    expect(up.code).toBe(0)
+    expect(up.stdout).toContain(`Open: http://localhost:${port}`)
+    expect(up.stdout).toContain('Configured APP_BASE_URL: http://localhost:4000')
 
     const down = await runCli(['down', '--data-dir', fixture.dataDir], {
       env: {

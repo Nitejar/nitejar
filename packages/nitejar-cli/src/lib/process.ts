@@ -141,7 +141,7 @@ export async function waitForExit(pid: number, timeoutMs: number): Promise<boole
   return !isProcessRunning(pid)
 }
 
-export async function isPortAvailable(port: number, host = '127.0.0.1'): Promise<boolean> {
+export async function isPortAvailable(port: number, host = '0.0.0.0'): Promise<boolean> {
   return await new Promise<boolean>((resolve) => {
     const server = createServer()
     server.unref()
