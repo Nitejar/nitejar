@@ -53,14 +53,14 @@ Date: 2026-02-21
 - Token hygiene: support token rotation/refresh paths and explicit re-auth UX.
 
 ## 7) Recommended Nitejar plugin/tool architecture integration points
-- Implement plugin handlers in `/Users/josh.matz/Projects/nitejar/nitejar/packages/plugin-handlers/src/notion/index.ts` and `/Users/josh.matz/Projects/nitejar/nitejar/packages/plugin-handlers/src/slack/index.ts` using the existing `PluginHandler` contract (`validateConfig`, `parseWebhook`, `postResponse`).
-- Register handlers in `/Users/josh.matz/Projects/nitejar/nitejar/packages/plugin-handlers/src/index.ts` so webhook routing can resolve by `type`.
-- Reuse existing webhook ingress route `/Users/josh.matz/Projects/nitejar/nitejar/apps/web/app/api/webhooks/plugins/[type]/[instanceId]/route.ts`; no new generic route needed.
-- Add integration providers in `/Users/josh.matz/Projects/nitejar/nitejar/packages/agent/src/integrations/notion.ts` and `/Users/josh.matz/Projects/nitejar/nitejar/packages/agent/src/integrations/slack.ts` to contribute tool definitions/handlers and source-specific prompt sections.
-- Import/self-register new providers in `/Users/josh.matz/Projects/nitejar/nitejar/packages/agent/src/runner.ts` (same pattern used for GitHub/Telegram).
+- Implement plugin handlers in `~/Projects/nitejar/nitejar/packages/plugin-handlers/src/notion/index.ts` and `~/Projects/nitejar/nitejar/packages/plugin-handlers/src/slack/index.ts` using the existing `PluginHandler` contract (`validateConfig`, `parseWebhook`, `postResponse`).
+- Register handlers in `~/Projects/nitejar/nitejar/packages/plugin-handlers/src/index.ts` so webhook routing can resolve by `type`.
+- Reuse existing webhook ingress route `~/Projects/nitejar/nitejar/apps/web/app/api/webhooks/plugins/[type]/[instanceId]/route.ts`; no new generic route needed.
+- Add integration providers in `~/Projects/nitejar/nitejar/packages/agent/src/integrations/notion.ts` and `~/Projects/nitejar/nitejar/packages/agent/src/integrations/slack.ts` to contribute tool definitions/handlers and source-specific prompt sections.
+- Import/self-register new providers in `~/Projects/nitejar/nitejar/packages/agent/src/runner.ts` (same pattern used for GitHub/Telegram).
 - Add typed config parsers + encrypted secret handling (pattern from GitHub config helpers) for tokens, signing secrets, app-level tokens, OAuth client creds, and webhook secret(s).
 - Use setup wizard metadata (`setupConfig`) in handler definitions so Admin UI can render instance forms without custom UI work.
-- For OAuth callback UX, mirror GitHub callback flow with provider-specific callback page(s) under `/Users/josh.matz/Projects/nitejar/nitejar/apps/web/app/admin/plugins/<provider>/callback/` and tRPC exchange endpoints.
+- For OAuth callback UX, mirror GitHub callback flow with provider-specific callback page(s) under `~/Projects/nitejar/nitejar/apps/web/app/admin/plugins/<provider>/callback/` and tRPC exchange endpoints.
 - Normalize inbound actor/session mapping in `parseWebhook`: Slack should key sessions by channel+thread; Notion should key by page/data-source context + actor.
 - Set default response modes by channel ergonomics: Slack `streaming`, Notion `final`.
 

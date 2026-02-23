@@ -3,12 +3,12 @@ title: Quickstart
 description: Start Nitejar in one command, then inspect receipts and logs.
 ---
 
-Nitejar is a self-hosted AI agent runtime. It receives messages from channels (Telegram, GitHub, generic webhooks), routes them to configured agents, runs inference with tool access inside sandboxed environments, and delivers responses back to the source. Every action — inference calls, tool executions, response deliveries — is logged as an inspectable receipt.
+Nitejar is a self-hosted AI agent runtime. It receives messages from channels (Telegram, GitHub, Discord, generic webhooks), routes them to configured agents, runs inference with tool access inside sandboxed environments, and delivers responses back to the source. Every action — inference calls, tool executions, response deliveries — is logged as an inspectable receipt.
 
 ## One command
 
 ```bash
-npx @nitejar/cli up
+npx --yes @nitejar/cli@latest up
 ```
 
 Use this command when `@nitejar/cli` is published to npm.
@@ -31,7 +31,7 @@ Open [localhost:3000](http://localhost:3000). You're running.
 If port `3000` is already in use, run:
 
 ```bash
-npx @nitejar/cli up --port auto
+npx --yes @nitejar/cli@latest up --port auto
 ```
 
 The CLI prints the selected URL and log file path.
@@ -39,9 +39,9 @@ The CLI prints the selected URL and log file path.
 ## Verify and operate
 
 ```bash
-npx @nitejar/cli status
-npx @nitejar/cli logs --follow
-npx @nitejar/cli down
+npx --yes @nitejar/cli@latest status
+npx --yes @nitejar/cli@latest logs --follow
+npx --yes @nitejar/cli@latest down
 ```
 
 The first command shows runtime status, active version, database path, and last migration receipt.
@@ -69,8 +69,10 @@ pnpm nitejar:local:up -- --full-runtime --data-dir /tmp/nitejar-local --port aut
 
 ```bash
 pnpm --filter @nitejar/cli build
-pnpm --filter @nitejar/cli pack
-npx --yes --package ./packages/nitejar-cli/nitejar-cli-0.1.0.tgz nitejar up --data-dir /tmp/nitejar-pack --port 3002
+cd packages/nitejar-cli
+PKG_TGZ="$(npm pack --silent)"
+cd ../..
+npx --yes --package "./packages/nitejar-cli/${PKG_TGZ}" nitejar up --data-dir /tmp/nitejar-pack --port 3002
 ```
 
 This validates the same packaged artifact shape users get from npm.
@@ -133,8 +135,6 @@ docker run -d \
   -e ENCRYPTION_KEY="$(openssl rand -hex 32)" \
   ghcr.io/nitejar/nitejar:latest
 ```
-
-### Create your first agent
 
 ## In app
 

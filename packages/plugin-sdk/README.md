@@ -209,7 +209,10 @@ Every plugin needs a `nitejar-plugin.json` at its root:
   "name": "My Plugin",
   "description": "What this plugin does",
   "entry": "dist/index.js",
-  "permissions": []
+  "permissions": {
+    "network": ["api.example.com"],
+    "secrets": ["MY_PLUGIN_API_KEY"]
+  }
 }
 ```
 
@@ -220,7 +223,9 @@ Every plugin needs a `nitejar-plugin.json` at its root:
 | `name`          | Human-readable name. Shown in the admin catalog.                   |
 | `description`   | One-liner. Keep it concrete.                                       |
 | `entry`         | Path to the built ESM entry point, relative to the plugin root.    |
-| `permissions`   | Array of permission strings. Currently for risk-visibility only -- not enforced at runtime. Declare what your plugin accesses so admins can make informed decisions. |
+| `permissions`   | Optional object with `network`, `secrets`, `filesystemRead`, `filesystemWrite`, and `allowProcessSpawn`. Currently for risk-visibility only -- not enforced at runtime. |
+| `activation`    | Optional activation hints (`onStartup`, `onIntegrationTypes`, `onHooks`). |
+| `contributes`   | Optional contribution declarations (`integrations`, `hooks`, `skills`). |
 
 ## Building
 

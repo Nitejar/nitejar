@@ -2,7 +2,7 @@
 
 Date: 2026-02-21
 Status: Draft
-Related PRD: `/Users/josh.matz/Projects/nitejar/nitejar/.taskmaster/docs/prd-integrations-media-tools.md`
+Related PRD: `~/Projects/nitejar/nitejar/.taskmaster/docs/prd-integrations-media-tools.md`
 
 ## 1) Technical goals
 
@@ -14,20 +14,20 @@ Related PRD: `/Users/josh.matz/Projects/nitejar/nitejar/.taskmaster/docs/prd-int
 ## 2) Existing integration points to leverage
 
 - Webhook ingress and dispatch routing:
-  - `/Users/josh.matz/Projects/nitejar/nitejar/apps/web/app/api/webhooks/plugins/[type]/[instanceId]/route.ts`
+  - `~/Projects/nitejar/nitejar/apps/web/app/api/webhooks/plugins/[type]/[instanceId]/route.ts`
 - Plugin handler contracts and registry:
-  - `/Users/josh.matz/Projects/nitejar/nitejar/packages/plugin-handlers/src/types.ts`
-  - `/Users/josh.matz/Projects/nitejar/nitejar/packages/plugin-handlers/src/index.ts`
+  - `~/Projects/nitejar/nitejar/packages/plugin-handlers/src/types.ts`
+  - `~/Projects/nitejar/nitejar/packages/plugin-handlers/src/index.ts`
 - Plugin instance CRUD and setup:
-  - `/Users/josh.matz/Projects/nitejar/nitejar/apps/web/server/routers/plugin-instances.ts`
+  - `~/Projects/nitejar/nitejar/apps/web/server/routers/plugin-instances.ts`
 - Agent integration providers:
-  - `/Users/josh.matz/Projects/nitejar/nitejar/packages/agent/src/integrations/registry.ts`
+  - `~/Projects/nitejar/nitejar/packages/agent/src/integrations/registry.ts`
 - Tool registration and handlers:
-  - `/Users/josh.matz/Projects/nitejar/nitejar/packages/agent/src/tools/definitions.ts`
-  - `/Users/josh.matz/Projects/nitejar/nitejar/packages/agent/src/tools/handlers/index.ts`
+  - `~/Projects/nitejar/nitejar/packages/agent/src/tools/definitions.ts`
+  - `~/Projects/nitejar/nitejar/packages/agent/src/tools/handlers/index.ts`
 - External API cost receipts:
-  - `/Users/josh.matz/Projects/nitejar/nitejar/packages/database/src/repositories/external-api-calls.ts`
-  - `/Users/josh.matz/Projects/nitejar/nitejar/packages/agent/src/runner.ts`
+  - `~/Projects/nitejar/nitejar/packages/database/src/repositories/external-api-calls.ts`
+  - `~/Projects/nitejar/nitejar/packages/agent/src/runner.ts`
 
 ## 3) Proposed component architecture
 

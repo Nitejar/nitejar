@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { readFile } from 'node:fs/promises'
+import path from 'node:path'
 import process from 'node:process'
 import {
   addAppSessionParticipants,
@@ -182,7 +183,8 @@ async function runTurn(input: {
 }
 
 async function main(): Promise<number> {
-  await loadEnvFile('/Users/josh.matz/Projects/nitejar/nitejar/apps/web/.env')
+  const homeDir = process.env.HOME ?? '~'
+  await loadEnvFile(path.join(homeDir, 'Projects', 'nitejar', 'nitejar', 'apps', 'web', '.env'))
 
   const db = getDb()
   const userId = `media-workflow-${Date.now()}`

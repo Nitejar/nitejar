@@ -82,13 +82,16 @@ function main(): void {
     join(dir, 'nitejar-plugin.json'),
     JSON.stringify(
       {
+        schemaVersion: 1,
         id: pluginId,
         name: `nitejar-plugin-${name}`,
-        displayName: name.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
         version: '0.1.0',
         description: `A Nitejar plugin for ${name}`,
         entry: 'dist/index.js',
-        permissions: {},
+        permissions: {
+          network: [],
+          secrets: [],
+        },
       },
       null,
       2

@@ -51,6 +51,8 @@ data/
 tmp/
 .tmp/
 logs/
+packages/nitejar-cli/*.tgz
+plugins/*/*.tgz
 
 # Logs
 logs

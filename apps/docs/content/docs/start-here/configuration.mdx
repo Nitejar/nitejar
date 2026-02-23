@@ -3,7 +3,10 @@ title: Configuration
 description: Environment variables, model config, database options, and encryption.
 ---
 
-Nitejar reads its configuration from `apps/web/.env`. Not root `.env`. Not `~/.nitejarrc`. One file.
+Nitejar has two config paths depending on how you run it:
+
+- CLI install path (`npx --yes @nitejar/cli@latest up`): `~/.nitejar/config/env`
+- Source/dev path (`pnpm dev` from this repo): `apps/web/.env`
 
 Copy the example and edit it:
 
@@ -18,9 +21,9 @@ Use the command path that matches your context:
 1. Published npm CLI (normal users):
 
 ```bash
-npx @nitejar/cli up
+npx --yes @nitejar/cli@latest up
 # or, if 3000 is occupied
-npx @nitejar/cli up --port auto
+npx --yes @nitejar/cli@latest up --port auto
 ```
 
 2. Local repo test (before publish):
@@ -39,20 +42,26 @@ pnpm nitejar:local:up -- --full-runtime --data-dir /tmp/nitejar-local --port aut
 
 ```bash
 pnpm --filter @nitejar/cli build
-pnpm --filter @nitejar/cli pack
-npx --yes --package ./packages/nitejar-cli/nitejar-cli-0.1.0.tgz nitejar up --data-dir /tmp/nitejar-pack --port 3002
+cd packages/nitejar-cli
+PKG_TGZ="$(npm pack --silent)"
+cd ../..
+npx --yes --package "./packages/nitejar-cli/${PKG_TGZ}" nitejar up --data-dir /tmp/nitejar-pack --port 3002
 ```
 
-Most variables are optional. For local development with the default free model, you need exactly one thing: an `ENCRYPTION_KEY`. Everything else has a sane default or is only required when you enable the feature that needs it.
+Most variables are optional.
+
+- CLI path: `ENCRYPTION_KEY` and `BETTER_AUTH_SECRET` are generated automatically on first boot.
+- Source/dev path: set `ENCRYPTION_KEY` yourself in `apps/web/.env`; everything else is optional unless that feature is enabled.
 
 ## Environment variables
 
 | Variable                | Required         | Default                               | Description                                                                                                                                       |
 | ----------------------- | ---------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `NODE_ENV`              | No               | `development`                         | `development`, `production`, or `test`. Controls logging verbosity and security warnings.                                                         |
-| `APP_BASE_URL`          | No               | `http://localhost:3000`               | Public URL where Nitejar is reachable. Used to construct webhook callback URLs. Must be a real URL in production.                                 |
+| `APP_BASE_URL`          | No               | CLI: inferred from selected port      | Public URL where Nitejar is reachable. Used to construct webhook callback URLs. Must be a real URL in production.                                 |
 | `DATABASE_URL`          | No               | CLI: `~/.nitejar/data/nitejar.db`     | SQLite file path or Postgres connection string. Leave unset for source/dev defaults under `packages/database/data/`.                              |
 | `ENCRYPTION_KEY`        | Yes (production) | None                                  | 64-character hex string for AES-256-GCM encryption. Protects API keys, tokens, and secrets stored in the database. See [Encryption](#encryption). |
+| `BETTER_AUTH_SECRET`    | Yes (production) | CLI: auto-generated on first boot     | Stable auth signing secret. Must remain stable across restarts for valid sessions.                                                                |
 | `OPENROUTER_API_KEY`    | No               | None                                  | OpenRouter API key. The default model routes through OpenRouter, but the free tier requires no key. Set this if you use paid models.              |
 | `OPENAI_API_KEY`        | No               | None                                  | OpenAI API key. Used as a fallback if no OpenRouter key is set. Also required for embeddings if you don't have an OpenRouter key.                 |
 | `SPRITES_TOKEN`         | No               | None                                  | Token from [sprites.dev](https://sprites.dev) for sandboxed agent execution. Without this, agents run without sandbox isolation.                  |
@@ -91,7 +100,7 @@ Use Postgres when you need multiple application instances hitting the same datab
 
 ### Migrations
 
-For the CLI path (`npx @nitejar/cli up`), migrations run automatically before the server starts.
+For the CLI path (`npx --yes @nitejar/cli@latest up`), migrations run automatically before the server starts.
 
 For source/dev workflows, run migrations manually:
 

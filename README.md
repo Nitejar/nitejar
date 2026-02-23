@@ -9,6 +9,8 @@
 </p>
 
 <p align="center">
+  <a href="https://nitejar.dev">Website</a> &middot;
+  <a href="https://nitejar.dev/docs">Docs</a> &middot;
   <a href="#quickstart">Quickstart</a> &middot;
   <a href="#the-receipts">The Receipts</a> &middot;
   <a href="#architecture">Architecture</a> &middot;
@@ -38,7 +40,38 @@ The name is the point. Agents are sloppy. That's fine. What's not fine is sloppy
 
 ## Quickstart
 
-### Docker
+### One command (recommended)
+
+```bash
+npx --yes @nitejar/cli@latest up
+```
+
+What happens:
+
+1. Downloads the right runtime bundle for your OS/arch
+2. Creates local state at `~/.nitejar`
+3. Runs migrations before boot
+4. Starts Nitejar as a background daemon and prints the URL/log path
+
+First boot opens a short setup wizard (TTY only) for access mode/base URL/port.
+Use `--no-wizard` to skip it.
+
+Useful commands:
+
+```bash
+npx --yes @nitejar/cli@latest status
+npx --yes @nitejar/cli@latest logs --follow
+npx --yes @nitejar/cli@latest down
+```
+
+By default, state lives in:
+
+- `~/.nitejar/data/nitejar.db`
+- `~/.nitejar/config/env`
+- `~/.nitejar/logs/server.log`
+- `~/.nitejar/receipts/migrations/*.json`
+
+### Docker (secondary path)
 
 ```bash
 docker run -d \
@@ -51,7 +84,7 @@ docker run -d \
 
 Open [localhost:3000](http://localhost:3000). You're running.
 
-### From source
+### From source (advanced)
 
 ```bash
 git clone https://github.com/nitejar/nitejar.git && cd nitejar
@@ -62,12 +95,14 @@ pnpm db:migrate && pnpm dev
 
 Same URL. Same dashboard.
 
-### Environment
+### Environment (source installs)
 
 | Variable | Required | What it does |
 |----------|----------|--------------|
-| `ENCRYPTION_KEY` | Yes | Encrypts secrets at rest. `openssl rand -hex 32` |
+| `ENCRYPTION_KEY` | Yes (source/prod) | Encrypts secrets at rest. `openssl rand -hex 32` |
 | `DATABASE_URL` | No | SQLite by default. Postgres URL for production. |
+| `APP_BASE_URL` | No (required for public webhooks) | Public URL used for webhook/invite/callback links. |
+| `BETTER_AUTH_SECRET` | Yes (source/prod) | Stable auth signing secret. |
 | `TELEGRAM_BOT_TOKEN` | No | Talk to your agents on Telegram. [@BotFather](https://t.me/BotFather). |
 | `GITHUB_APP_ID` + `GITHUB_PRIVATE_KEY` | No | Agents that review PRs and respond to issues. |
 
@@ -78,7 +113,7 @@ Full list in `apps/web/.env.example`.
 Everything below works today. Not a roadmap — click through and check.
 
 **Agents**
-- Deploy agents across Telegram, GitHub, and webhooks from a single config
+- Deploy agents across Telegram, GitHub, Discord, and webhooks from a single config
 - Each agent gets its own sandbox, filesystem, tools, and network policy
 - Build new agents with an 8-step wizard: name, soul, model, skills, tools, budget, test conversation, save
 - Export agents as `.nitejar-agent.json` and import them on another instance
@@ -114,14 +149,14 @@ Everything below works today. Not a roadmap — click through and check.
                   │   Plugins · Costs · Routines · Collections  │
                   └─────────────────────┬──────────────────────┘
                                         │
-           ┌────────────────────────────┼────────────────────────┐
-           │                            │                        │
-  ┌────────▼──────────┐    ┌───────────▼──────────┐    ┌───────▼──────────┐
-  │    Telegram        │    │      GitHub           │    │    Webhooks      │
-  │    Plugin          │    │      Plugin           │    │    Plugin        │
-  └────────┬───────────┘    └───────────┬───────────┘    └───────┬─────────┘
-           │                            │                        │
-           └────────────────────────────┼────────────────────────┘
+      ┌──────────────────┬──────────────────┬──────────────────┐
+      │                  │                  │                  │
+┌─────▼──────┐    ┌──────▼──────┐    ┌─────▼──────┐    ┌─────▼──────┐
+│  Telegram  │    │   GitHub    │    │  Discord   │    │  Webhooks  │
+│  Plugin    │    │   Plugin    │    │  Plugin    │    │  Plugin    │
+└─────┬──────┘    └──────┬──────┘    └─────┬──────┘    └─────┬──────┘
+      │                  │                  │                  │
+      └──────────────────┴──────────────────┴──────────────────┘
                                         │
                                ┌────────▼──────────┐
                                │  Plugin Runtime    │
@@ -150,14 +185,17 @@ Everything below works today. Not a roadmap — click through and check.
 nitejar/
 ├── apps/
 │   ├── web/                    # Next.js 15 — admin UI, webhook API, tRPC server
-│   └── docs/                   # Documentation site (Fumadocs)
+│   ├── docs/                   # Documentation site (Fumadocs)
+│   └── marketing/              # Marketing site (nitejar.dev)
 ├── packages/
+│   ├── nitejar-cli/            # @nitejar/cli — `npx @nitejar/cli up` entry point
 │   ├── agent/                  # The agent engine — tools, memory, skill resolver
 │   ├── database/               # Kysely ORM, migrations, 50+ tables
 │   ├── plugin-sdk/             # Public SDK for third-party plugins
 │   ├── plugin-runtime/         # Plugin loader, hook dispatcher, crash guard
-│   ├── plugin-handlers/        # Built-in handlers (Telegram, GitHub, Webhook)
-│   ├── sprites/                # Sandbox execution via Fly.io Machines
+│   ├── plugin-handlers/        # Built-in handlers (Telegram, GitHub, Discord, Webhook)
+│   ├── runner-sandbox/         # Sandbox execution runtime
+│   ├── sprites/                # Sandbox orchestration via Fly.io Machines
 │   ├── create-nitejar-plugin/  # npx create-nitejar-plugin
 │   └── ...                     # core, config, connectors, shared configs
 └── plugins/
@@ -166,7 +204,7 @@ nitejar/
 
 ## Plugin SDK
 
-Plugins are how Nitejar talks to the outside world. Each plugin handles a channel (Telegram, GitHub, Slack, your custom thing), and the SDK is fully self-contained — no monorepo required.
+Plugins are how Nitejar talks to the outside world. Each plugin handles a channel (Telegram, GitHub, Discord, generic webhooks, your custom thing), and the SDK is fully self-contained — no monorepo required.
 
 ```bash
 npx create-nitejar-plugin my-plugin
@@ -213,7 +251,8 @@ export default definePlugin({
 })
 ```
 
-Three methods. That's the contract. `parseWebhook` turns an inbound request into work. `postResponse` delivers the agent's reply. `validateConfig` keeps operators from fat-fingering setup.
+Three methods are required: `validateConfig`, `parseWebhook`, and `postResponse`.
+Optional methods like `testConnection` and `acknowledgeReceipt` are available for richer setup/runtime UX.
 
 ### Manifest (`nitejar-plugin.json`)
 
@@ -224,7 +263,10 @@ Three methods. That's the contract. `parseWebhook` turns an inbound request into
   "name": "My Plugin",
   "version": "0.1.0",
   "entry": "dist/index.js",
-  "permissions": { "network": true }
+  "permissions": {
+    "network": ["api.example.com"],
+    "secrets": ["MY_PLUGIN_API_KEY"]
+  }
 }
 ```
 
