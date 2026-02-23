@@ -112,10 +112,10 @@ function normalizeMessagePayload(payload: unknown): DiscordMessage | null {
     (payload as Record<string, unknown>).d != null
   ) {
     const nested = (payload as Record<string, unknown>).d
-    return isDiscordMessageEvent(nested) ? (nested as DiscordMessage) : null
+    return isDiscordMessageEvent(nested) ? nested : null
   }
 
-  return isDiscordMessageEvent(payload) ? (payload as DiscordMessage) : null
+  return isDiscordMessageEvent(payload) ? payload : null
 }
 
 function isLikelyImageAttachment(attachment: Partial<DiscordMessageAttachment>): boolean {

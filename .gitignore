@@ -6,6 +6,10 @@ dist/
 .next/
 out/
 plugins/*/dist/
+# Test fixture dist output intentionally tracked to mirror bundled runtime layout.
+!packages/nitejar-cli/tests/fixtures/runtime/packages/database/dist/
+!packages/nitejar-cli/tests/fixtures/runtime/packages/database/dist/src/
+!packages/nitejar-cli/tests/fixtures/runtime/packages/database/dist/src/runtime-migrate.js
 
 # Turbo
 .turbo/

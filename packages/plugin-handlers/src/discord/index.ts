@@ -159,7 +159,7 @@ export const discordHandler: PluginHandler<DiscordConfig> = {
     try {
       if (canUseInteractionResponse) {
         for (const chunk of chunks) {
-          await sendFollowUpMessage(applicationId!, interactionToken!, chunk)
+          await sendFollowUpMessage(applicationId, interactionToken, chunk)
         }
       } else {
         if (!channelId) {
