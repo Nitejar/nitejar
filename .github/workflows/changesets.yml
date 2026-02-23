@@ -41,8 +41,8 @@ jobs:
         with:
           version: pnpm changeset:version
           publish: pnpm release:create-tag
-          commit: 'chore: version packages'
-          title: 'chore: version packages'
+          commit: 'chore(release): version packages'
+          title: 'chore(release): version packages'
           createGithubReleases: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
