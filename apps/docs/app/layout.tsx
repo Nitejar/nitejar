@@ -27,6 +27,7 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://nitejar.dev/docs'),
   title: {
     template: '%s | Nitejar Docs',
     default: 'Nitejar Docs',

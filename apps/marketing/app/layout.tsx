@@ -34,12 +34,14 @@ export const metadata: Metadata = {
     siteName: 'Nitejar',
     locale: 'en_US',
     type: 'website',
+    images: [{ url: '/api/og', width: 1200, height: 630 }],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Nitejar — Your agents work the night shift',
     description:
       'Self-hosted AI agent control center. Create agents, connect channels, watch them work.',
+    images: ['/api/og'],
   },
   robots: {
     index: true,

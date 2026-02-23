@@ -39,8 +39,24 @@ export async function generateMetadata(props: PageProps) {
   const page = source.getPage(params.slug)
   if (!page) notFound()
 
+  const ogParams = new URLSearchParams({ variant: 'docs' })
+  if (page.data.title) ogParams.set('title', page.data.title)
+  if (page.data.description) ogParams.set('description', page.data.description)
+  const ogImage = `https://nitejar.dev/api/og?${ogParams.toString()}`
+
   return {
     title: page.data.title,
     description: page.data.description,
+    openGraph: {
+      title: page.data.title,
+      description: page.data.description,
+      images: [ogImage],
+    },
+    twitter: {
+      card: 'summary_large_image' as const,
+      title: page.data.title,
+      description: page.data.description,
+      images: [ogImage],
+    },
   }
 }
