@@ -1,0 +1,89 @@
+---
+title: Costs & Budgets
+description: Cost tracking, budget limits, and the ledger.
+---
+
+Nitejar tracks the cost of every inference call across every agent. Token counts, model pricing, and estimated spend are recorded automatically. You do not need an external billing system -- the admin UI gives you a complete ledger.
+
+## How cost tracking works
+
+Every time an agent makes an inference call, Nitejar records:
+
+- **Prompt tokens** and **completion tokens** for the call.
+- **Estimated cost**, computed from the model's per-token pricing in the model catalog.
+- **Which agent** made the call and **which model** was used.
+
+Costs are computed at call time, not after the fact. The model catalog stores pricing per model, and the runtime multiplies token counts by those rates. If the catalog does not have pricing for a model, cost is recorded as zero.
+
+The ledger is the source of truth. Every dollar is traceable to a specific run, a specific inference call, and a specific agent. There is no aggregation without a receipt behind it.
+
+## The cost ledger
+
+The cost ledger lives at **Admin > Costs**. It shows:
+
+- **Total spend** across all agents and models.
+- **Per-agent breakdown** -- how much each agent has spent, with trend charts.
+- **Per-model breakdown** -- which models are driving cost, ranked by total spend.
+- **Daily cost trend** -- a 30-day line chart of aggregate spend.
+
+Each entry in the ledger links back to the work item and run that incurred the cost. You can drill from the top-level summary down to individual inference calls.
+
+<Callout type="info" title="Where to verify">
+Open **Admin > Costs** to see the full ledger. The summary cards show total spend, and the tables below break it down by agent and model. Click any agent name to jump to that agent's cost detail.
+</Callout>
+
+## Per-agent budget limits
+
+Budget limits prevent runaway spend. You configure them per-agent from the agent's settings page.
+
+- **Period** -- Set the budget window: hourly, daily, or monthly.
+- **Limit (USD)** -- The maximum dollar amount the agent can spend per period.
+- **Soft threshold** -- A percentage of the limit that triggers a warning (visible in the Command Center dashboard). Default: 100%.
+- **Hard threshold** -- A percentage of the limit at which new runs are blocked. Default: 150%.
+
+When an agent hits its hard budget threshold, new runs are refused until the period resets or you raise the limit. The agent is not killed mid-run -- it finishes its current work, but will not start new work until the budget clears.
+
+Budget limits can also be set at the org level from **Admin > Costs**, applying a global ceiling across all agents.
+
+<Callout type="info" title="Where to verify">
+Open **Admin > Agents > [agent]** and scroll to the **Inference Costs** section. Budget limits are displayed alongside current spend for the active period. You can add, edit, or remove limits directly from this panel.
+</Callout>
+
+## Model cost comparison
+
+Different models have wildly different price points. Choosing the right model per agent is the single biggest lever you have on cost.
+
+| Model                                 | Approximate cost           | Notes                                                           |
+| ------------------------------------- | -------------------------- | --------------------------------------------------------------- |
+| `arcee-ai/trinity-large-preview:free` | $0                         | Default. Free via OpenRouter. Good enough for most tasks.       |
+| Mid-tier models (Llama, Mistral)      | $0.10 -- $0.50 / 1M tokens | Reasonable for higher-quality output without breaking the bank. |
+| Frontier models (GPT-4o, Claude)      | $2 -- $15 / 1M tokens      | Best quality, but costs add up fast with high-volume agents.    |
+
+The model catalog in **Admin > Settings** shows per-token pricing for every model available to your instance. Check it before switching an agent to a paid model.
+
+For most agent use cases -- triage, routing, simple Q&A -- the free default works fine. Reserve paid models for agents where output quality directly matters (code review, customer-facing responses, complex reasoning).
+
+## Model call receipts
+
+Every inference call is recorded as a receipt. Each receipt includes:
+
+- **Model used** -- the exact model identifier.
+- **Prompt tokens** -- how many tokens went in.
+- **Completion tokens** -- how many tokens came back.
+- **Estimated cost** -- computed from the model catalog pricing.
+- **Latency** -- wall-clock time for the call.
+- **Tool call flag** -- whether the model invoked a tool as part of this call.
+
+Receipts are visible in two places: the work item timeline (showing calls in context of the run) and the cost ledger (showing calls aggregated by agent and model).
+
+<Callout type="info" title="Where to verify">
+Open **Admin > Activity > [work item]** to see the timeline of inference calls for a specific run. Each call shows token counts, cost, latency, and the model used. The same data rolls up into **Admin > Costs** at the aggregate level.
+</Callout>
+
+## Cost at the run level
+
+Each work item tracks its own total cost. When you open a work item's detail page, the cost is shown alongside the run timeline, token counts, and tool calls.
+
+The **Command Center** dashboard aggregates cost data across all agents, giving you a single view of total spend, top-spending agents, and recent cost trends. This is the place to check when you want a quick health check on overall inference costs.
+
+No separate billing system is needed. All cost data lives in the admin UI, computed from the receipts stored alongside every run.

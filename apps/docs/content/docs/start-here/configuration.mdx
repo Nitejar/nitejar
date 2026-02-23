@@ -1,0 +1,226 @@
+---
+title: Configuration
+description: Environment variables, model config, database options, and encryption.
+---
+
+Nitejar reads its configuration from `apps/web/.env`. Not root `.env`. Not `~/.nitejarrc`. One file.
+
+Copy the example and edit it:
+
+```bash
+cp .env.example apps/web/.env
+```
+
+## Which command path are you using?
+
+Use the command path that matches your context:
+
+1. Published npm CLI (normal users):
+
+```bash
+npx @nitejar/cli up
+# or, if 3000 is occupied
+npx @nitejar/cli up --port auto
+```
+
+2. Local repo test (before publish):
+
+```bash
+pnpm nitejar:local:up -- --data-dir /tmp/nitejar-local --port auto
+```
+
+Use `--full-runtime` if you want the real built web runtime instead of the fixture smoke runtime:
+
+```bash
+pnpm nitejar:local:up -- --full-runtime --data-dir /tmp/nitejar-local --port auto
+```
+
+3. Pre-publish packaged artifact validation:
+
+```bash
+pnpm --filter @nitejar/cli build
+pnpm --filter @nitejar/cli pack
+npx --yes --package ./packages/nitejar-cli/nitejar-cli-0.1.0.tgz nitejar up --data-dir /tmp/nitejar-pack --port 3002
+```
+
+Most variables are optional. For local development with the default free model, you need exactly one thing: an `ENCRYPTION_KEY`. Everything else has a sane default or is only required when you enable the feature that needs it.
+
+## Environment variables
+
+| Variable                | Required         | Default                               | Description                                                                                                                                       |
+| ----------------------- | ---------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`              | No               | `development`                         | `development`, `production`, or `test`. Controls logging verbosity and security warnings.                                                         |
+| `APP_BASE_URL`          | No               | `http://localhost:3000`               | Public URL where Nitejar is reachable. Used to construct webhook callback URLs. Must be a real URL in production.                                 |
+| `DATABASE_URL`          | No               | CLI: `~/.nitejar/data/nitejar.db`     | SQLite file path or Postgres connection string. Leave unset for source/dev defaults under `packages/database/data/`.                              |
+| `ENCRYPTION_KEY`        | Yes (production) | None                                  | 64-character hex string for AES-256-GCM encryption. Protects API keys, tokens, and secrets stored in the database. See [Encryption](#encryption). |
+| `OPENROUTER_API_KEY`    | No               | None                                  | OpenRouter API key. The default model routes through OpenRouter, but the free tier requires no key. Set this if you use paid models.              |
+| `OPENAI_API_KEY`        | No               | None                                  | OpenAI API key. Used as a fallback if no OpenRouter key is set. Also required for embeddings if you don't have an OpenRouter key.                 |
+| `SPRITES_TOKEN`         | No               | None                                  | Token from [sprites.dev](https://sprites.dev) for sandboxed agent execution. Without this, agents run without sandbox isolation.                  |
+| `TELEGRAM_BOT_TOKEN`    | No               | None                                  | Bot token from [@BotFather](https://t.me/botfather). Only needed if you're connecting a Telegram channel.                                         |
+| `GITHUB_WEBHOOK_SECRET` | No               | None                                  | Secret for verifying GitHub webhook signatures. Required for GitHub integration.                                                                  |
+| `GITHUB_APP_ID`         | No               | None                                  | GitHub App ID. Used with `GITHUB_PRIVATE_KEY` for production GitHub integration.                                                                  |
+| `GITHUB_PRIVATE_KEY`    | No               | None                                  | GitHub App private key (PEM format). Pair with `GITHUB_APP_ID`.                                                                                   |
+| `AGENT_MODEL`           | No               | `arcee-ai/trinity-large-preview:free` | Default model for newly created agents. Existing agents keep their configured model.                                                              |
+| `POSTGRES_URL`          | No               | None                                  | Legacy Postgres connection string. Deprecated -- use `DATABASE_URL` instead. Will be removed.                                                     |
+
+<Callout type="info" title="Where to verify">
+After starting Nitejar, open **Admin > Settings > Gateway**. The gateway settings page shows which API key and base URL the runtime is actually using. If you set keys via the admin UI, those take priority over environment variables. The env file is the starting point; the database is the source of truth.
+</Callout>
+
+## Database
+
+Nitejar uses [Kysely](https://kysely.dev/) as its query builder with support for two backends.
+
+### SQLite (default)
+
+CLI-managed installs set `DATABASE_URL` to `~/.nitejar/data/nitejar.db`.
+
+Source/dev installs can leave `DATABASE_URL` unset and use the workspace default under `packages/database/data/`.
+
+SQLite is the right choice for local development, single-node deployments, and "I just want to see this thing run." It handles more traffic than you think.
+
+### Postgres
+
+Set `DATABASE_URL` to a Postgres connection string:
+
+```bash
+DATABASE_URL=postgres://user:password@host:5432/nitejar
+```
+
+Use Postgres when you need multiple application instances hitting the same database, or when you're deploying to infrastructure that already has a managed Postgres instance.
+
+### Migrations
+
+For the CLI path (`npx @nitejar/cli up`), migrations run automatically before the server starts.
+
+For source/dev workflows, run migrations manually:
+
+```bash
+pnpm --filter @nitejar/database db:migrate
+```
+
+This detects the database type from `DATABASE_URL` and applies any pending migrations. The same migration files work for both SQLite and Postgres.
+
+## Encryption
+
+Nitejar encrypts sensitive fields in the database using AES-256-GCM. This covers:
+
+- Gateway API keys (OpenRouter, OpenAI)
+- Plugin instance configuration marked as sensitive (bot tokens, API keys, secrets)
+- Credential store values
+
+### Generating a key
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+This produces a 64-character hex string. Put it in your `.env`:
+
+```bash
+ENCRYPTION_KEY=a1b2c3d4e5f6...your-64-char-hex-key-here
+```
+
+The key must be exactly 32 bytes. Nitejar accepts it as:
+
+- 64-character hex string (recommended)
+- 44-character base64 string
+- 32-character raw UTF-8 string
+
+### What happens without a key
+
+In development, Nitejar stores values in plaintext and logs a security warning on first write. This is fine for local hacking. It is not fine for anything else.
+
+### What happens if you lose the key
+
+Encrypted values become unrecoverable. There is no backdoor, no recovery mechanism, no "contact support." You will need to re-enter every API key and secret through the admin UI. Treat the encryption key like a database password -- back it up somewhere safe.
+
+### Rotating the key
+
+There is no built-in key rotation command yet. If you need to rotate: export your config, change the key, re-enter secrets through the admin UI.
+
+## Model configuration
+
+### Default model
+
+New agents are created with `arcee-ai/trinity-large-preview:free` via OpenRouter. This is a free model. It works. It costs nothing. Do not change it unless you have a specific reason and an API key that can handle the traffic.
+
+You can override the default for new agents with the `AGENT_MODEL` environment variable:
+
+```bash
+AGENT_MODEL=anthropic/claude-sonnet-4
+```
+
+This only affects newly created agents. Existing agents keep whatever model they were configured with.
+
+### Per-agent model
+
+Each agent stores its own model setting. Change it in the admin UI:
+
+1. Go to **Admin > Agents**.
+2. Click the agent.
+3. Under model settings, pick a model from the catalog or type a model identifier.
+4. Save.
+
+The model catalog is populated from the gateway settings. If you're using OpenRouter, any model available on OpenRouter works.
+
+### Gateway settings
+
+The gateway controls how Nitejar reaches model providers. Configure it at **Admin > Settings > Gateway**:
+
+- **API Key** -- Your OpenRouter or OpenAI key. Stored encrypted in the database.
+- **Base URL** -- Defaults to `https://openrouter.ai/api/v1`. Change this if you're running a local proxy, a custom OpenAI-compatible endpoint, or a different provider.
+
+Keys set through the admin UI take priority over environment variables. The resolution order is: gateway database settings, then `OPENROUTER_API_KEY` env var, then `OPENAI_API_KEY` env var.
+
+## Network and webhooks
+
+### `APP_BASE_URL`
+
+This is the URL external services use to reach Nitejar. It must be correct for webhooks to work.
+
+- **Local development:** `http://localhost:3000` (the default). Fine for the generic webhook plugin and direct `curl` testing.
+- **With ngrok:** Set `APP_BASE_URL` to your ngrok URL (e.g. `https://your-subdomain.ngrok-free.app`).
+- **Production:** The public URL of your deployment. `https://nitejar.yourdomain.com` or whatever your reverse proxy exposes.
+
+### Webhook URLs
+
+Plugin instances receive webhooks at:
+
+```
+{APP_BASE_URL}/api/webhooks/plugins/{plugin-type}/{instance-id}
+```
+
+For example, a Telegram plugin instance with ID `abc123`:
+
+```
+https://nitejar.yourdomain.com/api/webhooks/plugins/telegram/abc123
+```
+
+The admin UI shows the full webhook URL for each plugin instance. Copy it from there -- do not construct it by hand.
+
+### Local development with ngrok
+
+If you need external services to reach your local dev server:
+
+```bash
+ngrok http 3000 --domain=your-subdomain.ngrok-free.app
+```
+
+Set `APP_BASE_URL` in your `.env` to your ngrok URL:
+
+```bash
+APP_BASE_URL=https://your-subdomain.ngrok-free.app
+```
+
+Nitejar uses this to construct webhook URLs and register them with external services. Without it, Telegram and GitHub have no way to deliver events to your laptop.
+
+### Outbound network
+
+Nitejar makes outbound HTTP requests to:
+
+- **Model providers** -- OpenRouter (`openrouter.ai`) or OpenAI (`api.openai.com`), depending on your gateway config.
+- **Sprites** -- `sprites.dev` API, if you have a token configured.
+- **Channel APIs** -- Telegram Bot API (`api.telegram.org`), GitHub API (`api.github.com`), or whatever your plugins talk to.
+
+If you're running behind a corporate firewall, make sure these domains are reachable. Per-agent network policies can further restrict which domains an agent is allowed to contact during runs -- configure those in the agent settings.

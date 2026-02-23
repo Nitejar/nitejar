@@ -1,0 +1,79 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+.next/
+out/
+plugins/*/dist/
+
+# Turbo
+.turbo/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Local agent/MCP settings (machine-specific)
+.mcp.json
+.claude/settings.local.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage/
+artifacts/
+apps/artifacts/
+
+# SQLite database
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Misc
+*.tsbuildinfo
+tmp/
+.tmp/
+logs/
+
+# Logs
+logs
+*.log
+dev-debug.log
+# Dependency directories
+# Environment variables
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+# OS specific
+
+# Task files
+# tasks.json
+# tasks/ 
+.taskmaster/state.json
+.taskmaster/config.json
+
+
+.codex/config.toml
+.codex/environments/environment.toml

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://releases.nitejar.dev/manifest.schema.json",
+  "title": "Nitejar Release Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "releasedAt", "artifacts"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "releasedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "artifacts": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["url", "sha256", "size"],
+        "properties": {
+          "url": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    }
+  }
+}

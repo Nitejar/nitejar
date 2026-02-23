@@ -1,0 +1,31 @@
+{
+  "name": "@nitejar/docs",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 3001",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fumadocs-core": "^15.2.15",
+    "fumadocs-mdx": "^11.4.8",
+    "fumadocs-ui": "^15.6.5",
+    "next": "^15.5.11",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@nitejar/typescript-config": "workspace:*",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.0.4",
+    "@types/react-dom": "^19.0.2",
+    "postcss": "8.4.49",
+    "tailwindcss": "^4",
+    "typescript": "^5.7.3"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "name": "@nitejar/database",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./migrate": {
+      "types": "./src/migrate.ts",
+      "default": "./src/migrate.ts"
+    },
+    "./runtime-migrate": {
+      "types": "./src/runtime-migrate.ts",
+      "default": "./dist/src/runtime-migrate.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint src __tests__ --no-error-on-unmatched-pattern",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "db:migrate": "tsx src/migrate.ts",
+    "db:migrate:plugin-instances": "tsx scripts/manual/migrate-integrations-to-plugin-instances.ts",
+    "db:migrate:runtime": "node dist/src/runtime-migrate.js"
+  },
+  "dependencies": {
+    "@nitejar/core": "workspace:*",
+    "better-sqlite3": "^11.7.0",
+    "kysely": "^0.27.5",
+    "pg": "^8.13.1",
+    "tsx": "^4.19.2"
+  },
+  "devDependencies": {
+    "@nitejar/eslint-config": "workspace:*",
+    "@nitejar/typescript-config": "workspace:*",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.5",
+    "@types/pg": "^8.11.10",
+    "eslint": "^8.57.0",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

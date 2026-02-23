@@ -1,0 +1,86 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+
+@source '../node_modules/fumadocs-ui/dist/**/*.js';
+
+@theme inline {
+  --color-night-950: oklch(0.1 0.02 260);
+  --color-night-900: oklch(0.13 0.02 260);
+  --color-night-800: oklch(0.17 0.025 260);
+  --color-night-700: oklch(0.22 0.03 260);
+  --color-night-600: oklch(0.45 0.03 260);
+
+  --color-gold-500: oklch(0.75 0.15 75);
+  --color-gold-400: oklch(0.82 0.13 75);
+  --color-gold-300: oklch(0.88 0.1 80);
+
+  --color-moon-100: oklch(0.95 0.01 80);
+  --color-moon-200: oklch(0.8 0.02 80);
+
+  --font-display: var(--font-instrument-serif);
+  --font-body: var(--font-inter);
+  --font-mono: var(--font-geist-mono);
+}
+
+:root,
+.dark {
+  --color-fd-background: var(--color-night-950);
+  --color-fd-foreground: var(--color-moon-100);
+  --color-fd-muted: color-mix(in oklab, var(--color-night-900) 88%, black 12%);
+  --color-fd-muted-foreground: var(--color-moon-200);
+  --color-fd-popover: var(--color-night-900);
+  --color-fd-popover-foreground: var(--color-moon-100);
+  --color-fd-card: color-mix(in oklab, var(--color-night-900) 92%, black 8%);
+  --color-fd-card-foreground: var(--color-moon-100);
+  --color-fd-border: color-mix(in oklab, var(--color-night-700) 70%, transparent 30%);
+  --color-fd-primary: var(--color-gold-400);
+  --color-fd-primary-foreground: var(--color-night-950);
+  --color-fd-secondary: var(--color-night-800);
+  --color-fd-secondary-foreground: var(--color-moon-100);
+  --color-fd-accent: color-mix(in oklab, var(--color-night-700) 65%, var(--color-gold-500) 35%);
+  --color-fd-accent-foreground: var(--color-moon-100);
+  --color-fd-ring: var(--color-gold-400);
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    color: var(--color-fd-foreground);
+    background: var(--color-fd-background);
+    font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(1200px 500px at 10% -5%, oklch(0.75 0.15 75 / 0.14), transparent 65%),
+      radial-gradient(900px 420px at 90% -12%, oklch(0.75 0.15 75 / 0.08), transparent 60%);
+  }
+
+  article h1,
+  article h2,
+  article h3 {
+    font-family: var(--font-display), ui-serif, Georgia, serif;
+    letter-spacing: 0.01em;
+  }
+
+  code,
+  pre,
+  kbd,
+  samp {
+    font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  ::selection {
+    background: oklch(0.75 0.15 75 / 0.35);
+    color: oklch(0.95 0.01 80);
+  }
+}

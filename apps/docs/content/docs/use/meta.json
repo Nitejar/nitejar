@@ -1,0 +1,19 @@
+{
+  "title": "Use Nitejar",
+  "pages": [
+    "index",
+    "how-nitejar-works",
+    "agents-and-fleet",
+    "agent-collaboration",
+    "integrations",
+    "skills",
+    "tools",
+    "collections",
+    "memory",
+    "evals",
+    "routines",
+    "credentials",
+    "costs-and-budgets",
+    "receipts-and-debugging"
+  ]
+}

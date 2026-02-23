@@ -1,0 +1,37 @@
+{
+  "name": "nitejar",
+  "private": true,
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "test:coverage": "turbo test:coverage",
+    "test:integration": "turbo test:integration",
+    "test:e2e:skills:live": "pnpm --filter @nitejar/web exec tsx scripts/e2e/skills-app-session-live.ts",
+    "test:skills:deterministic": "pnpm --filter @nitejar/agent test -- src/skill-resolver.test.ts src/skill-sync.test.ts src/filesystem-tool.test.ts && pnpm --filter @nitejar/web test -- server/services/app-session-enqueue.test.ts server/routers/sessions.test.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "changeset": "changeset",
+    "changeset:status": "changeset status --verbose",
+    "changeset:version": "changeset version",
+    "db:generate": "pnpm --filter @nitejar/database db:generate",
+    "db:migrate": "pnpm --filter @nitejar/database db:migrate",
+    "db:studio": "pnpm --filter @nitejar/database db:studio",
+    "nitejar:local:up": "node scripts/release/local-up.mjs",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:init": "./scripts/db-init.sh",
+    "db:reset": "docker compose down -v && docker compose up -d postgres && sleep 2 && ./scripts/db-init.sh"
+  },
+  "devDependencies": {
+    "@changesets/changelog-github": "^0.5.2",
+    "@changesets/cli": "^2.29.8",
+    "@vitest/coverage-v8": "^2.1.9",
+    "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
+    "turbo": "^2.3.3"
+  }
+}

@@ -1,0 +1,207 @@
+name: Release Runtime Bundles
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Semver/tag to publish (defaults to ref name)
+        required: false
+        type: string
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-runtime:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            runner: ubuntu-latest
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+          - platform: darwin-x64
+            runner: macos-13
+          - platform: darwin-arm64
+            runner: macos-14
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build runtime bundle
+        env:
+          NITEJAR_VERSION: ${{ github.event.inputs.version || github.ref_name }}
+        run: |
+          mkdir -p dist/release
+          node scripts/release/build-runtime-bundle.mjs \
+            --platform "${{ matrix.platform }}" \
+            --version "${NITEJAR_VERSION}" \
+            --output "dist/release/nitejar-runtime-${{ matrix.platform }}.tar.gz"
+
+      - name: Smoke runtime bundle
+        env:
+          SMOKE_PORT: 33111
+        run: |
+          set -euo pipefail
+          SMOKE_DIR="$(mktemp -d)"
+          BUNDLE="dist/release/nitejar-runtime-${{ matrix.platform }}.tar.gz"
+
+          tar -xzf "${BUNDLE}" -C "${SMOKE_DIR}"
+
+          export DATABASE_URL="${SMOKE_DIR}/nitejar-smoke.db"
+          export MIGRATION_RECEIPT_PATH="${SMOKE_DIR}/migration-receipt.json"
+          export NITEJAR_AUTO_CUTOVER=0
+          node "${SMOKE_DIR}/packages/database/dist/src/runtime-migrate.js"
+
+          export PORT="${SMOKE_PORT}"
+          export HOSTNAME="127.0.0.1"
+          export NODE_ENV="production"
+          export ENCRYPTION_KEY="0000000000000000000000000000000000000000000000000000000000000000"
+          export BETTER_AUTH_SECRET="release-smoke-secret"
+          export APP_BASE_URL="http://127.0.0.1:${SMOKE_PORT}"
+
+          node "${SMOKE_DIR}/apps/web/server.js" > "${SMOKE_DIR}/server.log" 2>&1 &
+          SERVER_PID=$!
+
+          cleanup() {
+            if kill -0 "${SERVER_PID}" 2>/dev/null; then
+              kill "${SERVER_PID}" || true
+              wait "${SERVER_PID}" || true
+            fi
+          }
+          trap cleanup EXIT
+
+          READY=0
+          for i in $(seq 1 40); do
+            if curl -fsS "http://127.0.0.1:${SMOKE_PORT}/" > /dev/null; then
+              READY=1
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "${READY}" -ne 1 ]; then
+            echo "Runtime smoke health check failed for ${{ matrix.platform }}"
+            cat "${SMOKE_DIR}/server.log" || true
+            exit 1
+          fi
+
+      - name: Upload runtime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-${{ matrix.platform }}
+          path: dist/release/nitejar-runtime-${{ matrix.platform }}.tar.gz
+
+  manifest:
+    needs: build-runtime
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download runtime artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/release
+          pattern: runtime-*
+          merge-multiple: true
+
+      - name: Generate release manifest
+        env:
+          NITEJAR_VERSION: ${{ github.event.inputs.version || github.ref_name }}
+          NITEJAR_RELEASES_BASE_URL: https://releases.nitejar.dev
+        run: |
+          node scripts/release/generate-manifest.mjs \
+            --version "${NITEJAR_VERSION}" \
+            --artifacts-dir dist/release \
+            --output dist/release/manifest.json
+          cat dist/release/manifest.json
+
+      - name: Upload manifest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-manifest
+          path: dist/release/manifest.json
+
+  artifact-contract-check:
+    needs: manifest
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download runtime artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/release
+          pattern: runtime-*
+          merge-multiple: true
+
+      - name: Download manifest artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-manifest
+          path: dist/release
+
+      - name: Validate manifest schema and artifact contract
+        run: |
+          node scripts/release/validate-manifest.mjs \
+            --manifest dist/release/manifest.json \
+            --schema scripts/release/manifest.schema.json \
+            --artifacts-dir dist/release
+
+      - name: Upload bundles to GitHub Release (tag builds)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/release/nitejar-runtime-*.tar.gz
+            dist/release/manifest.json
+          generate_release_notes: true
+
+  publish-cli:
+    needs: artifact-contract-check
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build CLI package
+        run: pnpm --filter @nitejar/cli build
+
+      - name: Publish @nitejar/cli
+        working-directory: packages/nitejar-cli
+        run: npm publish --access public --provenance

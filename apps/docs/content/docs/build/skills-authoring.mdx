@@ -1,0 +1,211 @@
+---
+title: Skills Authoring Guide
+description: Write knowledge packs that teach your agents how to do things.
+---
+
+A skill is a directory containing a `SKILL.md` file and optional supporting files (scripts, templates, reference docs). Skills are synced to an agent's sandbox filesystem and read by the agent during runs. They teach agents _how_ to do things without adding new platform-level functionality.
+
+## Skills vs plugins vs memories
+
+| Primitive  | What it adds                                 | Who runs it                | Scope                          |
+| ---------- | -------------------------------------------- | -------------------------- | ------------------------------ |
+| **Plugin** | Functionality: tools, webhooks, integrations | Host process               | Global runtime                 |
+| **Skill**  | Intelligence: knowledge, workflows, scripts  | Agent (reads from sandbox) | Per-agent, per-team, or global |
+| **Memory** | Experience: learned facts, session context   | Agent (creates/updates)    | Per-agent only                 |
+
+Skills can contain scripts, but those scripts are content the agent interprets and runs through its own tools (bash, read_file). The trust boundary is the agent's sandbox permissions, not the skill content. Skills cannot register webhook handlers, inject code into the host process, define new tools, access secrets directly, or run at boot time. If you need any of those, build a [plugin](/build/plugins) instead.
+
+## Skill sources
+
+Skills come from three places, unified into a single index:
+
+1. **Repo skills** -- `SKILL.md` files discovered from `.agents/skills/*/SKILL.md` and `skills/*/SKILL.md` in project repositories. The agent reads these from the project tree at runtime. They are not stored in the database.
+2. **Admin skills** -- Created through the admin UI. Content is stored in the database and synced to agent sandboxes at `/home/sprite/.skills/<slug>/`.
+3. **Plugin skills** -- Contributed by installed plugins via the `SkillContribution` interface. Stored in the database like admin skills and synced to sandboxes.
+
+When slugs collide across sources, admin skills take priority over plugin skills, and plugin skills take priority over repo skills.
+
+## SKILL.md format
+
+The entrypoint is always `SKILL.md`. It uses standard markdown with optional YAML frontmatter.
+
+### Simple skill
+
+```markdown
+---
+name: code-review
+description: Structured code review checklist
+category: coding
+tags:
+  - review
+  - quality
+---
+
+# Code Review
+
+When asked to review code, follow this checklist:
+
+1. **Correctness** -- Does the code do what it claims?
+2. **Edge cases** -- What happens with empty input, nulls, large data?
+3. **Naming** -- Are variables, functions, and files named clearly?
+4. **Tests** -- Are there tests? Do they cover the important paths?
+5. **Security** -- Any hardcoded secrets, SQL injection, or XSS vectors?
+
+## Output format
+
+Structure your review as:
+
+- **Summary**: One sentence on overall quality.
+- **Issues**: Numbered list, each with file path, line range, and severity (critical/warning/nit).
+- **Suggestions**: Optional improvements that are not blocking.
+```
+
+### Frontmatter fields
+
+| Field            | Type       | Description                                                                                           |
+| ---------------- | ---------- | ----------------------------------------------------------------------------------------------------- |
+| `name`           | `string`   | Skill name. Used as display name if the admin does not override it.                                   |
+| `description`    | `string`   | Brief description for catalog display and system prompt summaries.                                    |
+| `category`       | `string`   | One of: `general`, `coding`, `ops`, `writing`, `research`, `design`, `testing`, `security`, `custom`. |
+| `tags`           | `string[]` | Tags for filtering. Lowercase, alphanumeric with hyphens.                                             |
+| `version`        | `string`   | Semver version string.                                                                                |
+| `requires-tools` | `string[]` | Tools the skill expects the agent to have (advisory, not enforced).                                   |
+
+## Supporting files
+
+Skills can include additional files alongside `SKILL.md`. These live in the same directory and are synced to the agent's sandbox together.
+
+```
+my-skill/
+  SKILL.md                    # Entrypoint (required)
+  references/
+    database-schema.md        # Reference documentation
+    api-spec.md
+  scripts/
+    generate-report.sh        # Scripts the agent can run
+  templates/
+    checklist.md              # Templates for output
+```
+
+Reference your supporting files from `SKILL.md`:
+
+```markdown
+## References
+
+See `references/database-schema.md` for the full schema.
+Run `scripts/generate-report.sh` to produce the summary.
+Use `templates/checklist.md` as the output format.
+```
+
+The agent uses `read_file` to load supporting files from its sandbox when it needs them. The system prompt lists available skills with sandbox paths but does not inject full content -- the agent reads on demand.
+
+## Creating a skill in the admin UI
+
+1. Go to **Skills** in the admin sidebar.
+2. Click **New Skill**.
+3. Fill in name and slug (the slug is auto-generated from the name, but you can edit it).
+4. Choose a category and add tags.
+5. Select **Simple** for a single `SKILL.md` or **Directory** for a skill with supporting files.
+6. Write or paste your `SKILL.md` content in the editor.
+7. For directory skills, use **Add File** to create supporting files with relative paths.
+8. Click **Create**.
+
+After creation, assign the skill to agents, teams, or globally from the skill detail page or from the agent config page.
+
+## Assigning skills to agents
+
+Skills are assigned through the admin UI. Assignments control which skills are synced to which agent sandboxes.
+
+- **Agent scope** -- Skill is synced to one specific agent's sandbox.
+- **Team scope** -- Skill is synced to all agents in a team.
+- **Global scope** -- Skill is synced to all agents.
+
+Assignments have a **priority** (higher = listed first in the system prompt) and an **auto-inject** toggle. When auto-inject is on, a brief skill description is included directly in the system prompt. When off, the skill is listed by name and the agent reads it on demand via `use_skill`.
+
+## How agents discover skills
+
+At run time, the agent's system prompt includes a directory listing of available skills:
+
+```
+## Available Skills
+
+Sandbox skills (in /home/sprite/.skills/):
+- **code-review** -- Structured code review checklist.
+  Read: /home/sprite/.skills/code-review/SKILL.md [admin]
+- **jira-triage** -- Triage Jira tickets by priority.
+  Read: /home/sprite/.skills/jira-triage/SKILL.md [plugin: acme-toolkit]
+
+Project skills (discovered from repo):
+- **deploy** -- Deploy to production.
+  Read: /home/sprite/project/.agents/skills/deploy/SKILL.md [repo]
+```
+
+The agent uses the `use_skill` tool to look up a skill by name and get its sandbox path and file listing. Then it uses `read_file` to load the content it needs.
+
+## Skill sync
+
+Skills are synced to agent sandboxes at **save-time**, not at run-time. When you change an assignment or edit skill content in the admin, the platform:
+
+1. Stores the content in the database (the authoritative source).
+2. Materializes files to the host filesystem cache at `/app/data/skills/<skill-id>/`.
+3. Syncs to agent sandboxes at `/home/sprite/.skills/<slug>/`.
+
+When the agent runs, skill files are already present. No download delay, no resolution step.
+
+## Importing and exporting
+
+Skills can be exported as JSON and imported on another instance:
+
+```json
+{
+  "formatVersion": 2,
+  "skill": {
+    "name": "Code Review",
+    "slug": "code-review",
+    "description": "Structured code review checklist",
+    "category": "coding",
+    "tags": ["review", "quality"],
+    "content": "---\nname: code-review\n...",
+    "files": [
+      {
+        "path": "references/severity-guide.md",
+        "content": "# Severity Guide\n...",
+        "contentType": "text/markdown"
+      }
+    ]
+  }
+}
+```
+
+Use the **Export** button on a skill's detail page to get this JSON. Use **Import Skill** on the skills catalog page to bring in a skill from another instance.
+
+## Contributing skills via plugins
+
+Plugins can contribute skills through the `SkillContribution` interface in `definePlugin()`:
+
+```ts
+export default definePlugin({
+  handler,
+  skills: [
+    {
+      id: 'jira-triage',
+      name: 'Jira Triage',
+      description: 'Triage incoming Jira tickets',
+      source: { kind: 'inline', content: '# Jira Triage\n\n...' },
+      tags: ['jira', 'ops'],
+      category: 'ops',
+      defaultEnabled: true,
+    },
+  ],
+})
+```
+
+Plugin-contributed skills are stored in the database when the plugin is enabled and synced to sandboxes like any admin-created skill. They appear as read-only in the admin UI.
+
+## Limits
+
+- Per-file size limit: 100KB.
+- Per-skill total size: 1MB.
+- Maximum skills in system prompt summary: 50 (additional skills are accessible via `use_skill`).
+- Auto-inject description budget: 5,000 characters total across all auto-injected skills.
+- Supporting files are text-only (no binary files in v1). Reference binary assets by URL instead.

@@ -1,0 +1,104 @@
+---
+title: How Nitejar Works
+description: The 7-step journey from inbound webhook to delivered response.
+---
+
+Every message Nitejar handles follows the same path: in through a webhook, through the queue and agent runtime, out through the effect outbox, and back to the channel that sent it. Every step produces a receipt you can inspect later.
+
+```
+Channel → Plugin Handler → Work Item → Queue → Agent Runtime → Effect Outbox → Channel
+                                                     ↕
+                                                Tools & Memory
+```
+
+## The 7 steps
+
+### 1. Inbound webhook
+
+An external channel (Telegram, GitHub, a custom webhook) sends an HTTP POST to `/api/webhooks/plugins/[type]/[instanceId]`. The URL identifies which plugin type and which specific plugin instance should handle the request.
+
+**Where to verify:** Admin > Plugins. Each plugin instance shows its webhook URL and recent webhook activity.
+
+### 2. Plugin handler parses the webhook
+
+The plugin handler for that type receives the raw request and decides what to do with it. It validates the payload (signature checks, event type filtering), extracts the message content, and builds a work item from it. If the webhook is a duplicate, the handler returns the idempotency key and the request is dropped silently.
+
+**Where to verify:** If `shouldProcess` is false, no work item appears. Check the plugin instance detail page for skipped webhooks.
+
+### 3. Work item created
+
+The parsed message becomes a work item in the database with status `pending`. The work item records the session key, source, payload, and a reference back to the original message. This is the durable record that the message existed.
+
+**Where to verify:** Admin > Activity. The work item appears immediately with status `pending` and a timestamp.
+
+### 4. Queue dispatch
+
+The queue claims the work item and decides when to start a run. It does not fire immediately -- it waits through a debounce window (2000ms by default) to collect any additional messages that arrive in quick succession. Once the window expires, the queue coalesces the buffered messages and dispatches them as a single run.
+
+**Where to verify:** Admin > Activity > click a work item. The timeline shows the gap between "work item created" and "run dispatched" -- that gap is the debounce window.
+
+### 5. Agent runtime
+
+The runtime builds the agent's system prompt from its configuration, personality, memories, skills, and available tools. It enters the inference loop: call the model, check for tool calls, execute them, feed results back, repeat until the model produces a final response. Each iteration is logged.
+
+**Where to verify:** Admin > Activity > click a work item > Run timeline. Every inference call shows the model used, token counts, latency, and cost. Every tool execution shows the tool name, arguments, and result.
+
+### 6. Effect outbox delivers the response
+
+The agent's response does not go directly to the channel. It lands in the effect outbox first -- a durable ledger that tracks delivery state. The outbox picks up the response and calls the plugin handler's `postResponse()` method to send it back to the source channel. If delivery fails, the outbox records the failure and can retry.
+
+**Where to verify:** Admin > Activity > click a work item. The response delivery entry shows the outcome (`sent`, `failed`, `unknown`), the external message ID if the channel returned one, and the delivery timestamp.
+
+### 7. Receipts recorded
+
+At every step above, a receipt is written. Work item creation, run dispatch, each inference call, each tool execution, response delivery, and cost. The receipt trail is the source of truth. If the agent did something unexpected, the trail shows exactly what happened, when, and how much it cost.
+
+<Callout type="info" title="Where to verify">
+Open Admin > Activity and click any work item. The full timeline is there: webhook received, work item created, run dispatched, inference calls, tool executions, response delivered. Each entry has timestamps, and cost rolls up to the work item and agent level. You can also check Admin > Costs for aggregate spend across agents and models.
+</Callout>
+
+## Session keys
+
+Session keys group messages into conversations. Every work item has one. The format depends on the channel:
+
+| Channel           | Session key format                      | Example                      |
+| ----------------- | --------------------------------------- | ---------------------------- |
+| Telegram          | `telegram:<chat_id>`                    | `telegram:777`               |
+| Telegram (thread) | `telegram:<chat_id>:thread:<thread_id>` | `telegram:999:thread:444`    |
+| GitHub            | `github:<owner>/<repo>#issue:<num>`     | `github:owner/repo#issue:42` |
+| Webhook           | `webhook:<sender_id>`                   | `webhook:user-1`             |
+
+Messages with the same session key share conversation history. The agent sees prior messages in that session when building its context. Threaded Telegram chats get their own session key so the agent can track multiple conversations in the same group independently.
+
+## Queue modes
+
+When a message arrives while the agent is already running for that session, the queue mode decides what happens:
+
+| Mode         | Behavior                                                                                                                     |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| **steer**    | Inject the new message into the running agent's context so it can adjust course mid-run. This is the default.                |
+| **collect**  | Buffer the message. When the current run finishes, start a follow-up run with all buffered messages coalesced into one turn. |
+| **followup** | Queue the message for a separate follow-up run after the current one completes, one at a time.                               |
+
+Steer is the default because it matches how humans communicate: you send a correction or clarification and expect the person (or agent) to incorporate it immediately, not finish their current thought and then read your update.
+
+## Debounce
+
+When a message arrives and no run is active, the queue does not start immediately. It waits 2000ms (configurable per plugin instance) for more messages. If another message arrives during that window, the timer resets. When the window finally expires, all collected messages are coalesced into a single user turn and dispatched as one run.
+
+This prevents the "three quick messages spawn three separate runs" problem. A user typing "hey" then "can you check the PR" then "the one from yesterday" becomes one run, not three.
+
+## Response modes
+
+How the agent's response reaches the channel depends on the plugin's response mode:
+
+- **streaming** -- The agent's intermediate messages are posted as they arrive, like a person typing in a chat. This is the default, used by Telegram and other real-time chat channels.
+- **final** -- The agent works silently and posts a single response when the run completes. Used by GitHub (where you want one clean comment, not a stream of partial updates).
+
+The response mode is set on the plugin handler, not per-message. Telegram uses `streaming`. GitHub uses `final`.
+
+## Idempotency
+
+Webhooks can be delivered more than once (network retries, platform replays). Nitejar deduplicates them using idempotency keys. Each plugin handler generates a key from the webhook payload (typically the platform's message ID). If a webhook arrives with a key that has already been processed, it is dropped and the existing work item ID is returned.
+
+This means you can safely replay a webhook without creating duplicate work items or triggering duplicate agent runs.

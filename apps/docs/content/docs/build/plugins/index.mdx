@@ -1,0 +1,141 @@
+---
+title: Plugin SDK
+description: Build plugins that connect Nitejar to anything that speaks HTTP.
+---
+
+Plugins are how Nitejar talks to external services. A plugin receives webhooks, turns them into work items, and posts agent responses back to the source.
+
+## What plugins do
+
+A plugin contributes one or more of:
+
+- **Integration handlers** — Parse inbound webhooks and deliver outbound responses for a channel type (Telegram, GitHub, Slack, email, anything with an HTTP endpoint).
+- **Hook handlers** — Run code at lifecycle points during agent runs (before/after inference calls, tool executions, response delivery).
+- **Skills** — Knowledge packs synced to agent sandboxes (see the [Skills guide](/build/skills-authoring)).
+
+The built-in Telegram and GitHub integrations are themselves plugins. Third-party plugins use the same interfaces.
+
+## Quick start
+
+Scaffold a new plugin:
+
+```bash
+npx create-nitejar-plugin my-plugin
+cd my-plugin && npm install && npm run build
+```
+
+This gives you a working plugin with types, tests, and build config. Install it through the admin UI: **Plugins > Install Custom Plugin** and point to your local directory.
+
+## The `definePlugin()` API
+
+Every plugin's entry point must export a default call to `definePlugin()`:
+
+```ts
+import { definePlugin } from '@nitejar/plugin-sdk'
+import type { PluginHandler } from '@nitejar/plugin-sdk'
+
+interface MyConfig {
+  apiKey: string
+  channel?: string
+}
+
+const handler: PluginHandler<MyConfig> = {
+  type: 'my-plugin',
+  displayName: 'My Plugin',
+  description: 'Does the thing.',
+  icon: 'brand-slack',
+  category: 'messaging',
+  sensitiveFields: ['apiKey'],
+
+  validateConfig(config) {
+    const c = config as MyConfig
+    if (!c.apiKey) return { valid: false, errors: ['apiKey is required'] }
+    return { valid: true }
+  },
+
+  async parseWebhook(request, pluginInstance) {
+    const body = await request.json()
+    const config = pluginInstance.config ? (JSON.parse(pluginInstance.config) as MyConfig) : {}
+
+    return {
+      shouldProcess: true,
+      workItem: {
+        session_key: `my-plugin:${body.user_id}`,
+        source: 'my-plugin',
+        source_ref: `msg-${body.id}`,
+        title: body.text.slice(0, 120),
+        payload: JSON.stringify(body),
+      },
+      idempotencyKey: `my-plugin-${body.id}`,
+      responseContext: { channelId: body.channel },
+    }
+  },
+
+  async postResponse(pluginInstance, workItemId, content, responseContext) {
+    const config = JSON.parse(pluginInstance.config!) as MyConfig
+    const ctx = responseContext as { channelId: string }
+    await sendToApi(config.apiKey, ctx.channelId, content)
+    return { success: true, outcome: 'sent' }
+  },
+}
+
+export default definePlugin({ handler })
+```
+
+`definePlugin()` validates that your handler has all required fields and methods at import time. If something is missing, it throws immediately with a clear error.
+
+## Adding agent-side tools
+
+If your plugin needs custom tools available to the agent during runs, pass a `provider` alongside the handler:
+
+```ts
+export default definePlugin({
+  handler,
+  provider: {
+    integrationType: 'my-plugin', // Must match handler.type
+    toolDefinitions: [
+      {
+        name: 'my_plugin_search',
+        description: 'Search the external service',
+        parameters: { query: { type: 'string', description: 'Search query' } },
+      },
+    ],
+    toolHandlers: {
+      my_plugin_search: async (args) => {
+        // Tool implementation
+        return { result: 'found it' }
+      },
+    },
+  },
+})
+```
+
+The `provider.integrationType` must match `handler.type`. The runtime enforces this at load time.
+
+## Plugin lifecycle
+
+1. **Install** — Plugin is unpacked, manifest is validated, version is registered. Plugin is disabled by default.
+2. **Enable** — Operator reviews declared permissions and accepts consent. Plugin handler is registered in the runtime.
+3. **Disable** — Handler is unregistered. Existing work items are not affected.
+4. **Upgrade** — New version installed alongside old. Pointer flipped atomically. Previous version kept for rollback.
+5. **Uninstall** — Plugin disabled, files optionally purged.
+
+## Trust model
+
+Plugins run **in-process** in the current release. There is no hard sandbox isolation for plugin code. The permission system (`network`, `secrets`, `filesystemRead`, `filesystemWrite`, `allowProcessSpawn`) exists for governance and operator consent — enforcement is limited to host-managed API boundaries.
+
+Three trust modes control what plugins can be installed:
+
+| Mode                | Unsigned plugins     | Arbitrary code   | Enforcement                           |
+| ------------------- | -------------------- | ---------------- | ------------------------------------- |
+| `self_host_open`    | Allowed              | Allowed          | Disclosure + operator acknowledgement |
+| `self_host_guarded` | Requires allowlist   | Requires grants  | Host-boundary enforced                |
+| `saas_locked`       | Platform-signed only | Uploads disabled | Platform-approved only                |
+
+Set the mode via `NITEJAR_PLUGIN_TRUST_MODE` environment variable.
+
+## Next pages
+
+- **[Handler Reference](/build/plugins/handler-reference)** — Every field and method on `PluginHandler`.
+- **[Manifest Format](/build/plugins/manifest)** — The `nitejar-plugin.json` schema.
+- **[Testing](/build/plugins/testing)** — SDK test utilities for contract testing.

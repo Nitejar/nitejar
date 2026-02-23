@@ -1,0 +1,102 @@
+{
+  "name": "@nitejar/agent",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./config": {
+      "types": "./src/config.ts",
+      "default": "./src/config.ts"
+    },
+    "./network-policy": {
+      "types": "./src/network-policy.ts",
+      "default": "./src/network-policy.ts"
+    },
+    "./runner": {
+      "types": "./src/runner.ts",
+      "default": "./src/runner.ts"
+    },
+    "./steer-arbiter": {
+      "types": "./src/steer-arbiter.ts",
+      "default": "./src/steer-arbiter.ts"
+    },
+    "./streaming": {
+      "types": "./src/streaming.ts",
+      "default": "./src/streaming.ts"
+    },
+    "./memory": {
+      "types": "./src/memory.ts",
+      "default": "./src/memory.ts"
+    },
+    "./prompt-builder": {
+      "types": "./src/prompt-builder.ts",
+      "default": "./src/prompt-builder.ts"
+    },
+    "./prompt-sanitize": {
+      "types": "./src/prompt-sanitize.ts",
+      "default": "./src/prompt-sanitize.ts"
+    },
+    "./mention-parser": {
+      "types": "./src/mention-parser.ts",
+      "default": "./src/mention-parser.ts"
+    },
+    "./tracing": {
+      "types": "./src/tracing.ts",
+      "default": "./src/tracing.ts"
+    },
+    "./sandboxes": {
+      "types": "./src/sandboxes.ts",
+      "default": "./src/sandboxes.ts"
+    },
+    "./skill-sync": {
+      "types": "./src/skill-sync.ts",
+      "default": "./src/skill-sync.ts"
+    },
+    "./skill-materialize": {
+      "types": "./src/skill-materialize.ts",
+      "default": "./src/skill-materialize.ts"
+    },
+    "./session": {
+      "types": "./src/session.ts",
+      "default": "./src/session.ts"
+    },
+    "./types": {
+      "types": "./src/types.ts",
+      "default": "./src/types.ts"
+    },
+    "./integrations/registry": {
+      "types": "./src/integrations/registry.ts",
+      "default": "./src/integrations/registry.ts"
+    }
+  },
+  "scripts": {
+    "lint": "eslint src __tests__ --no-error-on-unmatched-pattern",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@nitejar/database": "workspace:*",
+    "@nitejar/plugin-handlers": "workspace:*",
+    "@nitejar/sprites": "workspace:*",
+    "@tavily/core": "^0.7.1",
+    "cron-parser": "^4.9.0",
+    "diff": "^8.0.3",
+    "openai": "^6.17.0"
+  },
+  "devDependencies": {
+    "@nitejar/eslint-config": "workspace:*",
+    "@nitejar/typescript-config": "workspace:*",
+    "@types/diff": "^8.0.0",
+    "@types/node": "^22.10.5",
+    "eslint": "^8.57.0",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

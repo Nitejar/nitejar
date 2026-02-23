@@ -1,0 +1,213 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CI: 'true'
+  NEXT_TELEMETRY_DISABLED: '1'
+  TURBO_TELEMETRY_DISABLED: '1'
+
+jobs:
+  quality:
+    name: quality (${{ matrix.task.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        task:
+          - name: lint
+            command: pnpm lint
+          - name: typecheck
+            command: pnpm run typecheck
+          - name: test-coverage
+            command: pnpm test:coverage
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run ${{ matrix.task.name }}
+        run: ${{ matrix.task.command }}
+
+  build-packages:
+    name: build package (${{ matrix.package }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - '@nitejar/cli'
+          - '@nitejar/plugin-sdk'
+          - 'create-nitejar-plugin'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build ${{ matrix.package }}
+        run: pnpm --filter ${{ matrix.package }} build
+
+  build-apps:
+    name: build app (${{ matrix.app.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app:
+          - name: web
+            package: '@nitejar/web'
+            nextCachePath: 'apps/web/.next/cache'
+          - name: docs
+            package: '@nitejar/docs'
+            nextCachePath: 'apps/docs/.next/cache'
+          - name: marketing
+            package: '@nitejar/marketing'
+            nextCachePath: 'apps/marketing/.next/cache'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: 'pnpm'
+
+      - name: Restore Next.js build cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ matrix.app.nextCachePath }}
+          key: ${{ runner.os }}-${{ matrix.app.name }}-next-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.app.name }}-next-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare DB for web build
+        if: matrix.app.name == 'web'
+        env:
+          DATABASE_URL: /tmp/nitejar-ci.db
+        run: pnpm --filter @nitejar/database db:migrate
+
+      - name: Build web
+        if: matrix.app.name == 'web'
+        env:
+          DATABASE_URL: /tmp/nitejar-ci.db
+          ENCRYPTION_KEY: 0000000000000000000000000000000000000000000000000000000000000000
+          # Intentionally unset in CI to catch module-scope auth initialization at build time.
+          # Runtime deployments must provide BETTER_AUTH_SECRET.
+        run: pnpm --filter @nitejar/web build
+
+      - name: Build ${{ matrix.app.package }}
+        if: matrix.app.name != 'web'
+        run: pnpm --filter ${{ matrix.app.package }} build
+
+  integration-tests:
+    name: integration-tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: nitejar_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d nitejar_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/nitejar_test
+      ENCRYPTION_KEY: 0000000000000000000000000000000000000000000000000000000000000000
+      NODE_ENV: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Integration tests
+        run: pnpm test:integration
+
+  installer-smoke-linux:
+    name: installer-smoke-linux
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build database dist
+        run: pnpm --filter @nitejar/database build
+
+      - name: Build CLI dist
+        run: pnpm --filter @nitejar/cli build
+
+      - name: Run installer smoke
+        run: node packages/nitejar-cli/tests/smoke-linux.mjs

@@ -1,0 +1,92 @@
+---
+title: Agents and Fleet
+description: Soul prompts, models, memory, sessions, tools, and network policy.
+---
+
+An agent is a configured AI entity: a model paired with a personality, a set of tools, and permissions. Each agent runs independently inside its own sandbox. You create agents in the admin UI, give them a soul prompt that shapes their behavior, assign tools and skills, and point them at channels. From there, they handle work autonomously.
+
+## Soul prompts
+
+The soul is a markdown description injected into the agent's system prompt at run time. This is where you define who the agent is -- its tone, priorities, boundaries, and domain knowledge. Everything the agent says and does is filtered through this prompt.
+
+Write the soul in plain markdown. Be specific. "You are a helpful assistant" produces a generic agent. "You are a senior SRE who triages alerts, writes postmortems in plain English, and never suggests restarting as a first step" produces a useful one.
+
+The soul is editable from the agent detail page in the admin UI. Changes take effect on the next run -- no restart required.
+
+## Models
+
+Each agent uses a single model for inference. The default is `arcee-ai/trinity-large-preview:free` via OpenRouter. It works out of the box with no API key costs.
+
+- Configurable per-agent in the admin UI.
+- Any OpenRouter-compatible model works. Set the model identifier and the agent uses it on the next run.
+- Paid models (GPT-4o, Claude, etc.) work but can cause rate limit errors and unexpected costs during development. Stick with the free default unless you have a reason to switch.
+
+## Memory
+
+Agents remember things across sessions. During a run, an agent can create, update, or remove memories. These are stored per-agent in the database.
+
+Three memory operations are available to the agent:
+
+- **add** -- Store a new fact or observation.
+- **update** -- Revise an existing memory with new information.
+- **remove** -- Delete a memory that is no longer relevant.
+
+Memories have a decay mechanism. Pinned memories persist indefinitely. Unpinned memories lose relevance over time and eventually drop out of the agent's active context. The agent decides when to create memories -- you do not need to manage them manually.
+
+## Sessions
+
+A session ties a sequence of messages into a single conversation thread. The session key is derived from the source channel and context -- for example, `telegram:12345` for a Telegram chat.
+
+Same session key means same conversation. The agent sees the full thread history and can reference earlier messages. Sessions enable multi-turn conversations that span many individual messages and runs.
+
+## Tools
+
+Agents have access to 46+ built-in tools across these categories:
+
+- **Execution** -- Run shell commands, scripts, and code in the sandbox.
+- **Filesystem** -- Read, write, list, and search files.
+- **Memory** -- Add, update, and remove memories.
+- **Collections** -- Store and retrieve structured data.
+- **Web** -- HTTP requests, web scraping, search.
+- **Scheduling** -- Create and manage scheduled tasks.
+- **Sandboxes** -- Manage the agent's execution environment.
+- **Activity** -- Query work item history and run logs.
+- **Credentials** -- Access stored secrets needed for external services.
+
+Tools run inside the agent's sandbox. Plugins can contribute additional tools that extend the built-in set.
+
+See the [Tools Reference](/use/tools) for the full list with parameters and examples.
+
+## Queue modes
+
+Queue modes control how an agent handles messages that arrive while it is already running.
+
+- **steer** (default) -- New messages are injected into the running agent's context. The agent can change course mid-execution based on the new input. Best for interactive conversations where responsiveness matters.
+- **collect** -- Messages accumulate in a buffer. When the current run finishes, the agent processes the batch together. Good for high-volume channels where you want consolidated responses.
+- **followup** -- Messages are queued strictly. The agent processes one message at a time, in order. Use this when ordering matters or when each message needs a dedicated run.
+
+## Multi-agent collaboration
+
+Multiple agents can share the same channel. They triage messages independently, claim exclusive turns, and silently pass when a message isn't relevant — no routing rules required. See [Agent Collaboration](/use/agent-collaboration) for the full guide on how agents work together.
+
+## Network policy
+
+By default, agents have open network access within their sandbox. You can restrict this per-agent by configuring a network policy that specifies which domains and IPs the agent is allowed to reach.
+
+Use network restrictions when an agent should only talk to specific services -- for example, limiting a customer support agent to your internal API and nothing else.
+
+## Skills
+
+Skills are knowledge packs deployed to the agent's sandbox filesystem. They contain markdown instructions, reference docs, scripts, and templates that teach the agent how to perform specific tasks. The agent reads them on demand during runs.
+
+Skills are assigned per-agent, per-team, or globally. See [Skills](/use/skills) for the authoring guide and assignment details.
+
+## Budget limits
+
+Every agent can have a cost budget configured in the admin UI. Costs are tracked per-model and per-agent, so you can see exactly where inference spend is going. When an agent hits its budget limit, runs are paused until the limit is raised or reset.
+
+See [Costs & Budgets](/use/costs-and-budgets) for configuration details and cost tracking.
+
+<Callout type="info" title="Where to verify">
+Open **Admin > Agents** to see all configured agents. Click into any agent to inspect its soul prompt, model, memory, tools, skills, queue mode, network policy, and budget. The agent detail page is the single source of truth for an agent's full configuration.
+</Callout>

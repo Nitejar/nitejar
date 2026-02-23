@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "nitejar.webhook",
+  "name": "Generic Webhook",
+  "version": "0.0.1",
+  "description": "Accept any JSON POST, create a work item. No external dependencies — testable with curl.",
+  "entry": "dist/index.js",
+  "permissions": []
+}

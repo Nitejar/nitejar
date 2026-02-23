@@ -1,0 +1,206 @@
+---
+title: Quickstart
+description: Start Nitejar in one command, then inspect receipts and logs.
+---
+
+Nitejar is a self-hosted AI agent runtime. It receives messages from channels (Telegram, GitHub, generic webhooks), routes them to configured agents, runs inference with tool access inside sandboxed environments, and delivers responses back to the source. Every action — inference calls, tool executions, response deliveries — is logged as an inspectable receipt.
+
+## One command
+
+```bash
+npx @nitejar/cli up
+```
+
+Use this command when `@nitejar/cli` is published to npm.
+
+This does three things:
+
+1. Downloads the latest runtime bundle for your platform.
+2. Runs database migrations (and legacy plugin-instance cutover when needed).
+3. Starts the Nitejar daemon.
+
+By default, local state is stored at `~/.nitejar`:
+
+- `~/.nitejar/data/nitejar.db` — SQLite database
+- `~/.nitejar/config/env` — persisted runtime config
+- `~/.nitejar/logs/server.log` — server logs
+- `~/.nitejar/receipts/migrations/*.json` — migration receipts
+
+Open [localhost:3000](http://localhost:3000). You're running.
+
+If port `3000` is already in use, run:
+
+```bash
+npx @nitejar/cli up --port auto
+```
+
+The CLI prints the selected URL and log file path.
+
+## Verify and operate
+
+```bash
+npx @nitejar/cli status
+npx @nitejar/cli logs --follow
+npx @nitejar/cli down
+```
+
+The first command shows runtime status, active version, database path, and last migration receipt.
+
+## Testing locally before npm publish
+
+If you're testing the CLI from this repo before publish, do not use `npx @nitejar/cli up`.
+
+### Local source run (fastest)
+
+```bash
+pnpm nitejar:local:up -- --data-dir /tmp/nitejar-local --port auto
+```
+
+This command starts a temporary local release server, runs `up`, then shuts the temporary server down.
+By default it uses a fixture runtime for installer smoke testing.
+
+To test with the real built web runtime:
+
+```bash
+pnpm nitejar:local:up -- --full-runtime --data-dir /tmp/nitejar-local --port auto
+```
+
+### Package-level test (`pack`)
+
+```bash
+pnpm --filter @nitejar/cli build
+pnpm --filter @nitejar/cli pack
+npx --yes --package ./packages/nitejar-cli/nitejar-cli-0.1.0.tgz nitejar up --data-dir /tmp/nitejar-pack --port 3002
+```
+
+This validates the same packaged artifact shape users get from npm.
+
+## Prerequisites
+
+- **Node.js** 20 or later
+- A model API key (the default free model `arcee-ai/trinity-large-preview:free` works out of the box via OpenRouter)
+
+Optional:
+
+- A [Sprites](https://sprites.dev) token for sandboxed agent execution
+- A Telegram bot token from [@BotFather](https://t.me/botfather) for Telegram integration
+- A GitHub App for GitHub integration
+- Docker for running Postgres (SQLite is the default and works without Docker)
+
+## From source (advanced)
+
+If you're contributing to Nitejar or want direct source control, use the workspace flow:
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/nitejar/nitejar.git
+cd nitejar
+pnpm install
+```
+
+### 2. Configure environment
+
+Copy the example environment file and fill in the values you need:
+
+```bash
+cp .env.example apps/web/.env
+```
+
+Open `apps/web/.env` and set at minimum:
+
+```bash
+# Generate an encryption key for storing secrets
+ENCRYPTION_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
+```
+
+### 3. Run migrations and start
+
+```bash
+pnpm --filter @nitejar/database db:migrate
+pnpm dev
+```
+
+For the full list of environment variables, see [Configuration](/start-here/configuration).
+
+## Docker
+
+```bash
+docker run -d \
+  --name nitejar \
+  -p 3000:3000 \
+  -v nitejar-data:/app/data \
+  -e ENCRYPTION_KEY="$(openssl rand -hex 32)" \
+  ghcr.io/nitejar/nitejar:latest
+```
+
+### Create your first agent
+
+## In app
+
+### Create your first agent
+
+1. Open the dashboard at `/`.
+2. Go to **Agents** and click **New Agent**.
+3. Give it a name and a short soul description (this shapes the agent's personality).
+4. Save the agent.
+
+### Connect a channel
+
+The simplest way to test is with the built-in **Generic Webhook** plugin:
+
+1. Go to **Plugins** in the admin sidebar.
+2. Find the **Generic Webhook** plugin and create a new instance.
+3. Assign your agent to the instance.
+4. Send a test webhook:
+
+```bash
+curl -X POST http://localhost:3000/api/webhooks/plugins/webhook/YOUR_INSTANCE_ID \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Hello, what can you do?", "sender_id": "test-user"}'
+```
+
+5. Check the **Work Items** page in the admin to see the agent process your message and produce a response.
+
+### Follow the receipts
+
+Every work item has a detail page showing:
+
+- The inbound message and parsed payload
+- The agent run timeline (inference calls, tool executions)
+- Token counts and cost tracking
+- The delivered response and its delivery status
+
+This is the receipt trail. It is the source of truth for what the agent did and why.
+
+<Callout type="info" title="Where to verify">
+Open Admin > Activity and click any work item. The timeline shows every step: webhook received, work item created, run dispatched, inference calls made, tools executed, response delivered. Each step has timestamps and cost.
+</Callout>
+
+## Next steps
+
+- **[Configuration](/start-here/configuration)** — Full environment variable reference, model config, database options.
+- **[Your First Agent](/start-here/first-agent)** — Step-by-step guided walkthrough with receipts.
+- **[How Messages Flow](/use/how-nitejar-works)** — Understand the 7-step journey from webhook to response.
+- **[Agents](/use/agents-and-fleet)** — Soul prompts, models, tools, memory, and network policy.
+
+## Verify Media Capabilities (In-App, No Telegram Required)
+
+Media tools can be validated entirely from the dashboard and receipts.
+
+1. Open **Settings > Capabilities** (`/settings/capabilities`).
+2. Configure and enable:
+   - **Image Generation** (uses gateway key)
+   - **Speech To Text** (uses gateway key)
+   - **Text To Speech** (requires provider key, OpenAI at launch)
+3. Create or reuse an agent.
+4. Trigger the agent through the **Generic Webhook** plugin with prompts that call:
+   - `generate_image`
+   - `transcribe_audio`
+   - `synthesize_speech`
+5. Inspect receipts:
+   - Work item timeline for tool invocations and outputs
+   - **Costs** dashboard for external API spend
+   - `media_artifacts` rows in SQLite/Postgres for generated artifacts and metadata
+
+This verifies capability wiring and receipts without testing Telegram transport.

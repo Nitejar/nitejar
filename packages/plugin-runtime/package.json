@@ -1,0 +1,33 @@
+{
+  "name": "@nitejar/plugin-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "lint": "eslint src __tests__ --no-error-on-unmatched-pattern",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@nitejar/database": "workspace:*",
+    "@nitejar/plugin-handlers": "workspace:*",
+    "@nitejar/plugin-sdk": "workspace:*",
+    "tar": "^7.4.3"
+  },
+  "devDependencies": {
+    "@nitejar/eslint-config": "workspace:*",
+    "@nitejar/typescript-config": "workspace:*",
+    "@types/node": "^22.10.5",
+    "eslint": "^8.57.0",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,25 @@
+---
+title: Receipts and Debugging
+description: Trace what happened, why it happened, and what it cost.
+---
+
+When behavior surprises you, inspect artifacts in this order.
+
+## Debug path
+
+1. **Activity timeline**: Did the webhook parse and dispatch correctly?
+2. **Run trace**: Which model calls and tool calls happened?
+3. **Delivery outcome**: Was the response delivered to the channel?
+4. **Cost breakdown**: Which step drove spend?
+5. **Plugin event logs**: Did the integration reject or retry?
+
+## Fast triage checklist
+
+- Confirm the right agent handled the message.
+- Confirm queue mode behavior (`steer`, `collect`, `followup`).
+- Confirm tool outputs matched prompt intent.
+- Confirm delivery succeeded with channel metadata.
+
+<Callout type="info" title="Where to verify">
+Use **Admin > Activity** for timeline and run steps, **Admin > Costs** for spend, and each plugin instance detail page for webhook/event logs.
+</Callout>

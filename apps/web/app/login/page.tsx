@@ -1,0 +1,101 @@
+import Link from 'next/link'
+import { redirect } from 'next/navigation'
+import { getDb } from '@nitejar/database'
+import { signInAction } from '@/app/actions/auth'
+import { getServerSession } from '@/lib/auth-server'
+import { getAuthSignupPolicy } from '@/server/services/auth-signup-policy'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+
+export const dynamic = 'force-dynamic'
+
+type PageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}
+
+async function countUsers(): Promise<number> {
+  const db = getDb()
+  const result = await db
+    .selectFrom('users')
+    .select((eb) => eb.fn.countAll<string>().as('count'))
+    .executeTakeFirst()
+
+  return Number(result?.count ?? 0)
+}
+
+export default async function LoginPage({ searchParams }: PageProps) {
+  if ((await countUsers()) === 0) {
+    redirect('/setup')
+  }
+
+  const session = await getServerSession()
+  if (session) {
+    redirect('/')
+  }
+  const policy = await getAuthSignupPolicy()
+  const canSelfSignup = policy.mode === 'approved_domain'
+
+  const params = await searchParams
+  const error = typeof params.error === 'string' ? params.error : null
+
+  return (
+    <div className="mx-auto flex min-h-screen w-full max-w-md items-center px-6">
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle>Sign in</CardTitle>
+          <CardDescription>
+            {canSelfSignup
+              ? 'Access is limited to invited users and approved email domains.'
+              : 'Access is limited to invited users.'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <form action={signInAction} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input id="email" name="email" type="email" required autoComplete="email" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                name="password"
+                type="password"
+                required
+                autoComplete="current-password"
+              />
+            </div>
+            <Button type="submit" className="w-full">
+              Sign in
+            </Button>
+          </form>
+
+          {error ? (
+            <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {error}
+            </p>
+          ) : null}
+
+          <p className="text-xs text-muted-foreground">
+            Need access? Ask an admin for an invite link.
+          </p>
+          {canSelfSignup ? (
+            <p className="text-xs text-muted-foreground">
+              Approved domain user?{' '}
+              <Link href="/signup" className="underline">
+                Create an account
+              </Link>
+            </p>
+          ) : null}
+          <p className="text-xs text-muted-foreground">
+            <Link href="/setup" className="underline">
+              Back to setup
+            </Link>
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}

@@ -1,0 +1,9 @@
+{
+  "extends": "@nitejar/typescript-config/library.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "."
+  },
+  "include": ["src", "scripts/manual"],
+  "exclude": ["node_modules", "dist", "__tests__"]
+}

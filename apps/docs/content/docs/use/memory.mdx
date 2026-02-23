@@ -1,0 +1,22 @@
+---
+title: Memory
+description: Persistent context per agent for facts that should survive sessions.
+---
+
+Memory lets agents carry forward durable context between runs.
+
+## Use memory for
+
+- Stable preferences and operating constraints
+- Long-running tasks that need continuity
+- Known facts worth reusing across sessions
+
+## Operational guidance
+
+- Keep memories specific and low-noise.
+- Pin only high-value facts.
+- Remove stale assumptions as reality changes.
+
+<Callout type="info" title="Where to verify">
+Open **Admin > Agents > [agent]** to inspect memory settings. In **Admin > Activity**, inspect runs for `add_memory`, `update_memory`, and `remove_memory` events.
+</Callout>

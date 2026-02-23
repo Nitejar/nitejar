@@ -1,0 +1,213 @@
+---
+title: Handler Reference
+description: Every field and method on the PluginHandler interface.
+---
+
+The `PluginHandler<TConfig>` interface is what every plugin implements. Here is a complete reference.
+
+## Metadata fields
+
+```ts
+import type { PluginHandler } from '@nitejar/plugin-sdk'
+
+const handler: PluginHandler<MyConfig> = {
+  type: 'my-plugin', // Unique identifier. Lowercase, no spaces.
+  displayName: 'My Plugin', // Shown in the admin catalog.
+  description: 'Does the thing.', // One-liner for the catalog card.
+  icon: 'brand-slack', // Tabler icon name (https://tabler.io/icons).
+  category: 'messaging', // 'messaging' | 'code' | 'productivity'
+  sensitiveFields: ['apiKey'], // Field keys that get encrypted at rest.
+  // ...methods
+}
+```
+
+| Field             | Type                                      | Required | Description                               |
+| ----------------- | ----------------------------------------- | -------- | ----------------------------------------- |
+| `type`            | `string`                                  | yes      | Unique plugin type identifier             |
+| `displayName`     | `string`                                  | yes      | Human-readable name for the admin catalog |
+| `description`     | `string`                                  | yes      | One-liner for catalog cards               |
+| `icon`            | `string`                                  | yes      | Tabler icon name                          |
+| `category`        | `'messaging' \| 'code' \| 'productivity'` | yes      | Catalog grouping                          |
+| `sensitiveFields` | `string[]`                                | yes      | Config keys encrypted at rest             |
+
+## `responseMode`
+
+Optional. Controls when the agent's response is delivered.
+
+- `'streaming'` (default) — Posts each intermediate assistant message as the agent works. Good for chat integrations where users expect typing indicators.
+- `'final'` — Waits for the agent to finish, then posts a single response. Good for webhooks, email, or anything where partial updates are noise.
+
+```ts
+responseMode: 'final',
+```
+
+## `setupConfig`
+
+Optional. Tells the admin UI how to render a setup form when someone creates a new plugin instance.
+
+```ts
+setupConfig: {
+  fields: [
+    {
+      key: 'apiKey',
+      label: 'API Key',
+      type: 'password',
+      required: true,
+      placeholder: 'sk-...',
+      helpText: 'Create one at https://example.com/settings/keys',
+    },
+    {
+      key: 'channel',
+      label: 'Default Channel',
+      type: 'select',
+      options: [
+        { label: '#general', value: 'general' },
+        { label: '#alerts', value: 'alerts' },
+      ],
+    },
+  ],
+  credentialHelpUrl: 'https://example.com/docs/api-keys',
+  credentialHelpLabel: 'How to get an API key',
+  supportsTestBeforeSave: true,
+},
+```
+
+### `SetupField` shape
+
+| Field         | Type                                            | Required | Description                          |
+| ------------- | ----------------------------------------------- | -------- | ------------------------------------ |
+| `key`         | `string`                                        | yes      | Config object key this field maps to |
+| `label`       | `string`                                        | yes      | Form label                           |
+| `type`        | `'text' \| 'password' \| 'select' \| 'boolean'` | yes      | Input type                           |
+| `required`    | `boolean`                                       | no       | Whether the field must be filled     |
+| `placeholder` | `string`                                        | no       | Input placeholder text               |
+| `helpText`    | `string`                                        | no       | Hint shown below the input           |
+| `options`     | `{ label: string; value: string }[]`            | no       | Choices for `select` type            |
+
+## `validateConfig(config)`
+
+Called with the parsed JSON config object. Return `{ valid: true }` or `{ valid: false, errors: ['...'] }`.
+
+```ts
+validateConfig(config: unknown): ConfigValidationResult {
+  const c = config as MyConfig
+  if (!c.apiKey) {
+    return { valid: false, errors: ['apiKey is required'] }
+  }
+  return { valid: true }
+}
+```
+
+## `parseWebhook(request, pluginInstance)`
+
+Called when a webhook hits your plugin's endpoint. You get the raw `Request` and a `PluginInstance`.
+
+### `PluginInstance` shape
+
+```ts
+interface PluginInstance {
+  id: string // Instance ID
+  type: string // Plugin type (matches handler.type)
+  config: string | null // JSON string — you parse it yourself
+}
+```
+
+### Return value: `WebhookParseResult`
+
+```ts
+async parseWebhook(
+  request: Request,
+  pluginInstance: PluginInstance
+): Promise<WebhookParseResult> {
+  const body = await request.json()
+  const config = pluginInstance.config
+    ? JSON.parse(pluginInstance.config) as MyConfig
+    : {}
+
+  return {
+    shouldProcess: true,
+    workItem: {
+      session_key: `my-plugin:${body.user_id}`,
+      source: 'my-plugin',
+      source_ref: `msg-${body.id}`,
+      title: body.text.slice(0, 120),
+      payload: JSON.stringify(body),
+    },
+    idempotencyKey: `my-plugin-${body.id}`,
+    responseContext: { channelId: body.channel },
+  }
+}
+```
+
+Return `{ shouldProcess: false }` to silently drop the webhook (e.g., bad signature, irrelevant event type).
+
+### `NewWorkItemData` shape
+
+| Field         | Type             | Required | Description                                     |
+| ------------- | ---------------- | -------- | ----------------------------------------------- |
+| `session_key` | `string`         | yes      | Groups messages into conversations              |
+| `source`      | `string`         | yes      | Source identifier (usually matches plugin type) |
+| `source_ref`  | `string`         | yes      | Unique per message for deduplication            |
+| `title`       | `string`         | yes      | Short summary of the inbound message            |
+| `payload`     | `string \| null` | no       | Full payload stored as-is                       |
+| `status`      | `string`         | no       | Initial status (defaults to `pending`)          |
+
+## `postResponse(pluginInstance, workItemId, content, responseContext?, options?)`
+
+Called to deliver the agent's response back to whatever sent the webhook.
+
+```ts
+async postResponse(
+  pluginInstance: PluginInstance,
+  workItemId: string,
+  content: string,
+  responseContext?: unknown,
+  options?: { hitLimit?: boolean; idempotencyKey?: string }
+): Promise<PostResponseResult> {
+  const config = JSON.parse(pluginInstance.config!) as MyConfig
+  const ctx = responseContext as { channelId: string }
+  await sendToApi(config.apiKey, ctx.channelId, content)
+  return { success: true, outcome: 'sent' }
+}
+```
+
+### `PostResponseResult` shape
+
+| Field         | Type                              | Description                      |
+| ------------- | --------------------------------- | -------------------------------- |
+| `success`     | `boolean`                         | Whether delivery worked          |
+| `outcome`     | `'sent' \| 'failed' \| 'unknown'` | More specific status             |
+| `retryable`   | `boolean`                         | Hint for retry logic             |
+| `providerRef` | `string`                          | External message ID if available |
+| `error`       | `string`                          | Error message on failure         |
+
+## `testConnection(config)` (optional)
+
+Called from the admin UI "Test Connection" button. Receives the parsed config.
+
+```ts
+async testConnection(config: MyConfig): Promise<{ ok: boolean; error?: string }> {
+  const res = await fetch('https://api.example.com/me', {
+    headers: { Authorization: `Bearer ${config.apiKey}` },
+  })
+  if (!res.ok) return { ok: false, error: `API returned ${res.status}` }
+  return { ok: true }
+}
+```
+
+Set `setupConfig.supportsTestBeforeSave: true` to show the button in the admin UI.
+
+## `acknowledgeReceipt(pluginInstance, responseContext?)` (optional)
+
+Called right after a webhook is accepted, before the agent starts working. Use it to react with an emoji, send a "thinking..." indicator, or similar.
+
+```ts
+async acknowledgeReceipt(
+  pluginInstance: PluginInstance,
+  responseContext?: unknown
+): Promise<void> {
+  const config = JSON.parse(pluginInstance.config!) as MyConfig
+  const ctx = responseContext as { messageId: string }
+  await addReaction(config.apiKey, ctx.messageId, 'eyes')
+}
+```

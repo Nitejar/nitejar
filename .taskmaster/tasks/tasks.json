@@ -1,0 +1,1701 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": "81",
+        "title": "Introduce Versioned Migration System",
+        "description": "Replace the single migrate.ts approach with a versioned, folder-based migration system (no down migrations), and add a migrations tracking table.",
+        "details": "Create a /migrations folder (e.g., packages/database/migrations) with ordered timestamped migration files. Add a migrations runner that applies pending migrations in order and records them in a schema_migrations table. Keep forward-only migrations (no down). Update docs/scripts so `db:migrate` runs the new runner and can target SQLite/Postgres. Ensure the runner is idempotent and safe for CI.",
+        "testStrategy": "Create a couple of migrations locally, run the new runner twice, and verify only new migrations are applied. Verify schema_migrations records applied versions.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-03T01:19:05.685Z"
+      },
+      {
+        "id": "82",
+        "title": "Add Tailwind CSS to web app",
+        "description": "Install and configure Tailwind CSS for the Next.js app and ensure global styles compile.",
+        "details": "Add Tailwind dependencies, configure tailwind.config and postcss, and wire globals in apps/web. Verify build and dev server load tailwind styles.",
+        "testStrategy": "Run pnpm dev and verify Tailwind utilities apply in a test component. Run pnpm build.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-02T22:40:21.093Z"
+      },
+      {
+        "id": "83",
+        "title": "Install shadcn/ui component library",
+        "description": "Initialize shadcn/ui and add the full component set to apps/web.",
+        "details": "Run shadcn init in apps/web, configure the registry, and add all available components. Ensure tailwind config and CSS variables match shadcn defaults.",
+        "testStrategy": "Render a few representative components and verify styling matches shadcn defaults.",
+        "priority": "high",
+        "dependencies": ["82"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-02T23:26:10.641Z"
+      },
+      {
+        "id": "84",
+        "title": "Convert existing UI to Tailwind",
+        "description": "Replace existing UI styles with Tailwind utility classes across the web app.",
+        "details": "Audit current UI components and pages, replace CSS/inline styles with Tailwind classes, and remove unused stylesheets if possible. Keep layout intact.",
+        "testStrategy": "Manual QA of key pages and flows; run pnpm lint and pnpm build.",
+        "priority": "medium",
+        "dependencies": ["82"],
+        "status": "cancelled",
+        "subtasks": [],
+        "updatedAt": "2026-02-02T23:33:58.816Z"
+      },
+      {
+        "id": "85",
+        "title": "Redesign UI inspired by OpenClaw Admin",
+        "description": "Refresh the app UI to align with the OpenClaw Admin aesthetic and layout, including agent-focused navigation and tool access panels.",
+        "details": "Implement a dark, dense admin layout with left rail agent list, top nav, and a main panel for agent details (tabs for Soul/User/Agents/Memory/Tools/Skills). Plan placement for team/member management (org chart-style) and future agent-to-agent reporting. Use shadcn/ui primitives + Tailwind. Stub missing data where necessary.",
+        "testStrategy": "Manual review of core screens and responsiveness; verify navigation and primary panels render without runtime errors.",
+        "priority": "high",
+        "dependencies": ["83", "84"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-02T23:54:58.835Z"
+      },
+      {
+        "id": "86",
+        "title": "Database Schema for Gateway Settings and Model Catalog",
+        "description": "Create new database tables for storing org-level gateway configuration and caching model metadata.",
+        "details": "1. Create a migration to add `gateway_settings` table with columns: `id` (PK), `provider` (string, default 'openrouter'), `api_key_encrypted` (string), `base_url` (string, nullable), `created_at` (timestamp), `updated_at` (timestamp).\n2. Create `model_catalog` table with columns: `id` (PK), `external_id` (string, unique), `name` (string), `metadata_json` (JSON/JSONB), `source` (string), `is_curated` (boolean), `refreshed_at` (timestamp).\n3. Ensure schema follows existing project conventions (e.g., Prisma/Drizzle/SQL files).",
+        "testStrategy": "Run migration locally and verify tables are created with correct columns and constraints.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-05T04:35:12.566Z"
+      },
+      {
+        "id": "87",
+        "title": "Backend: Gateway Configuration API",
+        "description": "Implement API endpoints to manage organization-level gateway settings.",
+        "details": "1. Create `GET /api/settings/gateway` to fetch current configuration (excluding full API key, return masked or exists flag).\n2. Create `POST /api/settings/gateway` to update provider (OpenRouter only initially), API key, and base URL.\n3. Implement encryption/decryption logic for the API key using existing project helpers.\n4. Add validation ensuring only 'openrouter' is accepted as the provider for now.",
+        "testStrategy": "Unit tests for encryption/decryption. Integration tests for GET/POST endpoints ensuring data persistence.",
+        "priority": "high",
+        "dependencies": ["86"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-05T04:37:36.344Z"
+      },
+      {
+        "id": "88",
+        "title": "Backend: OpenRouter Model Fetching Service",
+        "description": "Implement a service to fetch models from OpenRouter API and normalize the data.",
+        "details": "1. Create a service/utility function `fetchOpenRouterModels`.\n2. Call `https://openrouter.ai/api/v1/models`.\n3. Map the response to a standardized internal format including: context length, modalities, pricing (if available), and tool support.\n4. Define a fallback list of curated models (hardcoded JSON) to use if the API call fails.",
+        "testStrategy": "Unit test with mocked OpenRouter API response. Verify fallback logic triggers on API failure.",
+        "priority": "high",
+        "dependencies": ["87"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-05T04:39:35.506Z"
+      },
+      {
+        "id": "89",
+        "title": "Backend: Model Caching and Refresh API",
+        "description": "Implement logic to cache fetched models into the database and expose endpoints for the frontend.",
+        "details": "1. Implement `POST /api/models/refresh` that triggers the OpenRouter fetch service.\n2. Upsert fetched models into the `model_catalog` table, updating `refreshed_at` timestamp.\n3. Implement `GET /api/models` to return models from the DB. If the table is empty or data is stale (>24h), trigger a background refresh.\n4. Logic to tag models as 'curated' based on a predefined list (e.g., GPT-4, Claude 3.5 Sonnet, Llama 3).",
+        "testStrategy": "Integration test: Call refresh endpoint, verify DB is populated. Call list endpoint, verify JSON structure.",
+        "priority": "high",
+        "dependencies": ["86", "88"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-05T04:43:29.825Z"
+      },
+      {
+        "id": "90",
+        "title": "Frontend: Gateway Settings Page",
+        "description": "Create an admin UI page to configure the LLM gateway.",
+        "details": "1. Create a new route/page in the Admin settings area.\n2. Add a form with: Provider (readonly/dropdown locked to OpenRouter), API Key (password input), Base URL (text input).\n3. Add a 'Verify & Save' button that calls `POST /api/settings/gateway`.\n4. Add a 'Refresh Models' button that calls `POST /api/models/refresh` manually.",
+        "testStrategy": "Manual testing: Enter API key, save, refresh page to see if settings persist. Click refresh models and check network tab.",
+        "priority": "medium",
+        "dependencies": ["87", "89"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-05T04:48:05.246Z"
+      },
+      {
+        "id": "91",
+        "title": "Frontend: Reusable Model Select Component",
+        "description": "Build a specialized dropdown component for selecting models with grouped tabs.",
+        "details": "1. Create `ModelSelect` component accepting `value` and `onChange`.\n2. Fetch model list from `GET /api/models`.\n3. Implement two tabs/sections inside the dropdown: 'Recommended' (filtered by `is_curated`) and 'All Models' (searchable).\n4. Display metadata in the dropdown items (Provider, Context window badges).",
+        "testStrategy": "Component testing (Storybook or unit test): Verify searching filters the list, tabs switch views, and selection returns model ID.",
+        "priority": "high",
+        "dependencies": ["89"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-05T04:52:12.716Z"
+      },
+      {
+        "id": "92",
+        "title": "Frontend: Agent Configuration Form Updates",
+        "description": "Update the existing agent editor to use the new Model Library and Gateway settings.",
+        "details": "1. Replace any existing free-text model input with the new `ModelSelect` component.\n2. Remove any per-agent API key fields if they exist (enforcing org-level gateway).\n3. Ensure `modelId` is saved to the agent configuration state.\n4. Fetch the selected model's metadata to prepare for parameter validation in the next task.",
+        "testStrategy": "Manual test: Create/Edit an agent, select a model from the new dropdown, save, and verify persistence.",
+        "priority": "high",
+        "dependencies": ["91"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-05T04:54:24.792Z"
+      },
+      {
+        "id": "93",
+        "title": "Frontend: Advanced Parameter Controls with Validation",
+        "description": "Implement UI for configuring model parameters with constraints based on selected model.",
+        "details": "1. Add basic fields: Temperature (slider/input), Max Tokens (number).\n2. Add collapsible 'Advanced' section containing: Top P, Frequency Penalty, Presence Penalty, Seed, Stop sequences.\n3. Implement validation logic: Restrict Max Tokens based on the selected model's context length (from `model_catalog` metadata).\n4. Disable/Hide parameters not supported by the selected model if indicated in metadata.",
+        "testStrategy": "Unit test: Select a model with 4k context, try to set max tokens to 8k, verify validation error.",
+        "priority": "medium",
+        "dependencies": ["92"],
+        "status": "done",
+        "subtasks": []
+      },
+      {
+        "id": "94",
+        "title": "Backend: Agent Runtime Gateway Integration",
+        "description": "Update the agent execution runtime to use the global gateway configuration.",
+        "details": "1. Modify the agent runtime code to fetch the global gateway settings (API Key, Base URL).\n2. Construct the LLM client (e.g., OpenAI SDK compatible) using the global settings and the agent's selected `modelId`.\n3. Pass agent-configured parameters (temp, max_tokens, advanced params) to the inference call.\n4. Remove any hardcoded model logic or environment variable fallbacks if they are being replaced.",
+        "testStrategy": "Integration test: Run a full agent interaction flow. Verify the request is sent to OpenRouter with the correct model and parameters.",
+        "priority": "high",
+        "dependencies": ["87", "92"],
+        "status": "done",
+        "subtasks": []
+      },
+      {
+        "id": "95",
+        "title": "System: Automated Model Cache Refresh",
+        "description": "Set up a background job or periodic check to refresh model metadata automatically.",
+        "details": "1. Implement a scheduler (e.g., cron job or check-on-access logic) to run `fetchOpenRouterModels`.\n2. Configure TTL to 24 hours.\n3. Ensure the refresh happens asynchronously so it doesn't block user requests.\n4. Log success/failure of background refreshes.",
+        "testStrategy": "Simulate time passage or force stale cache state, trigger system check, verify database is updated without user intervention.",
+        "priority": "low",
+        "dependencies": ["89"],
+        "status": "done",
+        "subtasks": []
+      },
+      {
+        "id": "96",
+        "title": "Database Schema for Org Members and Teams",
+        "description": "Add tables for users, invitations, teams, team_members, and agent_teams.",
+        "details": "Create migrations for: users (name, email, avatar_url, role, status), invitations (email, token, status, expires_at), teams (name, description, slug), team_members (team_id, user_id, role), agent_teams (team_id, agent_id, is_primary). Roles include superadmin/admin/member.",
+        "testStrategy": "Run migration locally and verify tables and constraints exist.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": []
+      },
+      {
+        "id": "97",
+        "title": "Backend: User & Invitation APIs",
+        "description": "Implement CRUD for users and invitation flow endpoints.",
+        "details": "Add endpoints for listing users, creating invites, accepting invites, updating user profile/role/status. Store invitation tokens and expiration. Send invite emails using React Email templates via Resend (no fallback transport in this iteration).",
+        "testStrategy": "Integration tests for invite creation and acceptance.",
+        "priority": "high",
+        "dependencies": ["96"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-19T15:27:03.470Z"
+      },
+      {
+        "id": "98",
+        "title": "Backend: Team & Membership APIs",
+        "description": "Implement CRUD for teams and team membership assignment.",
+        "details": "Endpoints for teams list/create/update, add/remove team members, and assign/unassign agents to teams (including primary team flag).",
+        "testStrategy": "Integration tests for team membership and agent-team assignment.",
+        "priority": "high",
+        "dependencies": ["96"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-19T15:27:06.012Z"
+      },
+      {
+        "id": "99",
+        "title": "Frontend: Members Page",
+        "description": "Build members list, invite flow, and role/status editing.",
+        "details": "Create admin members UI to list users, invite by email, edit name/avatar/role (superadmin/admin/member), and show invite status.",
+        "testStrategy": "Manual test: invite, accept, edit member, verify API responses.",
+        "priority": "medium",
+        "dependencies": ["97"],
+        "status": "done",
+        "subtasks": []
+      },
+      {
+        "id": "100",
+        "title": "Frontend: Teams Page",
+        "description": "Build team management UI with member and agent assignments.",
+        "details": "Create teams list, create/edit teams, assign members and agents, and set primary team for an agent.",
+        "testStrategy": "Manual test: create team, assign users/agents, set primary team.",
+        "priority": "medium",
+        "dependencies": ["98"],
+        "status": "done",
+        "subtasks": []
+      },
+      {
+        "id": "101",
+        "title": "Frontend: Agent Detail Team Section",
+        "description": "Show assigned teams on agent detail with basic controls.",
+        "details": "Add a section in agent detail to display teams, set primary team, and link to teams page.",
+        "testStrategy": "Manual test: verify agent shows correct teams and primary.",
+        "priority": "medium",
+        "dependencies": ["98"],
+        "status": "done",
+        "subtasks": []
+      },
+      {
+        "id": "102",
+        "title": "Frontend: Org Chart View",
+        "description": "Add a lightweight org chart showing teams, members, and agents.",
+        "details": "Implement a simple tree or grouped list view under Org Chart that shows team membership and assigned agents.",
+        "testStrategy": "Manual test for rendering with sample data.",
+        "priority": "low",
+        "dependencies": ["98"],
+        "status": "done",
+        "subtasks": []
+      },
+      {
+        "id": "103",
+        "title": "Approvals Policy Hook",
+        "description": "Wire approval checks to team membership.",
+        "details": "When an approval is needed, allow any member of an agent's assigned teams to approve. Superadmins can approve any request regardless of team membership. Implement server-side policy check.",
+        "testStrategy": "Integration test: approval succeeds for team members and fails for non-members.",
+        "priority": "medium",
+        "dependencies": ["98"],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "104",
+        "title": "Database Schema for GitHub Integration",
+        "description": "Create Kysely schema migrations to support GitHub App integration, storing installation data, repository access maps, and agent capabilities.",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "details": "Create a new Kysely migration file in `packages/database/migrations` (e.g., `YYYYMMDDHHMMSS_github_integration.ts`) and update `packages/database/src/types.ts`.\n\n1. **New Tables:**\n   - `github_installations`: `id` (PK, integer), `installation_id` (integer, not null), `account_login` (varchar), `account_id` (integer), `integration_id` (FK to `integrations.id`), `created_at`, `updated_at`.\n   - `github_repos`: `id` (PK, integer), `repo_id` (integer, not null), `full_name` (varchar, not null), `html_url` (varchar), `installation_id` (FK to `github_installations.id`), `created_at`, `updated_at`.\n   - `agent_repo_capabilities`: `agent_id` (FK to `agents.id`), `github_repo_id` (FK to `github_repos.id`), `capabilities` (json/text array, e.g., `['read_repo', 'open_pr']`).\n\n2. **Configuration Storage:**\n   - Utilize the existing `integrations` table. The GitHub App credentials (appId, clientId, clientSecret, webhookSecret, privateKey) along with `permissions_preset` and `token_ttl` should be stored in the `config` JSON column.\n   - Ensure the implementation respects the encryption pattern used for other integrations (referencing `encryptConfig` and `sensitiveFields` patterns if present in the service layer, though the schema just needs to support the JSON structure).\n\n3. **Type Definitions:**\n   - Update `packages/database/src/types.ts` to include interfaces for `GithubInstallation`, `GithubRepo`, and `AgentRepoCapability`.\n   - Update the `Database` interface to include these new tables.",
+        "testStrategy": "Run `pnpm --filter @nitejar/database db:migrate` to apply changes to the SQLite database. Inspect the database using a SQLite viewer or the Kysely CLI to ensure tables `github_installations`, `github_repos`, and `agent_repo_capabilities` are created with correct columns and foreign key constraints.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create Kysely Migration for GitHub Tables",
+            "description": "Create a new migration file in `packages/database/migrations` to define `github_installations`, `github_repos`, and `agent_repo_capabilities` tables.",
+            "dependencies": [],
+            "details": "File should export `up` and `down` functions using the `Kysely` instance. Define foreign keys referencing `integrations` and `agents` tables correctly. Use SQLite compatible types (e.g., `integer`, `text`, `datetime`).",
+            "status": "done",
+            "testStrategy": "Run migration and verify no errors.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T02:27:17.094Z"
+          },
+          {
+            "id": 2,
+            "title": "Update Database Types",
+            "description": "Add TypeScript interfaces for the new tables in `packages/database/src/types.ts`.",
+            "dependencies": [1],
+            "details": "Export interfaces `GithubInstallationTable`, `GithubRepoTable`, and `AgentRepoCapabilityTable`. Add them to the main `Database` interface mapping.",
+            "status": "done",
+            "testStrategy": "Verify TypeScript compilation passes with `pnpm build` in the database package.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T02:27:38.443Z"
+          }
+        ],
+        "updatedAt": "2026-02-05T02:27:38.443Z"
+      },
+      {
+        "id": "105",
+        "title": "GitHub App Credential Management Service",
+        "description": "Implement the configuration persistence layer for the GitHub App integration, extending the existing integration types to support secure storage of App credentials and configuration settings.",
+        "status": "done",
+        "dependencies": ["104"],
+        "priority": "high",
+        "details": "Update the GitHub integration schema and implement helper functions to manage configuration within `packages/integrations`. This implementation replaces the need for a separate `GithubCredentialService` in the backend package by leveraging the existing Integration store and encryption patterns.\n\nSpecific requirements:\n- Modify `packages/integrations/src/github/types.ts` to extend the config schema.\n- Add fields: `appId`, `clientId`, `clientSecret`, `webhookSecret`, `privateKey`, `permissions` (preset object), and `tokenTTL`.\n- Ensure `privateKey`, `clientSecret`, and `webhookSecret` are identified or handled as `sensitiveFields` to ensure `encryptConfig` and `decryptConfig` logic is applied during persistence in `apps/web` admin actions and the integrations router.\n- Create helper functions in `packages/integrations/src/github/index.ts` (or `config.ts`) to read and write the configuration via the `Integration` store/service.\n- Ensure types align with `packages/integrations/src/index.ts` definition of `IntegrationDefinition`.",
+        "testStrategy": "Unit test the schema validation in `packages/integrations`. Verify that helper functions correctly handle the `sensitiveFields` by mocking the encryption utilities and checking that `privateKey` is encrypted before storage and decrypted upon retrieval. Verify type compatibility with the main Integration store.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Update GitHub Integration Schema",
+            "description": "Extend `GitHubIntegrationConfig` in `packages/integrations/src/github/types.ts` to include `appId`, `clientId`, `clientSecret`, `webhookSecret`, `privateKey`, `permissions`, and `tokenTTL`.",
+            "dependencies": [],
+            "details": "Define the Zod schema or TypeScript interfaces required. Ensure sensitive fields are marked or documented for encryption middleware.",
+            "status": "done",
+            "testStrategy": "Create a test file `packages/integrations/src/github/types.test.ts` to validate various config objects against the schema.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T02:36:07.711Z"
+          },
+          {
+            "id": 2,
+            "title": "Implement Configuration Helper Functions",
+            "description": "Create functions to retrieve and save GitHub App configuration within `packages/integrations/src/github`.",
+            "dependencies": [1],
+            "details": "Implement `getGitHubAppConfig` and `saveGitHubAppConfig` (or similar) that interact with the generic Integration store. Ensure these helpers handle the distinction between raw and encrypted values if not handled automatically by the store.",
+            "status": "done",
+            "testStrategy": "Unit test helpers with mock data. Verify that data passed to the persistence layer matches expectations.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T02:36:12.768Z"
+          }
+        ],
+        "updatedAt": "2026-02-05T02:36:12.768Z"
+      },
+      {
+        "id": "106",
+        "title": "GitHub App Manifest Flow Implementation",
+        "description": "Implement the backend logic to generate a GitHub App manifest and handle the code exchange to complete the App registration.",
+        "status": "done",
+        "dependencies": ["105"],
+        "priority": "high",
+        "details": "Implement the GitHub App Manifest flow within the `apps/web` tRPC router system. This involves creating a new `github` router if one does not exist and exposing procedures for generating the app manifest and exchanging the returned code for credentials.\n\nKey Implementation Points:\n1.  **Router Location**: Implement in `apps/web/server/routers/github.ts` (or create if missing).\n2.  **Manifest Generation**: Create a `getManifest` procedure (public or protected based on admin needs) that returns the JSON required by GitHub. \n    - **Webhook URL**: Must point to `${APP_URL}/api/github/webhook` (where `APP_URL` is the configured base URL env var, fallback to `NEXTAUTH_URL` if needed).\n    - **Permissions**: Do not hardcode. Retrieve the desired permission set (e.g., 'minimal' vs 'robust') from the integration configuration or input arguments.\n3.  **Code Exchange**: Create an `exchangeCode` procedure that accepts the `code` from GitHub's redirect. It must call `POST https://api.github.com/app-manifests-conversions/{code}` to retrieve the App ID, Client ID, Client Secret, Webhook Secret, and Private Key (PEM).\n4.  **Credential Storage**: Store the credentials in the `Integration` table for the GitHub provider. Use `encryptConfig` (from `packages/integrations`) to secure sensitive fields like `clientSecret`, `webhookSecret`, and `privateKey`.\n    - **TTL**: Include `tokenTTL` in the stored configuration.\n5.  **Wiring**: Ensure the `github` router is merged into the main `appRouter` in `apps/web/server/routers/_app.ts`.",
+        "testStrategy": "Unit test the tRPC procedures using mocked inputs. Mock the `fetch` call to GitHub's conversion endpoint to return sample credentials. Verify that `exchangeCode` calls `encryptConfig` and persists the encrypted data correctly to the database mock. Verify the generated manifest contains the correct webhook URL (`/api/github/webhook`) derived from the base URL environment variable.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create GitHub tRPC Router Scaffold",
+            "description": "Initialize `apps/web/server/routers/github.ts` and register it in `_app.ts`. Ensure basic connectivity.",
+            "dependencies": [],
+            "details": "Create the file, define a basic router using `router({})`, and import/mount it in `apps/web/server/routers/_app.ts` under the `github` namespace.",
+            "status": "done",
+            "testStrategy": "Verify the route is accessible via tRPC client.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T02:40:11.453Z"
+          },
+          {
+            "id": 2,
+            "title": "Implement getManifest Procedure",
+            "description": "Create the procedure to return the GitHub App Manifest JSON configuration with dynamic permission presets.",
+            "dependencies": [1],
+            "details": "The `getManifest` query should return an object matching the GitHub App Manifest spec.\n- **Url**: Use env var for base URL + `/api/github/webhook`.\n- **Permissions**: logic to select between 'minimal' (metadata read) or 'robust' (contents/pull_requests/issues write) based on input or stored config.",
+            "status": "done",
+            "testStrategy": "Call the procedure with different preset inputs and validate the returned JSON structure and Permissions object. Verify the webhook URL matches the environment configuration.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T02:40:16.429Z"
+          },
+          {
+            "id": 3,
+            "title": "Implement exchangeCode Procedure",
+            "description": "Create the mutation to exchange the code for credentials and store them.",
+            "dependencies": [1, 2],
+            "details": "Implement `exchangeCode` taking a `code` string. Perform the HTTP POST to GitHub. On success, take the response body, run sensitive fields through `encryptConfig`, and update the GitHub integration record. Include `tokenTTL` in the stored settings.",
+            "status": "done",
+            "testStrategy": "Mock the GitHub API response. Verify that the saved configuration in the database contains encrypted values for secrets and includes the tokenTTL field.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T02:40:23.584Z"
+          }
+        ],
+        "updatedAt": "2026-02-05T02:40:23.584Z"
+      },
+      {
+        "id": "107",
+        "title": "GitHub Webhook Handler for Installations",
+        "description": "Implement a webhook endpoint to listen for GitHub App installation events and sync repository data.",
+        "status": "done",
+        "dependencies": ["104", "105"],
+        "priority": "high",
+        "details": "Update the existing webhook route at `apps/web/app/api/github/webhook/route.ts` to handle GitHub App installation events.\n\nKey Requirements:\n- **Signature Validation**: Use `decryptConfig` to retrieve the stored webhook secret from the GitHub integration configuration and validate the `X-Hub-Signature-256` header.\n- **Event Handling**:\n  - `installation.created`: Create a new `GithubInstallation` record linking the GitHub App installation ID to the user/org.\n  - `installation.deleted`: Remove the corresponding `GithubInstallation` record and associated data.\n  - `installation_repositories.added`: specific repos added to an installation -> Sync/Create `GithubRepo` records.\n  - `installation_repositories.removed`: specific repos removed -> Archive or delete `GithubRepo` records.\n- **Idempotency**: Ensure that receiving the same event multiple times does not corrupt data (check for existence before create/update).\n- **Integration Config**: Retrieve the relevant `Integration` record to access credentials. Since webhooks may not carry the internal Integration ID directly, determine the strategy for looking up the correct Integration config (likely via the Installation ID if mapped, or a global/tenant lookup strategy if applicable).",
+        "testStrategy": "Use `smee-client` to forward local webhooks or valid payload replays.\n- Verify that `GithubInstallation` table reflects rows after `installation.created`.\n- Verify `GithubRepo` rows appear after `installation_repositories.added`.\n- Test signature validation failure cases.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Webhook Signature Validation",
+            "description": "Update `apps/web/app/api/github/webhook/route.ts` to validate incoming requests.",
+            "dependencies": [],
+            "details": "Import `verifySignature` from Octokit or implementing custom logic. Fetch the webhook secret using `decryptConfig` from the stored Integration config. Return 401/403 if signature is invalid.",
+            "status": "done",
+            "testStrategy": "Send requests with valid and invalid signatures using Postman or a test script.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T02:45:28.639Z"
+          },
+          {
+            "id": 2,
+            "title": "Handle Installation Events",
+            "description": "Implement logic for `installation.created` and `installation.deleted`.",
+            "dependencies": [1],
+            "details": "In the webhook handler, switch on `x-github-event` header = `installation`. Parse payload to get `installation.id` and `account` info. Upsert `GithubInstallation` using Prisma on creation; delete on deletion.",
+            "status": "done",
+            "testStrategy": null,
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T02:45:33.800Z"
+          },
+          {
+            "id": 3,
+            "title": "Handle Repository Selection Events",
+            "description": "Implement logic for `installation_repositories` events.",
+            "dependencies": [2],
+            "details": "Handle `installation_repositories.added` and `removed`. Iterate through `repositories_added` array to create `GithubRepo` entries. Iterate through `repositories_removed` to delete them.",
+            "status": "done",
+            "testStrategy": null,
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T02:45:39.099Z"
+          }
+        ],
+        "updatedAt": "2026-02-05T02:45:39.099Z"
+      },
+      {
+        "id": "108",
+        "title": "Token Broker Service",
+        "description": "Implement a generic Credential Provider / Token Service to mint and manage access tokens. Primary implementation focuses on GitHub App installation tokens, but the interface must be reusable for other integrations.",
+        "status": "done",
+        "dependencies": ["105"],
+        "priority": "high",
+        "details": "Refactor the planned `TokenBrokerService` to implement a `CredentialProvider` interface.\n- **Interface:** Define `ICredentialProvider` with methods like `getCredential(target, scopes, context)`.\n- **GitHub Implementation:** Create a provider specifically for GitHub that:\n  - Uses `octokit` (or JWT signing) to authenticate as the App.\n  - Calls `POST /app/installations/{installation_id}/access_tokens` to mint tokens scoped to specific repositories.\n- **Caching:** Implement in-memory caching (e.g., `NodeCache` or `Map`) for tokens based on TTL. Remove Redis requirements. TTL should be configurable per integration.\n- **Audit Logging:** distinct logging for token generation events (e.g., 'Token minted for repo X', 'Token served from cache').\n- **Output:** The service should return the raw token, intended for consumption by internal tools (e.g., Sandbox environment).",
+        "testStrategy": "Mock the GitHub API/Octokit to verify token minting. Create unit tests for the generic interface and the GitHub-specific implementation. specific test cases for:\n- Cache hits vs. misses (verify API isn't called if cached).\n- TTL expiration.\n- Audit log verification (mock logger).",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Define ICredentialProvider Interface",
+            "description": "Create a TypeScript interface for credential providers that supports generic targets and scopes.",
+            "dependencies": [],
+            "details": "Interface should handle variable return types or a standard token envelope.",
+            "status": "done",
+            "testStrategy": null,
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T03:34:30.143Z"
+          },
+          {
+            "id": 2,
+            "title": "Implement GitHubCredentialProvider",
+            "description": "Implement the GitHub-specific logic to mint installation tokens using App private key.",
+            "dependencies": [1],
+            "details": "Must handle authentication via JWT/Octokit and scope tokens to repo.",
+            "status": "done",
+            "testStrategy": "Mock Octokit and assert correct auth headers/calls.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T03:34:35.331Z"
+          },
+          {
+            "id": 3,
+            "title": "Implement In-Memory Caching and Configuration",
+            "description": "Add caching layer to the provider with configurable TTL.",
+            "dependencies": [2],
+            "details": "Use simple in-memory storage. Allow TTL to be passed in config or derived from integration settings.",
+            "status": "done",
+            "testStrategy": "Test expiry logic using fake timers.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T03:34:41.975Z"
+          },
+          {
+            "id": 4,
+            "title": "Add Audit Logging",
+            "description": "Integrate logging for all token generation and access events.",
+            "dependencies": [2],
+            "details": "Ensure sensitive token data is NOT logged, only metadata (repo, installationId, timestamp).",
+            "status": "done",
+            "testStrategy": null,
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T03:34:47.709Z"
+          }
+        ],
+        "updatedAt": "2026-02-05T03:34:47.709Z"
+      },
+      {
+        "id": "109",
+        "title": "Capability Enforcement Layer",
+        "description": "Implement the logic to enforce manual per-repository capabilities for agents using Kysely, ensuring verification before token issuance.",
+        "status": "done",
+        "dependencies": ["108"],
+        "priority": "medium",
+        "details": "Implement the `CapabilityService` to enforce granular access controls defined in the `agent_repo_capabilities` table using Kysely repositories.\n\nKey Requirements:\n- **No Org-Level Defaults:** Access must be explicitly granted per repository.\n- **Schema Usage:** Query the `agent_repo_capabilities` table defined in `packages/database/migrations` and typed in `packages/database/src/types.ts`.\n- **Location:** Implement the service in `apps/web/server/services/capability.ts`.\n- **Integration:** \n  - Modify the Credential Provider implemented in Task 108 to inject the capability check.\n  - Before issuing a token, invoke `CapabilityService.verifyCapability(agentId, repoId, requiredCapability)`.\n- **Audit Logging:** \n  - Log successful access grants and denied attempts to the `audit_logs` table.\n  - Include metadata: `agentId`, `repoId`, `capability`, and `result`.\n\nFile Structure References:\n- `packages/database/src/types.ts` (Database Types)\n- `packages/database/migrations` (Schema definitions)\n- `apps/web/server/services/capability.ts` (New Service)\n- `apps/web/server/services/credential-provider.ts` (Integration point - provisional name based on Task 108)",
+        "testStrategy": "Create unit tests for `CapabilityService` verifying that missing rows in `agent_repo_capabilities` result in denial. Create integration tests mocking the database to ensure the credential provider calls the verification step and logs to the audit table correctly before issuing a token.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement CapabilityService with Kysely",
+            "description": "Create the `CapabilityService` class in `apps/web/server/services/capability.ts` with a `verifyCapability` method that queries the `agent_repo_capabilities` table using Kysely.",
+            "dependencies": [],
+            "details": "The method should accept `agentId`, `repoId`, and `CapabilityType` (from `packages/database/src/types.ts`). It returns a boolean or throws an error if the record does not exist. Ensure no organizational fallbacks are used.",
+            "status": "done",
+            "testStrategy": "Unit tests with mocked Kysely instance covering existing and non-existing capability scenarios.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T03:42:53.217Z"
+          },
+          {
+            "id": 2,
+            "title": "Integrate with Credential Provider",
+            "description": "Update the token issuance logic to enforce capability checks.",
+            "dependencies": [1],
+            "details": "Modify the Credential Provider (from Task 108) to call `CapabilityService.verifyCapability` before requesting an installation token. Handle 'Access Denied' errors gracefully.",
+            "status": "done",
+            "testStrategy": "Integration test: Attempt to get a token for a repo where the agent has no entry in `agent_repo_capabilities` and verify failure.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T03:42:58.887Z"
+          },
+          {
+            "id": 3,
+            "title": "Implement Audit Logging",
+            "description": "Add audit logging for capability checks (both allowed and denied).",
+            "dependencies": [2],
+            "details": "Record events to the `audit_logs` table via Kysely. Log 'CAPABILITY_CHECK_PASS' and 'CAPABILITY_CHECK_FAIL' events with relevant metadata (agent ID, repo ID, requested capability).",
+            "status": "done",
+            "testStrategy": "Verify that database entries are created in the `audit_logs` table corresponding to the success/failure of token requests.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T03:43:05.459Z"
+          }
+        ],
+        "updatedAt": "2026-02-05T03:43:05.459Z"
+      },
+      {
+        "id": "110",
+        "title": "Agent Token Tooling (Sprite Integration)",
+        "description": "Expose a tool for the agent (via Sprite/Sandbox) to request credentials and configure git.",
+        "status": "done",
+        "dependencies": ["109"],
+        "priority": "high",
+        "details": "Create a new tool definition (e.g., `github_auth_tool` or `configure_git_credentials`) that implements a secure, environment-variable-based authentication flow for the agent sandbox.\n\nKey Requirements:\n- **Input**: `repo_name` (optional if global), `duration` (optional TTL).\n- **Logic**: Call the Credential Provider / Token Service to mint a short-lived GitHub installation token.\n- **Action**: Instead of writing to a static credential store:\n  1. Use the Sprite/Sandbox execution API to persist the token in an environment file (e.g., `~/.nitejar/env`) as `GH_TOKEN` and `GITHUB_TOKEN`.\n  2. Ensure shell sessions (`.bashrc` / `.profile`) source this file automatically.\n  3. Configure a custom git credential helper (e.g., a script or function) that dynamically reads these environment variables to supply credentials to git commands (Username: `x-access-token`, Password: `$GH_TOKEN`).\n  4. Ensure `gh` CLI works automatically via the presence of `GH_TOKEN`.\n- **Security**: The token is never stored in plaintext in `.git-credentials`. It resides only in the environment context which can be refreshed.\n- **Return**: A success message indicating git and GH CLI are configured. Do NOT return the token string to the LLM.\n- **Refresh**: On 401 or expiry, re-running the tool updates the environment variables.",
+        "testStrategy": "Integration test: \n1. Start a sandbox instance.\n2. Invoke the tool to configure credentials.\n3. Execute `git clone <private-repo-url>` inside the sandbox.\n4. Verify the clone succeeds without password prompts.\n5. Verify `gh auth status` reports active login.\n6. Verify the token does not appear in the tool's output to the LLM.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Token Generation Logic via Credential Provider",
+            "description": "Integrate with the Credential Provider / Token Service to mint installation tokens with specific permissions and TTL.",
+            "dependencies": [],
+            "details": "Use the service established in Task 108 to request tokens. Ensure the service supports configurable TTL per integration/agent and maps permissions correctly (e.g., contents:write).",
+            "status": "done",
+            "testStrategy": "Unit test the integration with the Credential Provider service using mocked responses.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T03:46:44.494Z"
+          },
+          {
+            "id": 2,
+            "title": "Create Environment-Based Auth Tool",
+            "description": "Develop the agent tool that sets up persistent environment variables and dynamic git credential helpers in the sandbox.",
+            "dependencies": [1],
+            "details": "Define the tool schema (zod). In the handler:\n1. Call Credential Provider for token.\n2. Execute sandbox commands to:\n   - Create/Update `~/.nitejar/env` with `export GH_TOKEN=...` and `export GITHUB_TOKEN=...`.\n   - Ensure `.bashrc` sources this file.\n   - Configure `git config --global credential.helper` to use a script that echoes the env var token.\n3. Return success status only.",
+            "status": "done",
+            "testStrategy": null,
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T03:46:50.348Z"
+          },
+          {
+            "id": 3,
+            "title": "Verify Secure Token Handling",
+            "description": "Ensure token strings are masked or never logged in the agent trace/context.",
+            "dependencies": [2],
+            "details": "Review logging and context storage to guarantee the raw token from the Credential Provider is not stored in the agent's memory or logs, only used within the ephemeral execution command.",
+            "status": "done",
+            "testStrategy": null,
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T03:46:56.551Z"
+          }
+        ],
+        "updatedAt": "2026-02-05T03:46:56.551Z"
+      },
+      {
+        "id": "111",
+        "title": "Admin UI - Connect & Install",
+        "description": "Build the frontend UI for admins to register the GitHub App and view installations, aligned with the existing integrations framework and tRPC flow.",
+        "status": "done",
+        "dependencies": ["106", "107"],
+        "priority": "medium",
+        "details": "Implement the GitHub integration settings within `apps/web/app/admin`. The UI should utilize tRPC procedures from `apps/web/server/routers/github.ts` (or similar) to handle app registration and data fetching.\n\nKey Components:\n1. **Integration Settings Panel**:\n   - Add configuration fields for 'Permission Presets' (e.g., dropdown for 'Minimal' vs 'Robust' checks).\n   - Add a configuration field for 'Token TTL' (Time To Live).\n\n2. **App Registration Flow**:\n   - 'Register GitHub App' button initiating the manifest flow (POST to GitHub).\n   - Handle the redirect callback to save the App ID/Client ID via tRPC.\n\n3. **Status & Management**:\n   - Display connection status (Connected/Not Configured).\n   - List active installations (from `GithubInstallation` table).\n   - Show associated repositories per installation.\n   - Include a 'Sync' button to trigger a manual refresh of repositories (call `github.syncRepositories` or similar procedure).\n\n4. **Framework Alignment**:\n   - Ensure the new page follows the design patterns in `apps/web/app/admin` using shadcn/ui components installed in Task 83.",
+        "testStrategy": "1. **Manual Flow**: Click Register -> authenticate with GitHub -> Accept manifest -> Verify redirect back to Admin UI updates status to 'Connected'.\n2. **Configuration**: Change Permission Preset and Token TTL, save, and verify settings persist.\n3. **Data Display**: mock tRPC responses for installations and verify the list renders correctly with Shadcn UI components.\n4. **Sync Action**: Click 'Sync' and verify the corresponding tRPC mutation is called.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Scaffold GitHub Integration Page",
+            "description": "Create the main page structure in `apps/web/app/admin/integrations/github/page.tsx` (or equivalent) using existing layout components.",
+            "dependencies": [],
+            "details": "Use shadcn/ui cards and forms to structure the settings page.",
+            "status": "done",
+            "testStrategy": "Verify page renders within the admin layout.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:00:07.253Z"
+          },
+          {
+            "id": 2,
+            "title": "Implement Configuration Form",
+            "description": "Build the form for Permission Presets and Token TTL.",
+            "dependencies": [1],
+            "details": "Add inputs for selecting permission levels and setting token duration. Persist these settings via tRPC.",
+            "status": "done",
+            "testStrategy": "Submit form and verify data is saved in DB.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:00:13.801Z"
+          },
+          {
+            "id": 3,
+            "title": "Build Register App Flow",
+            "description": "Implement the 'Register GitHub App' button and manifest form submission.",
+            "dependencies": [2],
+            "details": "Construct the HTML form that posts to `https://github.com/settings/apps/new` with the manifest JSON payload.",
+            "status": "done",
+            "testStrategy": "Clicking button redirects to GitHub with correct manifest parameters.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:00:22.671Z"
+          },
+          {
+            "id": 4,
+            "title": "Display Installations & Repositories",
+            "description": "Fetch and display connected installations and their repos.",
+            "dependencies": [3],
+            "details": "Use tRPC `useQuery` to get installation data. Render a list showing Installation ID, Account Name, and linked Repositories.",
+            "status": "done",
+            "testStrategy": "Mock data and check rendering of the list.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:00:30.391Z"
+          },
+          {
+            "id": 5,
+            "title": "Implement Sync Functionality",
+            "description": "Add a button to manually sync repositories for an installation.",
+            "dependencies": [4],
+            "details": "Wire up a 'Sync' button to a tRPC mutation that triggers the repository sync logic.",
+            "status": "done",
+            "testStrategy": "Verify mutation is called on click and UI updates (e.g., loading spinner).",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:00:38.686Z"
+          }
+        ],
+        "updatedAt": "2026-02-05T04:00:38.686Z"
+      },
+      {
+        "id": "112",
+        "title": "Admin UI - Capability Matrix",
+        "description": "Build the UI for admins to assign capabilities to agents for specific repositories.",
+        "status": "done",
+        "dependencies": ["111"],
+        "priority": "medium",
+        "details": "Create a 'Capabilities' management view within `apps/web/app/admin` (e.g., `apps/web/app/admin/capabilities/page.tsx`).\n\nKey Requirements:\n- **Manual Assignment Only**: Explicitly grant capabilities per repository; no org-level defaults.\n- **Data Model**: Interact with the `agent_repo_capabilities` table using Kysely and repositories in `packages/database`. Capabilities are stored as a string array in the database (e.g., `capabilities: string[]`).\n- **Valid Capabilities**: Use the PRD-aligned list: `read_repo`, `create_branch`, `push_branch`, `open_pr`, `comment`, `request_review`, `label_issue_pr`, `review_pr`, `merge_pr`.\n- **tRPC Integration**: Create a new router `apps/web/server/routers/capabilities.ts` or extend `github.ts` to expose:\n  - `getAgentCapabilities(agentId, repoId)`\n  - `updateAgentCapabilities(agentId, repoId, capabilities[])`\n- **UI Components**:\n  - Agent Selector (dropdown).\n  - Repository Selector (dropdown, filtered by installation, using `github_repos`).\n  - Capability Checkbox Group (all 9 capability types).\n  - Matrix View: A table showing active `agent_repo_capabilities` records allowing revocation.\n\nFiles to Reference:\n- `packages/database/src/types.ts` (DB Type definitions)\n- `packages/database/src/repositories` (Use existing or create new repository access)\n- `apps/web/server/routers/github.ts` (or new router)\n- `apps/web/app/admin/layout.tsx` (Add navigation item)",
+        "testStrategy": "1. **Unit**: Test tRPC procedures for correctly parsing and storing capability string arrays.\n2. **Integration**: Assign capabilities in the UI and verify rows are created in the `agent_repo_capabilities` table with correct array data.\n3. **Revocation**: Uncheck a capability and verify the array is updated or the row is deleted if empty.\n4. **UI**: Specific tests for the matrix view correctly rendering the capability tags.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement tRPC Backend for Capabilities",
+            "description": "Create or update tRPC procedures to manage `agent_repo_capabilities` records using Kysely.",
+            "dependencies": [],
+            "details": "File: `apps/web/server/routers/capabilities.ts` (or extend `github.ts`).\n- `list`: Return all capability assignments including Agent and Repository relations (join with `github_repos`).\n- `upsert`: Accept `agentId`, `repoId`, and a `capabilities` array (strings). Insert or update the record for that pair.\n- Ensure types match `packages/database/src/types.ts` and validate against the allowed capability strings: `read_repo`, `create_branch`, `push_branch`, `open_pr`, `comment`, `request_review`, `label_issue_pr`, `review_pr`, `merge_pr`.",
+            "status": "done",
+            "testStrategy": "Unit tests using a mock Kysely instance to verify upsert logic and array handling.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:03:09.393Z"
+          },
+          {
+            "id": 2,
+            "title": "Build Capability Assignment UI Form",
+            "description": "Create the frontend form for selecting an Agent, a Repository, and toggling capabilities.",
+            "dependencies": [1],
+            "details": "File: `apps/web/app/admin/capabilities/components/assignment-form.tsx`.\n- Use `Combobox` or `Select` for Agents and Repositories (fetch via tRPC `apps/web/lib/trpc.ts`).\n- Render checkboxes for all supported capabilities: `read_repo`, `create_branch`, `push_branch`, `open_pr`, `comment`, `request_review`, `label_issue_pr`, `review_pr`, `merge_pr`.\n- Submit button calls the upsert procedure with the selected array of strings.",
+            "status": "done",
+            "testStrategy": null,
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:03:18.586Z"
+          },
+          {
+            "id": 3,
+            "title": "Build Capability Matrix View",
+            "description": "Display a table of existing permissions with revocation options.",
+            "dependencies": [2],
+            "details": "File: `apps/web/app/admin/capabilities/page.tsx`.\n- Table columns: Agent Name, Repository Name (from `github_repos`), Capabilities (tags), Actions (Edit/Revoke).\n- Implement 'Revoke' button which clears capabilities for that Agent/Repo pair.",
+            "status": "done",
+            "testStrategy": null,
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:03:25.181Z"
+          }
+        ],
+        "updatedAt": "2026-02-05T04:03:25.181Z"
+      },
+      {
+        "id": "113",
+        "title": "End-to-End Verification & API Wrapper",
+        "description": "Validate the entire flow with a real agent using git credentials configured by the token tool and implement a lightweight Octokit wrapper.",
+        "status": "done",
+        "dependencies": ["110", "112"],
+        "priority": "medium",
+        "details": "Update the verification strategy to use CI-safe integration tests with mocks instead of live E2E testing. The goal is to validate the token tool's environment configuration and the agent's interaction logic without external dependencies.\n\nKey Implementation Areas:\n1. **Environment Configuration**: Verify the token tool correctly writes `GH_TOKEN`/`GITHUB_TOKEN` to the expected environment files and configures the git credential helper locally.\n2. **Octokit Wrapper**: Implement `GithubClient` in `@nitejar/connectors-github` to handle API interactions, ensuring it respects the mocked environment tokens.\n3. **Mocked Interactions**: Use a mock server (e.g., MSW or Nock) to simulate GitHub API responses for token minting and TTL checks. Mock Telegram webhook payloads to verify reply metadata injection into the agent context.\n4. **Audit**: Verify that audit logs correctly record credential configuration and mocked API activities.",
+        "testStrategy": "Create a suite of integration tests in `packages/agent` or `packages/e2e` that:\n1. Mocks GitHub API endpoints (installation token, PR creation).\n2. Executes the token tool logic and asserts that `.git-credentials` (or equivalent config) and env files are updated correctly.\n3. Simulates a Telegram webhook event containing approval metadata.\n4. Verifies the agent receives the correct context without making outbound network calls.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Octokit Wrapper in connectors-github",
+            "description": "Create a `GithubClient` abstraction in `@nitejar/connectors-github` that accepts an installation token and exposes methods for `createPullRequest` and `getRepoDetails`.",
+            "dependencies": [],
+            "details": "Ensure it handles Octokit instantiation using environment variables configured by the token tool. It must be testable with mocked network requests.",
+            "status": "done",
+            "testStrategy": "Unit tests mocking Octokit responses to verify correct method calls and error handling options based on mocked token validity.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:15:48.107Z"
+          },
+          {
+            "id": 2,
+            "title": "Validate Token Tool Configuration (Mocked)",
+            "description": "Create an integration test that runs the token tool logic and verifies side effects on the filesystem/environment.",
+            "dependencies": [],
+            "details": "Instead of a real git push, verify that:\n1. `GH_TOKEN` or `GITHUB_TOKEN` is written to the specified env file.\n2. Git credential helper is configured locally.\n3. GitHub API calls for token minting are successfully mocked.",
+            "status": "done",
+            "testStrategy": "Test script that inspects `process.env` and git config output after running the tool against a mock server.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:15:48.109Z"
+          },
+          {
+            "id": 3,
+            "title": "Verify Mocked Refresh and Context Injection",
+            "description": "Test the token refresh logic and Telegram context injection using mocks.",
+            "dependencies": [1, 2],
+            "details": "Simulate a token expiry via the mock server to trigger the refresh flow. Additionally, inject a mock Telegram webhook payload to ensure the agent correctly parses reply metadata.",
+            "status": "done",
+            "testStrategy": "Integration test observing logs for 'token_refresh' events and asserting the agent context contains the injected Telegram metadata.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:15:48.110Z"
+          }
+        ],
+        "updatedAt": "2026-02-05T04:15:48.110Z"
+      },
+      {
+        "id": "114",
+        "title": "Configure Telegram Bot and Basic Messaging Service",
+        "description": "Configure the existing Telegram integration located in `packages/integrations/src/telegram` to handle messaging and webhooks. Avoid introducing external libraries like `telegraf` or creating redundant service classes. Focus on enhancing the existing client to support approval workflows.",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "details": "1. Analyze `packages/integrations/src/telegram/client.ts` and verify existing `sendMessage` implementation.\n2. Ensure the Telegram webhook is correctly configured and wired into the application's main entry point (likely `packages/agent/src/index.ts` or similar).\n3. Add helper methods to `TelegramClient` in `client.ts` specifically for sending approval prompts (e.g., `sendApprovalRequest(chatId, context)`).\n4. Verify configuration loading for `TELEGRAM_BOT_TOKEN` and webhook secrets in the existing integration config.\n5. Ensure the integration handles incoming webhook events and routes them appropriately.",
+        "testStrategy": "Unit test the `TelegramClient` methods by mocking the underlying HTTP requests. Integration test by triggering a webhook event locally and verifying the response, or by sending a test message to a known Chat ID using the configured client.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Verify Telegram Client Implementation",
+            "description": "Review `packages/integrations/src/telegram/client.ts`. Ensure `sendMessage` exists and uses the native Telegram Bot API via fetch/axios. Refactor if necessary to ensure types are correct.",
+            "dependencies": [],
+            "details": "Check specifically for the POST /sendMessage endpoint usage.",
+            "status": "done",
+            "testStrategy": null,
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T03:48:54.211Z"
+          },
+          {
+            "id": 2,
+            "title": "Implement Approval Prompt Helper",
+            "description": "Add a method `sendApprovalPrompt` to `TelegramClient`. This should format a message asking for user approval (e.g., for a PR merge) and potentially include inline keyboard buttons if supported/needed, or standard text instructions.",
+            "dependencies": [1],
+            "details": "Method signature: `sendApprovalPrompt(chatId: string, message: string): Promise<void>`.",
+            "status": "done",
+            "testStrategy": null,
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T03:49:00.989Z"
+          },
+          {
+            "id": 3,
+            "title": "Wire Webhook and Config",
+            "description": "Ensure the Telegram webhook endpoint is registered in the main application router and validates the secret token. Ensure `TELEGRAM_BOT_TOKEN` is loaded from environment variables into the integration config.",
+            "dependencies": [],
+            "details": "Verify `packages/integrations/src/telegram/index.ts` (or equivalent export) exports the webhook handler.",
+            "status": "done",
+            "testStrategy": null,
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T03:49:07.375Z"
+          }
+        ],
+        "updatedAt": "2026-02-05T03:49:07.375Z"
+      },
+      {
+        "id": "115",
+        "title": "Implement Telegram Approval Prompt Logic",
+        "description": "Expose a functional tool or transport mechanism to allow the agent to send free-form text messages via the existing Telegram integration. The focus is strictly on the transport layer and tool definition, enabling the agent to send arbitrary strings to the configured chat without predefined templates.",
+        "status": "done",
+        "dependencies": ["114"],
+        "priority": "medium",
+        "details": "1. Verify `TelegramClient` in `packages/integrations/src/telegram/client.ts` supports sending raw text messages.\n2. Create or expose a tool definition (e.g., `send_telegram_message`) accessible to the Agent.\n3. The tool should accept a single `message` string argument.\n4. The tool must retrieve the target `chatId` internally from the application configuration or environment variables (e.g., `TELEGRAM_CHAT_ID`), ensuring security and simplicity for the agent.\n5. Ensure the tool calls `TelegramClient.sendMessage` correctly.\n6. Note: Do not implement prompt generation logic, specific wording, or approval templates; the agent will determine the content dynamically.",
+        "testStrategy": "Unit test the tool definition to ensure it correctly delegates to `TelegramClient.sendMessage` with the provided string and configured chat ID. Perform a manual or integration verification by invoking the tool with a test string (e.g., 'Connectivity check') to confirm delivery to the target Telegram chat.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Telegram Send Message Tool",
+            "description": "Define and register the tool interface (e.g., `send_telegram_message`) that wraps the existing `TelegramClient`. Ensure it accepts a string input and handles the async dispatch.",
+            "dependencies": [],
+            "details": "Function signature: `(message: string) => Promise<void>`. Implementation should import `TelegramClient` from `packages/integrations`, load config, and execute the send.",
+            "status": "done",
+            "testStrategy": "Unit test: Mock `TelegramClient` and assert that the tool function passes the input string and config-derived `chatId` to the client's `sendMessage` method.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T03:49:21.134Z"
+          },
+          {
+            "id": 2,
+            "title": "Verify Message Transport End-to-End",
+            "description": "Validate that the integration actually connects to the Telegram API and delivers messages.",
+            "dependencies": [1],
+            "details": "Execute the new tool with a payload like 'System connectivity test'. Verify receipt in the configured Telegram channel. Ensure no exceptions are thrown for valid network requests.",
+            "status": "done",
+            "testStrategy": "Integration test or manual verification script that runs the tool against the live Telegram API (or a high-fidelity mock) and checks for a 200 OK response.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:15:48.093Z"
+          }
+        ],
+        "updatedAt": "2026-02-05T04:15:48.093Z"
+      },
+      {
+        "id": "116",
+        "title": "Implement Human Response Parsing for Merge Approval",
+        "description": "Enhance the Telegram webhook handler to support reply context, enabling the AI agent to interpret human responses naturally. Instead of a rigid keyword parser, the system will forward reply metadata (original message ID, reply text) to the agent, allowing it to understand approvals or feedback in context.",
+        "status": "done",
+        "dependencies": ["114"],
+        "priority": "high",
+        "details": "1. Modify `packages/integrations/src/telegram/webhook.ts` (or create if missing) to extract `reply_to_message` details from incoming Telegram updates.\n2. Ensure the payload forwarded to the agent includes the text of the reply and the ID of the message being replied to.\n3. Verify that the agent's context window or input mechanism can receive this metadata to correlate the reply with the original approval prompt.\n4. Remove the requirement for a strict boolean parser; rely on the agent's LLM capabilities to determine intent.",
+        "testStrategy": "Simulate a Telegram webhook event containing a reply object. Verify that the extracted data passed to the agent includes the reply text and the `reply_to_message` ID. Ensure the agent receives this as part of the user input stream.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Remove Strict Parsing Requirement",
+            "description": "Discard the plan for a dedicated regex-based parser utility (`parseApprovalResponse`). This logic will be handled by the agent's LLM inference instead.",
+            "dependencies": [],
+            "details": "Mark previous plans for `parser.ts` as obsolete. No code implementation needed for this step, just architectural alignment.",
+            "status": "done",
+            "testStrategy": null,
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Update Webhook Handler for Reply Metadata",
+            "description": "Modify the webhook handler to detect and extract reply context from Telegram payloads.",
+            "dependencies": [],
+            "details": "In `packages/integrations/src/telegram/webhook.ts`, inspect the `message` object. If `reply_to_message` exists, extract its `message_id` and include it in the event payload sent to the agent/runtime. Ensure the reply text is treated as the primary user input.",
+            "status": "done",
+            "testStrategy": "Mock a Telegram update with a reply. Assert that the handler constructs an internal event object containing `replyToId` and the user's text.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T03:49:29.035Z"
+          },
+          {
+            "id": 3,
+            "title": "Verify Agent Context Integration",
+            "description": "Ensure the agent receives the reply metadata in a format it can process.",
+            "dependencies": [2],
+            "details": "Trace the flow from the webhook to the agent's input handler. Ensure the `reply_to_message` ID is available in the agent's observation or context, allowing it to link 'Yes' or 'Merge it' back to the original proposal.",
+            "status": "done",
+            "testStrategy": null,
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:15:48.097Z"
+          }
+        ],
+        "updatedAt": "2026-02-05T04:15:48.097Z"
+      },
+      {
+        "id": "117",
+        "title": "Enhance GitHub Service for PR Creation and Review Request",
+        "description": "Update the GitHub integration configuration and system prompt to support a CLI-first approach for PR creation and review requests. Instead of strict internal checks or wrappers, this task ensures GH_TOKEN is exposed and the Agent is explicitly instructed via the system prompt to use the `gh` CLI (installing if necessary) or fallback to `curl`.",
+        "status": "done",
+        "dependencies": [],
+        "priority": "medium",
+        "details": "Refactor the GitHub integration strategy to rely on Agent autonomy guided by system prompt instructions rather than code-level guardrails.\n\n1.  **Environment Setup**: Verify that when the GitHub integration is enabled, the necessary environment variables (`GH_TOKEN` or `GITHUB_TOKEN`) are exposed to the Agent's runtime shell.\n2.  **System Prompt Injection**: When the GitHub integration is enabled, append instructions to the system prompt. These instructions must explicitly tell the Agent: \"GitHub credentials are set in GH_TOKEN. Use `gh` CLI. If missing, install it or use `curl`.\"\n3.  **No Code Checks**: Do not implement pre-flight checks for `gh` installation in the integration code. Rely entirely on the Agent to detect the environment state and react accordingly.\n4.  **No Wrapper Layer**: The Agent will execute these as shell commands directly.",
+        "testStrategy": "Integration test within `packages/integrations`.\n1.  Verify that enabling the GitHub integration injects `GH_TOKEN` into the Agent's environment variables.\n2.  Verify that the system prompt builder includes the specific GitHub instructions when the integration is active.\n3.  End-to-end simulation: Ensure the Agent can successfully execute a `gh` command or `curl` fallback given the environment and instructions.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Environment Token Injection",
+            "description": "Ensure the GitHub Integration service retrieves and decrypts the stored token, then exposes it as `GH_TOKEN` and `GITHUB_TOKEN` in the Agent's shell environment.",
+            "dependencies": [],
+            "details": "Modify the integration setup to export these variables. This allows standard tools like `gh` to work out-of-the-box without explicit login commands.",
+            "status": "done",
+            "testStrategy": "Unit test verifying that the decrypted token appears in the mock environment object returned by the integration service.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:15:48.099Z"
+          },
+          {
+            "id": 2,
+            "title": "Update System Prompt with Tool Instructions",
+            "description": "Modify the system prompt construction logic to inject specific guidance when the GitHub integration is enabled.",
+            "dependencies": [1],
+            "details": "Add logic to append a section to the system prompt: \"GitHub Integration Enabled: `GH_TOKEN` is available. You may use the `gh` CLI. If `gh` is not found, you are authorized to install it or use `curl` as a fallback.\"",
+            "status": "done",
+            "testStrategy": "Unit test the prompt builder to ensure the text appears only when the integration is enabled.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:15:48.100Z"
+          },
+          {
+            "id": 3,
+            "title": "Verify Agent Shell Execution Path",
+            "description": "Create a verification script or test case where the Agent (mocked) receives the prompt and executes a raw shell command.",
+            "dependencies": [1, 2],
+            "details": "Ensure that the Agent utilizes the injected tokens to perform a simple read operation (e.g., `gh auth status` or `curl /user`) without requiring valid internal tool definitions.",
+            "status": "done",
+            "testStrategy": "End-to-end test simulating an Agent executing `gh` commands using the environment variables provided by the integration.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:15:48.102Z"
+          }
+        ],
+        "updatedAt": "2026-02-05T04:15:48.102Z"
+      },
+      {
+        "id": "118",
+        "title": "Implement Reviewer Agent Logic for Submitting Reviews",
+        "description": "Enable the Reviewer Agent to analyze a PR and submit a formal GitHub review using CLI tools (`gh` or `curl`). This replaces direct Octokit API usage with a shell-execution model for agent actions.",
+        "status": "done",
+        "dependencies": ["117"],
+        "priority": "medium",
+        "details": "1. **Define CLI Tool Interface**: Ensure the agent has access to a generic shell execution tool or a specific `run_gh_command` tool.\n2. **Implement Review Logic**: Create a prompt or action sequence where the agent:\n   - Fetches PR details/diff via `gh pr diff <PR_URL>` or `curl`.\n   - Generates a review decision (APPROVE/REQUEST_CHANGES).\n   - Submits the review using `gh pr review <PR_URL> --approve` or `--request-changes -b \"<body\">`.\n3. **Environment Setup**: Ensure the runtime environment (Docker/local) has `gh` installed or authenticated access via `GITHUB_TOKEN` for `curl`.\n4. **Security**: Validate that shell commands are sandboxed or strictly typed if using a custom tool wrapper.",
+        "testStrategy": "1. **Mock Execution**: Mock the underlying shell execution function to capture `gh` commands.\n2. **Integration Test**: Verify that calling the agent action results in the correct command string (e.g., `gh pr review 123 --approve`).\n3. **Live Test (Optional)**: Run against a dummy PR in a sandbox repository if environment permits.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Verify/Install GitHub CLI in Runtime Environment",
+            "description": "Ensure the `gh` CLI tool is available in the agent's execution environment or Docker container. If not feasible, prepare `curl` command templates.",
+            "dependencies": [],
+            "details": "Check Dockerfile or setup scripts. Add `gh` installation if missing. Verify `GH_TOKEN` or `GITHUB_TOKEN` is correctly propagated to the shell environment.",
+            "status": "done",
+            "testStrategy": "Run a simple `gh --version` check inside the agent's environment.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:30:30.942Z"
+          },
+          {
+            "id": 2,
+            "title": "Create Shell Execution Tool for Agent",
+            "description": "Expose a tool that allows the agent to execute specific shell commands safely.",
+            "dependencies": [1],
+            "details": "Define a tool (e.g., `execute_gh_command`) that wraps `child_process.exec` or similar. Restrict it to `gh` commands or specific subcommands if possible to prevent arbitrary code execution.",
+            "status": "done",
+            "testStrategy": "Unit test the tool with a command like `gh pr list`. Mock `exec` to verify arguments.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:30:30.945Z"
+          },
+          {
+            "id": 3,
+            "title": "Implement 'Review PR' Agent Action",
+            "description": "Develop the high-level agent logic to fetch diffs and submit reviews using the shell tool.",
+            "dependencies": [2],
+            "details": "Sequence: \n1. `gh pr diff {url}` to get context.\n2. Analyze diff (noop/mock for now).\n3. `gh pr review {url} --approve` (or comment/request-changes).",
+            "status": "done",
+            "testStrategy": "Simulate an agent loop where it receives a PR URL and outputs the correct sequence of shell commands.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:30:30.947Z"
+          }
+        ],
+        "updatedAt": "2026-02-05T04:30:30.947Z"
+      },
+      {
+        "id": "119",
+        "title": "Implement Authoring Agent PR Lifecycle Management",
+        "description": "Orchestrate the Authoring Agent's workflow: Create Branch -> Commit -> Push -> Open PR -> Request Review.",
+        "status": "done",
+        "dependencies": ["117"],
+        "priority": "high",
+        "details": "1. Update the Authoring Agent's logic to manage the PR lifecycle using CLI tools instead of library calls.\n2. Ensure `GH_TOKEN` or `GITHUB_TOKEN` is available in the environment for authentication.\n3. Implement the sequence using shell command execution:\n   - `git checkout -b <branch_name>`\n   - `git commit -am '<message>'`\n   - `git push -u origin <branch_name>`\n   - Use `gh pr create` (preferred) or `curl` to create the PR.\n   - Use `gh pr request-review` (preferred) or `curl` to assign reviewers.\n4. Capture command output (stdout/stderr) to extract `pr_url` or `pr_number`.\n5. Store the `pr_number` and `repo_info` in the agent's context/memory for subsequent state tracking.",
+        "testStrategy": "End-to-end test on a sandbox repo. 1. Configure a mock or sandbox environment with `git` and `gh` installed. 2. Verify the agent successfully executes the shell commands to create a branch, push changes, and open a PR. 3. Confirm the PR exists using the CLI or API and that a reviewer is assigned.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Git CLI Wrapper or Tool",
+            "description": "Create or update a tool/function that allows the agent to execute git commands (checkout, commit, push) via a child process.",
+            "dependencies": [],
+            "details": "Use Node.js `child_process.exec` or `spawn` (or existing project utilities) to run git commands. Ensure proper error handling for non-zero exit codes.",
+            "status": "done",
+            "testStrategy": "Unit test the wrapper by mocking `child_process` execution.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:30:30.952Z"
+          },
+          {
+            "id": 2,
+            "title": "Implement GitHub CLI (gh) Wrapper or Tool",
+            "description": "Create a tool/function for the agent to interact with GitHub via the `gh` CLI (or curl as fallback).",
+            "dependencies": [1],
+            "details": "Implement commands for `gh pr create` and `gh pr request-review`. Ensure the tool parses the output to return the PR URL/Number. Verify environment variables for auth.",
+            "status": "done",
+            "testStrategy": "Unit test command construction and output parsing.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:30:30.953Z"
+          },
+          {
+            "id": 3,
+            "title": "Integrate Lifecycle into Authoring Agent Workflow",
+            "description": "Update the Authoring Agent's main loop to utilize the new CLI tools to complete the PR workflow.",
+            "dependencies": [1, 2],
+            "details": "Connect the steps: branch -> commit -> push -> pr create -> request review. Update agent context with the resulting PR details.",
+            "status": "done",
+            "testStrategy": "Integration test: Run the agent workflow against a dummy repo and verify the sequence of commands.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:30:30.955Z"
+          }
+        ],
+        "updatedAt": "2026-02-05T04:30:30.955Z"
+      },
+      {
+        "id": "120",
+        "title": "Implement PR State Tracking (Pending Approval)",
+        "description": "Create a persistent state tracking mechanism to remember which PRs are waiting for human approval via Telegram to avoid duplicate prompts, utilizing the existing Kysely database infrastructure.",
+        "status": "cancelled",
+        "dependencies": ["115"],
+        "priority": "medium",
+        "details": "1. Implement persistent storage using Kysely migrations in `packages/database`.\n2. Create a new table `pr_approval_states`.\n3. Required Schema Fields:\n   - `pr_id` (Integer: unique identifier for the PR)\n   - `repo_name` (String: to distinguish PRs across repos)\n   - `prompt_message_id` (Integer: Telegram message ID for tracking replies)\n   - `chat_id` (Integer/String: Telegram chat ID)\n   - `status` (Enum/String: 'pending_approval', 'approved', 'rejected', 'merged')\n   - `created_at` (Timestamp)\n   - `updated_at` (Timestamp)\n4. Implementation:\n   - Add migration file in `packages/database/migrations`.\n   - Update Kysely types in `packages/database/src/types.ts`.\n   - Create a repository/helper in `packages/database` to manage these records.\n   - In `apps/web` (or where the telegram logic resides), check DB for 'pending_approval' before sending prompts.",
+        "testStrategy": "Integration test with DB: Run migration, create a record via Kysely, verify persistence. Verify duplication check logic. Unit test the repository functions in `packages/database`.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create Kysely Migration and Types",
+            "description": "Add a new migration for `pr_approval_states` table and update TypeScript interfaces.",
+            "dependencies": [],
+            "details": "1. Create migration file in `packages/database/migrations` creating table `pr_approval_states`.\n2. Columns: `id` (serial pk), `pr_id` (int), `repo_name` (varchar), `prompt_message_id` (bigint), `chat_id` (bigint), `status` (varchar), `created_at`, `updated_at`.\n3. Add unique index on `(pr_id, repo_name)` where status is pending.\n4. Update `Database` interface in `packages/database/src/types.ts`.",
+            "status": "pending",
+            "testStrategy": "Run `pnpm db:migrate` (or equivalent) and verify table exists in local SQLite/Postgres.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Implement PR State Repository",
+            "description": "Create data access functions in `packages/database`.",
+            "dependencies": [1],
+            "details": "Create `packages/database/src/repositories/pr-approval.ts` (or similar) with functions:\n- `createApprovalRequest(db, data)`\n- `findPendingRequest(db, prId, repoName)`\n- `updateRequestStatus(db, id, status)`",
+            "status": "pending",
+            "testStrategy": "Unit tests importing the repository functions and running against a test DB instance.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Integrate State Check into Telegram Logic",
+            "description": "Modify the Telegram prompt logic in `apps/web` to use the new repository functions.",
+            "dependencies": [2],
+            "details": "In the logic from Task 115 (likely in `apps/web/src/app/api/webhooks/telegram` or a service):\n1. Import repository functions from `@nitejar/database`.\n2. Before sending prompt: `const existing = await findPendingRequest(...)`.\n3. If exists, skip.\n4. After sending: `await createApprovalRequest(...)` with the `message_id`.",
+            "status": "pending",
+            "testStrategy": "Mock the database module and verify flow control (skip vs send) in the application logic.",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-02-05T01:50:17.438Z"
+      },
+      {
+        "id": "121",
+        "title": "Connect Telegram Approval to Merge Action",
+        "description": "Enable the agent to execute GitHub merge operations based on affirmative Telegram responses. This can be achieved either through a dedicated merge tool wrapping API calls or by empowering the agent to use `gh` CLI/curl commands via a shell execution capability.",
+        "status": "done",
+        "dependencies": ["116"],
+        "priority": "high",
+        "details": "1. **Tooling Strategy**: Instead of strictly requiring a new `Octokit`-based tool, allow the agent to perform merges using available methods. This includes defining a `mergePullRequest` tool that wraps standard API calls OR ensuring the agent has access to a shell/command tool capable of running `gh pr merge` or `curl` requests against the GitHub API.\n2. **Environment Configuration**: Ensure the runtime environment (where the agent executes) has necessary credentials (`GH_TOKEN` or `GITHUB_TOKEN`) exposed to support CLI or raw API calls if the agent chooses that path.\n3. **Contextual Execution**: The agent's loop must interpret Telegram replies (e.g., \"merge it\") as intents to execute the merge. The agent should use the conversation history to identify the target PR and select the appropriate method (tool call or command execution) to finalize the merge.",
+        "testStrategy": "1. **Tool/Command Verification**: Verify that the chosen method (tool or shell command) successfully executes a merge against a mock or test repository.\n2. **Integration Simulation**: Feed a mock conversation history into the agent (PR notification -> User: 'Yes, merge it') and assert that the agent outputs a valid merge action (either calling a `mergePullRequest` tool or generating a valid `gh`/`curl` command string).",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Enable Merge Capability (Tool or CLI Access)",
+            "description": "Provide the agent with the means to merge pull requests, either via a specific tool or configured CLI access.",
+            "dependencies": [],
+            "details": "Update `packages/agent/src/tools/githubTools.ts` to either:\n- Implement `mergePullRequest` using `Octokit`/`githubService`.\n- OR ensure an `executeCommand` style tool is available and `gh` CLI is installed/configured in the environment with `GH_TOKEN`.\n\nIf implementing a specific tool, it should be flexible enough to handle the merge logic. If relying on CLI, ensure the agent's system prompt or context is aware of this capability.",
+            "status": "done",
+            "testStrategy": "Unit test the tool or verify CLI command execution in the test environment.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:30:30.957Z"
+          },
+          {
+            "id": 2,
+            "title": "Register Capabilities with Agent",
+            "description": "Ensure the agent's runtime has access to the merge tool or command execution tools.",
+            "dependencies": [1],
+            "details": "Update the tool dictionary passed to the LLM (e.g., in `packages/agent/src/agent.ts`) to include the new `mergePullRequest` tool or verify existing shell tools are active. Ensure `GH_TOKEN` is passed to the agent's execution context if relying on CLI operations.",
+            "status": "done",
+            "testStrategy": "Verify the tool or command capability appears in the agent's available tools list/system prompt.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:30:30.961Z"
+          },
+          {
+            "id": 3,
+            "title": "Verify Telegram Reply to Merge Action",
+            "description": "Confirm that an incoming Telegram message triggers the agent loop and results in a merge action.",
+            "dependencies": [2],
+            "details": "Simulate a Telegram webhook event with a user reply like 'merge it'. Ensure the agent processes this message with history and generates the correct action (tool call `mergePullRequest` or shell command `gh pr merge ...`) targeting the PR discussed in the history.",
+            "status": "done",
+            "testStrategy": "Integration test: Send 'merge it' message -> Expect correct merge tool call or command string -> Verify action succeeds against mock.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:30:30.964Z"
+          }
+        ],
+        "updatedAt": "2026-02-05T04:30:30.964Z"
+      },
+      {
+        "id": "122",
+        "title": "Refine Agent System Prompts for Workflow Adherence",
+        "description": "Update the system prompts (LLM instructions) for both Author and Reviewer agents to enforce the new workflow rules and mandate CLI-based GitHub interactions.",
+        "status": "done",
+        "dependencies": [],
+        "priority": "medium",
+        "details": "1. Author Agent Prompt:\n   - 'After pushing code, you must open a PR and request a review.'\n   - 'Do not merge without human approval via Telegram.'\n   - 'When GitHub integration is enabled, prioritize using CLI tools (git, gh, curl) over Octokit helpers.'\n   - 'Authenticate using GH_TOKEN or GITHUB_TOKEN environment variables.'\n\n2. Reviewer Agent Prompt:\n   - 'When asked to review, examine the diff and submit a formal GitHub review decision.'\n   - 'Use the `gh` CLI tool to fetch PR details and submit reviews.'\n\n3. Implementation:\n   - Inject these instructions dynamically into the agent's context window based on enabled integrations.\n   - Explicitly instruct the LLM to avoid mentioning or attempting to use 'Octokit' wrapper functions if direct CLI access is available.",
+        "testStrategy": "Prompt engineering validation. Interact with the agent in a dry-run mode to ensure it outlines a plan using `git` and `gh` commands rather than internal API helpers before executing.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Update Author Agent System Prompt",
+            "description": "Modify the base system prompt for the Author Agent to include instructions on using git/gh CLI tools with token authentication for PR creation.",
+            "dependencies": [],
+            "details": "Add text ensuring the agent uses standard CLI commands (git push, gh pr create) using the provided environment tokens (GH_TOKEN/GITHUB_TOKEN) instead of looking for Octokit wrappers.",
+            "status": "done",
+            "testStrategy": "Verify the agent generates a plan containing shell commands for git and gh.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:15:48.104Z"
+          },
+          {
+            "id": 2,
+            "title": "Update Reviewer Agent System Prompt",
+            "description": "Modify the base system prompt for the Reviewer Agent to mandate using `gh` CLI for checking out PRs and submitting reviews.",
+            "dependencies": [],
+            "details": "Ensure the prompt instructs the agent to use `gh pr checkout` and `gh pr review` commands.",
+            "status": "done",
+            "testStrategy": "Verify the agent generates a plan using `gh` commands for review tasks.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:15:48.105Z"
+          }
+        ],
+        "updatedAt": "2026-02-05T04:15:48.105Z"
+      },
+      {
+        "id": "123",
+        "title": "End-to-End Workflow Integration Test",
+        "description": "Verify the technical execution of the approval workflow: Agent messages Telegram -> Webhook injects reply -> Agent invokes merge tool. Focus on transport and context injection.",
+        "status": "done",
+        "dependencies": ["119", "118", "121", "122"],
+        "priority": "medium",
+        "details": "The E2E test validates the technical plumbing of the conversation loop rather than the LLM's reasoning capabilities. We assume the LLM will decide to merge given the correct context; this test ensures the context is correctly constructed and tools are invokable.\n\n1. **Setup**: Configure a test harness with mocked GitHub and Telegram services.\n2. **Notification Transport**: Trigger the agent to send a message. Verify the Telegram mock receives the correct payload.\n3. **Webhook Injection**: Simulate an incoming Telegram webhook payload (e.g., user replying to the previous message).\n4. **Context Loop**: Verify the webhook payload is correctly transformed and injected into the Agent's conversation history/context.\n5. **Tool Execution**: Verify the agent can successfully invoke the `merge_pr` tool given a mocked 'approved' state, ensuring the tool execution path functions correctly.",
+        "testStrategy": "Use the integration test harness to validate the I/O boundaries.\n1. **Mock GitHub**: Stub `create_pr` and `merge_pr` to return success without hitting real API.\n2. **Mock Telegram**: Capture outgoing HTTP requests from Agent to Telegram API. Inject incoming JSON payloads representing webhooks.\n3. **Assertions**: \n   - Verify outgoing Telegram HTTP request contains expected chat_id.\n   - Verify incoming webhook is parsed and added to Agent memory.\n   - Verify `merge_pr` tool function is called.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create Test Harness for Telegram-Agent Loop",
+            "description": "Set up a test script that can instantiate an Agent, mock the Telegram connector (input/output), and mock GitHub tool calls.",
+            "dependencies": [],
+            "details": "Use existing testing libraries. Ensure the agent's memory/context can be primed with the 'history' of the conversation.",
+            "status": "done",
+            "testStrategy": "Run script and verify mocks are registered.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:30:30.969Z"
+          },
+          {
+            "id": 2,
+            "title": "Validate Transport: Agent to Telegram",
+            "description": "Verify the agent's outgoing message correctly hits the mocked Telegram API endpoint.",
+            "dependencies": [1],
+            "details": "Trigger a send_message action. Assert the mock received a POST request with the correct structure (chat_id, text). Do not validate specific prompt text, just the schema compliance.",
+            "status": "done",
+            "testStrategy": "Inspect mock call arguments for correct JSON structure.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:30:30.972Z"
+          },
+          {
+            "id": 3,
+            "title": "Validate Transport: Webhook to Agent Context",
+            "description": "Simulate an incoming Telegram webhook and verify it appears in the Agent's running context.",
+            "dependencies": [2],
+            "details": "POST a standard Telegram update JSON to the webhook handler. Check the Agent's internal state/memory to confirm the message was parsed and appended to history.",
+            "status": "done",
+            "testStrategy": "Inspect Agent memory state after webhook injection.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:30:30.974Z"
+          },
+          {
+            "id": 4,
+            "title": "Verify Merge Tool Invocation",
+            "description": "Force the agent to invoke the merge tool and verify the mock GitHub client receives the call.",
+            "dependencies": [3],
+            "details": "Skip the 'reasoning' phase validation. Manually invoke the tool or prime the agent with a 'MERGE NOW' directive to ensure the `merge_pr` function executes and calls the GitHub mock.",
+            "status": "done",
+            "testStrategy": "Assert GitHub mock received the merge request.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-05T04:30:30.976Z"
+          }
+        ],
+        "updatedAt": "2026-02-05T04:30:30.976Z"
+      },
+      {
+        "id": "124",
+        "title": "Define NetworkPolicy TypeScript types and interfaces",
+        "description": "Create the core TypeScript type definitions for network policies including NetworkPolicy, NetworkPolicyRule, and PolicyPreset interfaces in the agent package.",
+        "details": "Add the following types to `packages/agent/src/types.ts`:\n\n```typescript\nexport type NetworkPolicyMode = 'allow-list' | 'deny-list' | 'unrestricted';\n\nexport interface NetworkPolicyRule {\n  domain: string;        // e.g., 'github.com', '*.npmjs.org', '*'\n  action: 'allow' | 'deny';\n}\n\nexport interface NetworkPolicy {\n  mode: NetworkPolicyMode;\n  rules: NetworkPolicyRule[];\n  presetId?: string;\n  customized?: boolean;\n}\n\nexport interface PolicyPreset {\n  id: string;\n  name: string;\n  description: string;\n  policy: NetworkPolicy;\n}\n```\n\nExtend the existing `AgentConfig` interface to include:\n```typescript\ninterface AgentConfig {\n  // ... existing fields\n  networkPolicy?: NetworkPolicy;\n}\n```\n\nThis approach stores networkPolicy in the existing agents.config JSON blob, avoiding database migrations per the PRD's Option A recommendation.",
+        "testStrategy": "1. Add unit tests to verify type exports are accessible\n2. Test that existing AgentConfig parsing still works with and without networkPolicy field\n3. Verify TypeScript compilation succeeds with new types\n4. Test that parseAgentConfig handles undefined networkPolicy gracefully",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-07T19:05:57.640Z"
+      },
+      {
+        "id": "125",
+        "title": "Create network policy presets data and validation utilities",
+        "description": "Implement the predefined policy presets (unrestricted, github-only, development, lockdown) and validation utilities for domain patterns and policy rules.",
+        "details": "Create new file `packages/agent/src/network-policy.ts`:\n\n```typescript\nimport { NetworkPolicy, NetworkPolicyRule, PolicyPreset } from './types';\n\nexport const NETWORK_POLICY_PRESETS: PolicyPreset[] = [\n  {\n    id: 'unrestricted',\n    name: 'Unrestricted',\n    description: 'Full network access',\n    policy: {\n      mode: 'unrestricted',\n      rules: [{ domain: '*', action: 'allow' }],\n      presetId: 'unrestricted',\n    },\n  },\n  {\n    id: 'github-only',\n    name: 'GitHub Only',\n    description: 'GitHub API and git operations only',\n    policy: {\n      mode: 'allow-list',\n      rules: [\n        { domain: 'github.com', action: 'allow' },\n        { domain: '*.github.com', action: 'allow' },\n        { domain: 'api.github.com', action: 'allow' },\n        { domain: 'raw.githubusercontent.com', action: 'allow' },\n        { domain: '*.githubusercontent.com', action: 'allow' },\n        { domain: '*', action: 'deny' },\n      ],\n      presetId: 'github-only',\n    },\n  },\n  {\n    id: 'development',\n    name: 'Development',\n    description: 'GitHub + npm + PyPI + common dev tools',\n    policy: {\n      mode: 'allow-list',\n      rules: [\n        { domain: 'github.com', action: 'allow' },\n        { domain: '*.github.com', action: 'allow' },\n        { domain: 'api.github.com', action: 'allow' },\n        { domain: '*.githubusercontent.com', action: 'allow' },\n        { domain: 'registry.npmjs.org', action: 'allow' },\n        { domain: '*.npmjs.org', action: 'allow' },\n        { domain: 'pypi.org', action: 'allow' },\n        { domain: '*.pypi.org', action: 'allow' },\n        { domain: 'files.pythonhosted.org', action: 'allow' },\n        { domain: 'crates.io', action: 'allow' },\n        { domain: '*.crates.io', action: 'allow' },\n        { domain: '*', action: 'deny' },\n      ],\n      presetId: 'development',\n    },\n  },\n  {\n    id: 'lockdown',\n    name: 'Lockdown',\n    description: 'Deny all external access',\n    policy: {\n      mode: 'deny-list',\n      rules: [{ domain: '*', action: 'deny' }],\n      presetId: 'lockdown',\n    },\n  },\n];\n\nexport const DEFAULT_NETWORK_POLICY = NETWORK_POLICY_PRESETS.find(p => p.id === 'development')!.policy;\n\n// Validation utilities\nexport function isValidDomainPattern(pattern: string): boolean {\n  if (!pattern || pattern.length === 0) return false;\n  if (pattern === '*') return true;\n  // Allow wildcard subdomains: *.example.com\n  const wildcardSubdomain = /^\\*\\.[a-zA-Z0-9][a-zA-Z0-9-]*(\\.[a-zA-Z0-9][a-zA-Z0-9-]*)*$/;\n  // Allow exact domain: example.com\n  const exactDomain = /^[a-zA-Z0-9][a-zA-Z0-9-]*(\\.[a-zA-Z0-9][a-zA-Z0-9-]*)*$/;\n  return wildcardSubdomain.test(pattern) || exactDomain.test(pattern);\n}\n\nexport function validateNetworkPolicy(policy: NetworkPolicy): { valid: boolean; errors: string[] } {\n  const errors: string[] = [];\n  \n  if (!['allow-list', 'deny-list', 'unrestricted'].includes(policy.mode)) {\n    errors.push(`Invalid mode: ${policy.mode}`);\n  }\n  \n  if (!Array.isArray(policy.rules) || policy.rules.length === 0) {\n    errors.push('Policy must have at least one rule');\n  }\n  \n  for (const rule of policy.rules) {\n    if (!isValidDomainPattern(rule.domain)) {\n      errors.push(`Invalid domain pattern: ${rule.domain}`);\n    }\n    if (!['allow', 'deny'].includes(rule.action)) {\n      errors.push(`Invalid action: ${rule.action}`);\n    }\n  }\n  \n  // Warn if no catch-all rule\n  const hasCatchAll = policy.rules.some(r => r.domain === '*');\n  if (!hasCatchAll) {\n    errors.push('Policy should include a catch-all (*) rule as the last entry');\n  }\n  \n  return { valid: errors.length === 0, errors };\n}\n\nexport function getPresetById(id: string): PolicyPreset | undefined {\n  return NETWORK_POLICY_PRESETS.find(p => p.id === id);\n}\n```\n\nExport from `packages/agent/src/index.ts`.",
+        "testStrategy": "1. Unit test each preset exists and has valid structure\n2. Test isValidDomainPattern with valid patterns: 'github.com', '*.npmjs.org', '*'\n3. Test isValidDomainPattern with invalid patterns: '', '**', 'http://github.com', '*.*.com'\n4. Test validateNetworkPolicy catches missing rules, invalid modes, and invalid actions\n5. Test getPresetById returns correct preset or undefined",
+        "priority": "high",
+        "dependencies": ["124"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-07T19:06:00.448Z"
+      },
+      {
+        "id": "126",
+        "title": "Implement Sprites API network policy integration",
+        "description": "Add methods to the Sprites client to get and set network policies on sprites, enabling policy sync when agents are updated.",
+        "details": "Extend `packages/sprites/src/client.ts` to add network policy methods:\n\n```typescript\nimport { NetworkPolicyRule } from '@nitejar/agent';\n\nexport interface SpritesNetworkPolicy {\n  rules: NetworkPolicyRule[];\n}\n\n// Add to SpritesClient class or create functions:\n\nexport async function getSpriteNetworkPolicy(spriteName: string): Promise<SpritesNetworkPolicy | null> {\n  const client = getSpritesClient();\n  try {\n    const response = await client.get(`/v1/sprites/${spriteName}/policy/network`);\n    return response.data;\n  } catch (error: any) {\n    if (error.response?.status === 404) return null;\n    throw error;\n  }\n}\n\nexport async function setSpriteNetworkPolicy(\n  spriteName: string,\n  policy: SpritesNetworkPolicy\n): Promise<SpritesNetworkPolicy> {\n  const client = getSpritesClient();\n  const response = await client.post(`/v1/sprites/${spriteName}/policy/network`, {\n    rules: policy.rules,\n  });\n  return response.data;\n}\n```\n\nCreate a higher-level sync function that handles the full workflow:\n\n```typescript\nexport async function syncAgentNetworkPolicy(\n  spriteName: string | null,\n  policy: NetworkPolicy\n): Promise<{ synced: boolean; error?: string }> {\n  if (!spriteName) {\n    return { synced: false, error: 'No sprite assigned to agent' };\n  }\n  \n  try {\n    await setSpriteNetworkPolicy(spriteName, { rules: policy.rules });\n    return { synced: true };\n  } catch (error: any) {\n    console.error('Failed to sync network policy to Sprites:', error);\n    return { synced: false, error: error.message || 'Failed to sync policy' };\n  }\n}\n```\n\nExport new functions from `packages/sprites/src/index.ts`.",
+        "testStrategy": "1. Mock Sprites API client and test getSpriteNetworkPolicy returns policy on success\n2. Test getSpriteNetworkPolicy returns null on 404\n3. Test setSpriteNetworkPolicy sends correct payload format\n4. Test syncAgentNetworkPolicy handles missing sprite gracefully\n5. Test syncAgentNetworkPolicy handles API errors and returns appropriate error message\n6. Integration test with actual Sprites API (if test environment available)",
+        "priority": "high",
+        "dependencies": ["124"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-07T19:06:03.164Z"
+      },
+      {
+        "id": "127",
+        "title": "Create networkPolicy tRPC router with CRUD endpoints",
+        "description": "Implement tRPC router procedures for getting, setting, and listing network policies and presets, following the established patterns in the codebase.",
+        "details": "Create new file `apps/web/server/routers/network-policy.ts`:\n\n```typescript\nimport { z } from 'zod';\nimport { router, publicProcedure } from '../trpc';\nimport { db, parseAgentConfig, serializeAgentConfig } from '@nitejar/database';\nimport {\n  NetworkPolicy,\n  NETWORK_POLICY_PRESETS,\n  validateNetworkPolicy,\n  getPresetById,\n  DEFAULT_NETWORK_POLICY,\n} from '@nitejar/agent';\nimport { syncAgentNetworkPolicy } from '@nitejar/sprites';\n\nconst networkPolicyRuleSchema = z.object({\n  domain: z.string().min(1),\n  action: z.enum(['allow', 'deny']),\n});\n\nconst networkPolicySchema = z.object({\n  mode: z.enum(['allow-list', 'deny-list', 'unrestricted']),\n  rules: z.array(networkPolicyRuleSchema).min(1),\n  presetId: z.string().optional(),\n  customized: z.boolean().optional(),\n});\n\nexport const networkPolicyRouter = router({\n  // Get current policy for an agent\n  get: publicProcedure\n    .input(z.object({ agentId: z.string() }))\n    .query(async ({ input }) => {\n      const agent = await db\n        .selectFrom('agents')\n        .select(['id', 'config', 'sprite_id'])\n        .where('id', '=', input.agentId)\n        .executeTakeFirst();\n      \n      if (!agent) throw new Error('Agent not found');\n      \n      const config = parseAgentConfig(agent.config);\n      return {\n        policy: config.networkPolicy || null,\n        spriteId: agent.sprite_id,\n      };\n    }),\n\n  // Set policy for an agent\n  set: publicProcedure\n    .input(z.object({\n      agentId: z.string(),\n      policy: networkPolicySchema,\n    }))\n    .mutation(async ({ input }) => {\n      const validation = validateNetworkPolicy(input.policy as NetworkPolicy);\n      if (!validation.valid) {\n        throw new Error(`Invalid policy: ${validation.errors.join(', ')}`);\n      }\n      \n      const agent = await db\n        .selectFrom('agents')\n        .select(['id', 'config', 'sprite_id'])\n        .where('id', '=', input.agentId)\n        .executeTakeFirst();\n      \n      if (!agent) throw new Error('Agent not found');\n      \n      const config = parseAgentConfig(agent.config);\n      config.networkPolicy = input.policy as NetworkPolicy;\n      \n      await db\n        .updateTable('agents')\n        .set({ config: serializeAgentConfig(config) })\n        .where('id', '=', input.agentId)\n        .execute();\n      \n      // Sync to Sprites API if sprite exists\n      let syncResult = { synced: false, error: undefined as string | undefined };\n      if (agent.sprite_id) {\n        syncResult = await syncAgentNetworkPolicy(agent.sprite_id, input.policy as NetworkPolicy);\n      }\n      \n      return {\n        success: true,\n        synced: syncResult.synced,\n        syncError: syncResult.error,\n      };\n    }),\n\n  // List available presets\n  listPresets: publicProcedure.query(async () => {\n    return NETWORK_POLICY_PRESETS;\n  }),\n\n  // Apply a preset to an agent\n  applyPreset: publicProcedure\n    .input(z.object({\n      agentId: z.string(),\n      presetId: z.string(),\n    }))\n    .mutation(async ({ input }) => {\n      const preset = getPresetById(input.presetId);\n      if (!preset) throw new Error(`Preset not found: ${input.presetId}`);\n      \n      const agent = await db\n        .selectFrom('agents')\n        .select(['id', 'config', 'sprite_id'])\n        .where('id', '=', input.agentId)\n        .executeTakeFirst();\n      \n      if (!agent) throw new Error('Agent not found');\n      \n      const config = parseAgentConfig(agent.config);\n      config.networkPolicy = { ...preset.policy };\n      \n      await db\n        .updateTable('agents')\n        .set({ config: serializeAgentConfig(config) })\n        .where('id', '=', input.agentId)\n        .execute();\n      \n      // Sync to Sprites API\n      let syncResult = { synced: false, error: undefined as string | undefined };\n      if (agent.sprite_id) {\n        syncResult = await syncAgentNetworkPolicy(agent.sprite_id, preset.policy);\n      }\n      \n      return {\n        success: true,\n        preset: preset,\n        synced: syncResult.synced,\n        syncError: syncResult.error,\n      };\n    }),\n\n  // Retry sync if local and remote are out of sync\n  retrySync: publicProcedure\n    .input(z.object({ agentId: z.string() }))\n    .mutation(async ({ input }) => {\n      const agent = await db\n        .selectFrom('agents')\n        .select(['id', 'config', 'sprite_id'])\n        .where('id', '=', input.agentId)\n        .executeTakeFirst();\n      \n      if (!agent) throw new Error('Agent not found');\n      if (!agent.sprite_id) throw new Error('No sprite assigned to agent');\n      \n      const config = parseAgentConfig(agent.config);\n      if (!config.networkPolicy) throw new Error('No network policy configured');\n      \n      const syncResult = await syncAgentNetworkPolicy(agent.sprite_id, config.networkPolicy);\n      return syncResult;\n    }),\n});\n```\n\nRegister in `apps/web/server/routers/_app.ts`:\n```typescript\nimport { networkPolicyRouter } from './network-policy';\n\nexport const appRouter = router({\n  // ... existing routers\n  networkPolicy: networkPolicyRouter,\n});\n```",
+        "testStrategy": "1. Test get procedure returns null policy for new agents\n2. Test get procedure returns saved policy for configured agents\n3. Test set procedure validates policy and rejects invalid ones\n4. Test set procedure saves policy to database\n5. Test set procedure calls Sprites sync and returns sync status\n6. Test listPresets returns all presets with correct structure\n7. Test applyPreset applies correct preset policy\n8. Test applyPreset with invalid preset ID throws error\n9. Test retrySync with no sprite assigned throws appropriate error\n10. Integration test full flow: set policy, verify DB, verify Sprites sync called",
+        "priority": "high",
+        "dependencies": ["125", "126"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-07T19:06:05.839Z"
+      },
+      {
+        "id": "128",
+        "title": "Create NetworkPolicySection admin UI component",
+        "description": "Build the main NetworkPolicySection React component for the agent detail page, including policy overview card showing current mode, preset, and rule count.",
+        "details": "Create `apps/web/app/admin/agents/[id]/NetworkPolicySection.tsx`:\n\n```typescript\n'use client';\n\nimport { useState, useEffect } from 'react';\nimport { trpc } from '@/lib/trpc';\nimport { NetworkPolicy, NetworkPolicyRule, PolicyPreset } from '@nitejar/agent';\n\ninterface NetworkPolicySectionProps {\n  agentId: string;\n}\n\nexport function NetworkPolicySection({ agentId }: NetworkPolicySectionProps) {\n  const [localPolicy, setLocalPolicy] = useState<NetworkPolicy | null>(null);\n  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);\n  const [isDirty, setIsDirty] = useState(false);\n  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);\n\n  const policyQuery = trpc.networkPolicy.get.useQuery({ agentId });\n  const presetsQuery = trpc.networkPolicy.listPresets.useQuery();\n  const setPolicy = trpc.networkPolicy.set.useMutation();\n  const applyPreset = trpc.networkPolicy.applyPreset.useMutation();\n  const retrySync = trpc.networkPolicy.retrySync.useMutation();\n\n  useEffect(() => {\n    if (policyQuery.data?.policy) {\n      setLocalPolicy(policyQuery.data.policy);\n      setSelectedPresetId(policyQuery.data.policy.presetId || null);\n    }\n  }, [policyQuery.data]);\n\n  const handlePresetSelect = async (presetId: string) => {\n    try {\n      const result = await applyPreset.mutateAsync({ agentId, presetId });\n      setLocalPolicy(result.preset.policy);\n      setSelectedPresetId(presetId);\n      setIsDirty(false);\n      setMessage({\n        type: 'success',\n        text: result.synced\n          ? `Applied ${result.preset.name} preset`\n          : `Applied ${result.preset.name} preset (sync pending: ${result.syncError})`,\n      });\n      policyQuery.refetch();\n    } catch (error: any) {\n      setMessage({ type: 'error', text: error.message });\n    }\n  };\n\n  const handleSaveChanges = async () => {\n    if (!localPolicy) return;\n    try {\n      const result = await setPolicy.mutateAsync({ agentId, policy: localPolicy });\n      setIsDirty(false);\n      setMessage({\n        type: 'success',\n        text: result.synced\n          ? 'Policy saved and synced'\n          : `Policy saved (sync pending: ${result.syncError})`,\n      });\n      policyQuery.refetch();\n    } catch (error: any) {\n      setMessage({ type: 'error', text: error.message });\n    }\n  };\n\n  const getModeLabel = (mode: string) => {\n    switch (mode) {\n      case 'unrestricted': return 'Unrestricted';\n      case 'allow-list': return 'Allow List';\n      case 'deny-list': return 'Deny List';\n      default: return mode;\n    }\n  };\n\n  if (policyQuery.isLoading) return <div>Loading policy...</div>;\n\n  return (\n    <div className=\"space-y-6\">\n      {/* Policy Overview Card */}\n      <div className=\"bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6\">\n        <h3 className=\"text-lg font-semibold mb-4\">Network Policy</h3>\n        \n        {localPolicy ? (\n          <div className=\"space-y-2\">\n            <div className=\"flex items-center gap-2\">\n              <span className=\"text-sm text-gray-500\">Mode:</span>\n              <span className=\"font-medium\">{getModeLabel(localPolicy.mode)}</span>\n            </div>\n            {localPolicy.presetId && (\n              <div className=\"flex items-center gap-2\">\n                <span className=\"text-sm text-gray-500\">Preset:</span>\n                <span className=\"font-medium\">\n                  {presetsQuery.data?.find(p => p.id === localPolicy.presetId)?.name || localPolicy.presetId}\n                </span>\n                {localPolicy.customized && (\n                  <span className=\"text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded\">Customized</span>\n                )}\n              </div>\n            )}\n            <div className=\"flex items-center gap-2\">\n              <span className=\"text-sm text-gray-500\">Rules:</span>\n              <span className=\"font-medium\">{localPolicy.rules.length} rule(s)</span>\n            </div>\n          </div>\n        ) : (\n          <p className=\"text-gray-500\">No network policy configured. Select a preset below.</p>\n        )}\n        \n        {message && (\n          <div className={`mt-4 p-3 rounded ${message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>\n            {message.text}\n          </div>\n        )}\n      </div>\n\n      {/* Preset Selector */}\n      <PresetSelector\n        presets={presetsQuery.data || []}\n        selectedPresetId={selectedPresetId}\n        onSelect={handlePresetSelect}\n        isLoading={applyPreset.isPending}\n        hasCustomRules={localPolicy?.customized}\n      />\n\n      {/* Rules Editor */}\n      {localPolicy && (\n        <RulesEditor\n          rules={localPolicy.rules}\n          onChange={(rules) => {\n            setLocalPolicy({ ...localPolicy, rules, customized: true });\n            setIsDirty(true);\n          }}\n        />\n      )}\n\n      {/* Actions */}\n      {isDirty && (\n        <div className=\"flex gap-3\">\n          <button\n            onClick={handleSaveChanges}\n            disabled={setPolicy.isPending}\n            className=\"px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50\"\n          >\n            {setPolicy.isPending ? 'Saving...' : 'Save Changes'}\n          </button>\n          <button\n            onClick={() => {\n              setLocalPolicy(policyQuery.data?.policy || null);\n              setIsDirty(false);\n            }}\n            className=\"px-4 py-2 border border-gray-300 rounded hover:bg-gray-50\"\n          >\n            Cancel\n          </button>\n        </div>\n      )}\n    </div>\n  );\n}\n```\n\nThe component follows the established patterns from ModelSection.tsx and SoulSection.tsx with:\n- Local state for editing\n- tRPC mutations with loading states\n- Success/error message feedback\n- Dirty state tracking",
+        "testStrategy": "1. Test component renders loading state while fetching policy\n2. Test component shows 'No policy configured' for new agents\n3. Test component displays current policy mode, preset, and rule count\n4. Test preset selection triggers applyPreset mutation\n5. Test success and error messages display correctly\n6. Test dirty state tracking when rules are modified\n7. Test Save Changes button triggers set mutation with local policy\n8. Test Cancel button reverts to server state\n9. Visual testing with agent-browser skill to verify UI renders correctly",
+        "priority": "high",
+        "dependencies": ["127"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-07T19:06:08.536Z"
+      },
+      {
+        "id": "129",
+        "title": "Implement PresetSelector component with preview",
+        "description": "Create the PresetSelector sub-component that displays available presets as selectable cards with rule previews and apply functionality.",
+        "details": "Create the PresetSelector component within the NetworkPolicySection file or as a separate component:\n\n```typescript\ninterface PresetSelectorProps {\n  presets: PolicyPreset[];\n  selectedPresetId: string | null;\n  onSelect: (presetId: string) => void;\n  isLoading: boolean;\n  hasCustomRules?: boolean;\n}\n\nfunction PresetSelector({\n  presets,\n  selectedPresetId,\n  onSelect,\n  isLoading,\n  hasCustomRules,\n}: PresetSelectorProps) {\n  const [confirmingPreset, setConfirmingPreset] = useState<string | null>(null);\n  const [showPreview, setShowPreview] = useState<string | null>(null);\n\n  const handlePresetClick = (presetId: string) => {\n    if (hasCustomRules && presetId !== selectedPresetId) {\n      setConfirmingPreset(presetId);\n    } else {\n      onSelect(presetId);\n    }\n  };\n\n  return (\n    <div className=\"bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6\">\n      <h4 className=\"text-md font-semibold mb-4\">Policy Presets</h4>\n      \n      <div className=\"grid grid-cols-2 md:grid-cols-4 gap-4\">\n        {presets.map((preset) => (\n          <div\n            key={preset.id}\n            className={`relative p-4 border rounded-lg cursor-pointer transition-all ${\n              selectedPresetId === preset.id\n                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'\n                : 'border-gray-200 hover:border-gray-300'\n            }`}\n            onClick={() => handlePresetClick(preset.id)}\n          >\n            <h5 className=\"font-medium\">{preset.name}</h5>\n            <p className=\"text-sm text-gray-500 mt-1\">{preset.description}</p>\n            <button\n              onClick={(e) => {\n                e.stopPropagation();\n                setShowPreview(showPreview === preset.id ? null : preset.id);\n              }}\n              className=\"text-xs text-blue-600 mt-2 hover:underline\"\n            >\n              {showPreview === preset.id ? 'Hide rules' : 'Preview rules'}\n            </button>\n            \n            {showPreview === preset.id && (\n              <div className=\"mt-2 text-xs bg-gray-50 dark:bg-gray-900 rounded p-2 max-h-32 overflow-y-auto\">\n                {preset.policy.rules.map((rule, idx) => (\n                  <div key={idx} className=\"flex justify-between py-0.5\">\n                    <code className=\"text-gray-700 dark:text-gray-300\">{rule.domain}</code>\n                    <span className={rule.action === 'allow' ? 'text-green-600' : 'text-red-600'}>\n                      {rule.action}\n                    </span>\n                  </div>\n                ))}\n              </div>\n            )}\n            \n            {selectedPresetId === preset.id && (\n              <div className=\"absolute top-2 right-2\">\n                <svg className=\"w-5 h-5 text-blue-500\" fill=\"currentColor\" viewBox=\"0 0 20 20\">\n                  <path fillRule=\"evenodd\" d=\"M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z\" clipRule=\"evenodd\" />\n                </svg>\n              </div>\n            )}\n          </div>\n        ))}\n      </div>\n\n      {/* Confirmation Dialog */}\n      {confirmingPreset && (\n        <div className=\"fixed inset-0 bg-black/50 flex items-center justify-center z-50\">\n          <div className=\"bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md\">\n            <h4 className=\"font-semibold mb-2\">Apply Preset?</h4>\n            <p className=\"text-gray-600 dark:text-gray-400 mb-4\">\n              This will overwrite your custom rules. Are you sure?\n            </p>\n            <div className=\"flex gap-3 justify-end\">\n              <button\n                onClick={() => setConfirmingPreset(null)}\n                className=\"px-4 py-2 border rounded\"\n              >\n                Cancel\n              </button>\n              <button\n                onClick={() => {\n                  onSelect(confirmingPreset);\n                  setConfirmingPreset(null);\n                }}\n                disabled={isLoading}\n                className=\"px-4 py-2 bg-blue-600 text-white rounded\"\n              >\n                {isLoading ? 'Applying...' : 'Apply Preset'}\n              </button>\n            </div>\n          </div>\n        </div>\n      )}\n    </div>\n  );\n}\n```\n\nFeatures:\n- Grid of preset cards with name and description\n- Visual indicator for currently selected preset\n- 'Preview rules' toggle to show rules inline\n- Confirmation dialog when overwriting custom rules\n- Loading state during preset application",
+        "testStrategy": "1. Test all presets render as cards with correct names and descriptions\n2. Test clicking preset calls onSelect callback\n3. Test selected preset shows visual indicator (checkmark, border)\n4. Test preview toggle shows/hides rules list\n5. Test confirmation dialog appears when hasCustomRules is true\n6. Test confirmation dialog Cancel button closes without selecting\n7. Test confirmation dialog Apply button calls onSelect and closes\n8. Test loading state disables Apply button",
+        "priority": "medium",
+        "dependencies": ["128"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-07T19:06:11.170Z"
+      },
+      {
+        "id": "130",
+        "title": "Implement RulesEditor component with drag-to-reorder",
+        "description": "Create the RulesEditor sub-component that allows viewing, adding, removing, and reordering network policy rules with a sortable list interface.",
+        "details": "Create the RulesEditor component:\n\n```typescript\nimport { useState } from 'react';\nimport { NetworkPolicyRule } from '@nitejar/agent';\n\ninterface RulesEditorProps {\n  rules: NetworkPolicyRule[];\n  onChange: (rules: NetworkPolicyRule[]) => void;\n}\n\nfunction RulesEditor({ rules, onChange }: RulesEditorProps) {\n  const [newDomain, setNewDomain] = useState('');\n  const [newAction, setNewAction] = useState<'allow' | 'deny'>('allow');\n  const [dragIndex, setDragIndex] = useState<number | null>(null);\n\n  const handleAddRule = () => {\n    if (!newDomain.trim()) return;\n    \n    // Insert before catch-all rule if exists\n    const catchAllIndex = rules.findIndex(r => r.domain === '*');\n    const newRules = [...rules];\n    const newRule = { domain: newDomain.trim(), action: newAction };\n    \n    if (catchAllIndex >= 0) {\n      newRules.splice(catchAllIndex, 0, newRule);\n    } else {\n      newRules.push(newRule);\n    }\n    \n    onChange(newRules);\n    setNewDomain('');\n  };\n\n  const handleRemoveRule = (index: number) => {\n    const newRules = rules.filter((_, i) => i !== index);\n    onChange(newRules);\n  };\n\n  const handleDragStart = (index: number) => {\n    setDragIndex(index);\n  };\n\n  const handleDragOver = (e: React.DragEvent, targetIndex: number) => {\n    e.preventDefault();\n    if (dragIndex === null || dragIndex === targetIndex) return;\n    \n    const newRules = [...rules];\n    const [draggedRule] = newRules.splice(dragIndex, 1);\n    newRules.splice(targetIndex, 0, draggedRule);\n    onChange(newRules);\n    setDragIndex(targetIndex);\n  };\n\n  const handleDragEnd = () => {\n    setDragIndex(null);\n  };\n\n  return (\n    <div className=\"bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6\">\n      <div className=\"flex justify-between items-center mb-4\">\n        <h4 className=\"text-md font-semibold\">Policy Rules</h4>\n        <DomainPatternHelp />\n      </div>\n\n      {/* Rules List */}\n      <div className=\"space-y-2 mb-4\">\n        {rules.length === 0 ? (\n          <p className=\"text-gray-500 text-sm\">No rules configured</p>\n        ) : (\n          rules.map((rule, index) => (\n            <div\n              key={index}\n              draggable\n              onDragStart={() => handleDragStart(index)}\n              onDragOver={(e) => handleDragOver(e, index)}\n              onDragEnd={handleDragEnd}\n              className={`flex items-center gap-3 p-3 border rounded group cursor-move ${\n                dragIndex === index ? 'opacity-50 border-blue-500' : 'border-gray-200'\n              }`}\n            >\n              <div className=\"text-gray-400 cursor-grab\">\n                <svg className=\"w-5 h-5\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">\n                  <path strokeLinecap=\"round\" strokeLinejoin=\"round\" strokeWidth={2} d=\"M4 8h16M4 16h16\" />\n                </svg>\n              </div>\n              <span className=\"text-sm text-gray-500 w-6\">{index + 1}.</span>\n              <code className=\"flex-1 font-mono text-sm\">{rule.domain}</code>\n              <span\n                className={`px-2 py-1 text-xs rounded ${\n                  rule.action === 'allow'\n                    ? 'bg-green-100 text-green-700'\n                    : 'bg-red-100 text-red-700'\n                }`}\n              >\n                {rule.action}\n              </span>\n              <button\n                onClick={() => handleRemoveRule(index)}\n                className=\"opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-opacity\"\n              >\n                <svg className=\"w-5 h-5\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">\n                  <path strokeLinecap=\"round\" strokeLinejoin=\"round\" strokeWidth={2} d=\"M6 18L18 6M6 6l12 12\" />\n                </svg>\n              </button>\n            </div>\n          ))\n        )}\n      </div>\n\n      {/* Add Rule Form */}\n      <div className=\"flex gap-3 items-center border-t pt-4\">\n        <input\n          type=\"text\"\n          value={newDomain}\n          onChange={(e) => setNewDomain(e.target.value)}\n          placeholder=\"e.g., api.example.com or *.example.com\"\n          className=\"flex-1 px-3 py-2 border rounded text-sm\"\n          onKeyDown={(e) => e.key === 'Enter' && handleAddRule()}\n        />\n        <select\n          value={newAction}\n          onChange={(e) => setNewAction(e.target.value as 'allow' | 'deny')}\n          className=\"px-3 py-2 border rounded text-sm\"\n        >\n          <option value=\"allow\">Allow</option>\n          <option value=\"deny\">Deny</option>\n        </select>\n        <button\n          onClick={handleAddRule}\n          disabled={!newDomain.trim()}\n          className=\"px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded text-sm disabled:opacity-50\"\n        >\n          Add Rule\n        </button>\n      </div>\n    </div>\n  );\n}\n\n// Tooltip explaining domain patterns\nfunction DomainPatternHelp() {\n  const [isOpen, setIsOpen] = useState(false);\n  \n  return (\n    <div className=\"relative\">\n      <button\n        onClick={() => setIsOpen(!isOpen)}\n        className=\"text-gray-400 hover:text-gray-600\"\n      >\n        <svg className=\"w-5 h-5\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">\n          <path strokeLinecap=\"round\" strokeLinejoin=\"round\" strokeWidth={2} d=\"M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z\" />\n        </svg>\n      </button>\n      {isOpen && (\n        <div className=\"absolute right-0 top-8 w-64 bg-white dark:bg-gray-800 border rounded-lg shadow-lg p-4 z-10\">\n          <h5 className=\"font-medium mb-2\">Domain Patterns</h5>\n          <ul className=\"text-sm text-gray-600 dark:text-gray-400 space-y-1\">\n            <li><code className=\"bg-gray-100 px-1\">example.com</code> - exact match</li>\n            <li><code className=\"bg-gray-100 px-1\">*.example.com</code> - subdomains</li>\n            <li><code className=\"bg-gray-100 px-1\">*</code> - all domains (catch-all)</li>\n          </ul>\n          <p className=\"text-xs text-gray-500 mt-2\">Rules are evaluated in order; first match wins.</p>\n        </div>\n      )}\n    </div>\n  );\n}\n```\n\nFeatures:\n- Sortable list with drag handles\n- Visual indicator of rule order (numbered)\n- Allow/deny badges with color coding\n- Remove button appears on hover\n- Add rule form with domain input and action dropdown\n- Domain pattern help tooltip\n- Insert new rules before catch-all if exists",
+        "testStrategy": "1. Test rules render in correct order with numbers\n2. Test drag-and-drop reorders rules and calls onChange\n3. Test remove button removes rule at correct index\n4. Test add rule form creates new rule with entered domain and action\n5. Test add rule inserts before catch-all rule if present\n6. Test add rule button disabled when domain is empty\n7. Test Enter key in domain input triggers add\n8. Test domain pattern help tooltip opens/closes\n9. Test allow/deny visual badges display correct colors",
+        "priority": "medium",
+        "dependencies": ["128"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-07T19:06:13.802Z"
+      },
+      {
+        "id": "131",
+        "title": "Integrate NetworkPolicySection into agent detail page",
+        "description": "Add the NetworkPolicySection component to the agent detail page layout, positioned appropriately among existing sections.",
+        "details": "Modify `apps/web/app/admin/agents/[id]/page.tsx` to include the NetworkPolicySection:\n\n```typescript\nimport { NetworkPolicySection } from './NetworkPolicySection';\n\nexport default async function AgentDetailPage({ params }: { params: { id: string } }) {\n  // ... existing code\n  \n  return (\n    <div className=\"container mx-auto px-4 py-8\">\n      <div className=\"grid grid-cols-1 lg:grid-cols-3 gap-8\">\n        {/* Main Column */}\n        <div className=\"lg:col-span-2 space-y-8\">\n          {/* Existing sections */}\n          <IdentitySection agent={agent} />\n          <SoulSection agent={agent} />\n          <ModelSection agent={agent} />\n          \n          {/* New Network Policy Section - positioned after core config but before memory/session */}\n          <NetworkPolicySection agentId={agent.id} />\n          \n          <MemorySection agent={agent} />\n          <SessionSection agent={agent} />\n          <DangerZone agent={agent} />\n        </div>\n        \n        {/* Sidebar */}\n        <div className=\"space-y-6\">\n          <IntegrationsCard agent={agent} />\n          <DetailsCard agent={agent} />\n        </div>\n      </div>\n    </div>\n  );\n}\n```\n\nPosition rationale:\n- After ModelSection because network policy is a runtime configuration\n- Before MemorySection/SessionSection which are more advanced settings\n- Follows the pattern of other full-width main column sections\n\nEnsure the component is properly imported and the page continues to work with SSR by making NetworkPolicySection a client component (already done with 'use client').",
+        "testStrategy": "1. Verify agent detail page loads without errors\n2. Verify NetworkPolicySection appears in correct position\n3. Test page renders correctly in responsive layouts (mobile, tablet, desktop)\n4. Verify other sections continue to function correctly\n5. Test navigation between agents updates the NetworkPolicySection\n6. Use agent-browser skill to visually verify the section appears correctly",
+        "priority": "medium",
+        "dependencies": ["129", "130"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-07T19:06:16.469Z"
+      },
+      {
+        "id": "132",
+        "title": "Apply default network policy on agent creation",
+        "description": "Modify the agent creation flow to automatically apply the 'development' preset as the default network policy for new agents.",
+        "details": "Modify the createAgent procedure in `apps/web/server/routers/org.ts` to include the default network policy:\n\n```typescript\nimport { DEFAULT_NETWORK_POLICY } from '@nitejar/agent';\nimport { syncAgentNetworkPolicy } from '@nitejar/sprites';\n\n// In createAgent mutation:\ncreateAgent: publicProcedure\n  .input(z.object({\n    handle: z.string().min(1).max(32),\n    name: z.string().min(1),\n    title: z.string().optional(),\n    emoji: z.string().optional(),\n    avatarUrl: z.string().optional(),\n    teamId: z.string().optional(),\n  }))\n  .mutation(async ({ input }) => {\n    const id = generateId();\n    \n    // Build initial config with default network policy\n    const config: AgentConfig = {\n      title: input.title,\n      emoji: input.emoji,\n      avatarUrl: input.avatarUrl,\n      networkPolicy: DEFAULT_NETWORK_POLICY,\n    };\n    \n    await db\n      .insertInto('agents')\n      .values({\n        id,\n        handle: input.handle,\n        name: input.name,\n        config: serializeAgentConfig(config),\n        status: 'idle',\n        team_id: input.teamId || null,\n        created_at: new Date().toISOString(),\n        updated_at: new Date().toISOString(),\n      })\n      .execute();\n    \n    // Note: Sprites sync happens later when sprite is provisioned\n    // (sprite_id is null on new agents)\n    \n    return { id, handle: input.handle };\n  }),\n```\n\nAlso, when a sprite is provisioned for an agent (wherever that happens in the codebase), ensure the network policy is synced:\n\n```typescript\n// In sprite provisioning logic:\nasync function provisionSpriteForAgent(agentId: string) {\n  const agent = await db.selectFrom('agents').where('id', '=', agentId).executeTakeFirst();\n  if (!agent) throw new Error('Agent not found');\n  \n  // Create sprite...\n  const sprite = await getOrCreateSprite(agent.handle, { /* options */ });\n  \n  // Update agent with sprite_id\n  await db\n    .updateTable('agents')\n    .set({ sprite_id: sprite.name })\n    .where('id', '=', agentId)\n    .execute();\n  \n  // Sync network policy if configured\n  const config = parseAgentConfig(agent.config);\n  if (config.networkPolicy) {\n    await syncAgentNetworkPolicy(sprite.name, config.networkPolicy);\n  }\n}\n```\n\nLocate the sprite provisioning code and add the policy sync call.",
+        "testStrategy": "1. Test creating new agent includes networkPolicy in config\n2. Verify default policy is 'development' preset with correct rules\n3. Test that existing agents without networkPolicy continue to work\n4. Test sprite provisioning syncs network policy to Sprites API\n5. Integration test: create agent, provision sprite, verify policy applied\n6. Test error handling if Sprites sync fails during provisioning",
+        "priority": "medium",
+        "dependencies": ["127"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-07T19:06:19.112Z"
+      },
+      {
+        "id": "133",
+        "title": "Add policy status indicator to agent list view",
+        "description": "Add a visual indicator in the agents list showing each agent's network policy status (unrestricted, preset name, or custom).",
+        "details": "Modify the agents list view to show network policy status. First, update the listAgents procedure to include policy info:\n\n```typescript\n// In apps/web/server/routers/org.ts listAgents:\nlistAgents: publicProcedure.query(async () => {\n  const agents = await db\n    .selectFrom('agents')\n    .selectAll()\n    .orderBy('created_at', 'desc')\n    .execute();\n  \n  return agents.map((agent) => {\n    const config = parseAgentConfig(agent.config);\n    return {\n      ...agent,\n      config,\n      // Add computed policy status\n      policyStatus: getPolicyStatus(config.networkPolicy),\n    };\n  });\n}),\n\n// Helper function:\nfunction getPolicyStatus(policy?: NetworkPolicy): {\n  label: string;\n  type: 'unrestricted' | 'preset' | 'custom' | 'none';\n} {\n  if (!policy) {\n    return { label: 'None', type: 'none' };\n  }\n  if (policy.presetId && !policy.customized) {\n    return {\n      label: NETWORK_POLICY_PRESETS.find(p => p.id === policy.presetId)?.name || policy.presetId,\n      type: 'preset',\n    };\n  }\n  if (policy.mode === 'unrestricted') {\n    return { label: 'Unrestricted', type: 'unrestricted' };\n  }\n  return { label: 'Custom', type: 'custom' };\n}\n```\n\nThen update the agent list UI component (likely in `apps/web/app/admin/agents/page.tsx` or a table component):\n\n```typescript\n// In agent list row/card:\n<div className=\"flex items-center gap-2\">\n  {/* Existing agent info */}\n  <span className=\"text-gray-900 font-medium\">{agent.name}</span>\n  \n  {/* Network Policy Badge */}\n  <PolicyStatusBadge status={agent.policyStatus} />\n</div>\n\nfunction PolicyStatusBadge({ status }: { status: { label: string; type: string } }) {\n  const styles = {\n    unrestricted: 'bg-yellow-100 text-yellow-800',\n    preset: 'bg-blue-100 text-blue-800',\n    custom: 'bg-purple-100 text-purple-800',\n    none: 'bg-gray-100 text-gray-600',\n  };\n  \n  return (\n    <span className={`text-xs px-2 py-0.5 rounded ${styles[status.type as keyof typeof styles]}`}>\n      {status.type === 'unrestricted' && '⚠️ '}\n      {status.label}\n    </span>\n  );\n}\n```\n\nThe badge provides:\n- Quick visual scan of policy states across agents\n- Warning indicator for unrestricted agents (security concern)\n- Distinct styling for presets vs custom configurations",
+        "testStrategy": "1. Test listAgents returns policyStatus for each agent\n2. Test getPolicyStatus returns correct labels for each scenario\n3. Test badge renders with correct color for each policy type\n4. Test warning emoji appears for unrestricted policies\n5. Visual test with agent-browser to verify badges appear in list view\n6. Test list view performance is not degraded by additional processing",
+        "priority": "low",
+        "dependencies": ["131"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-07T19:06:21.873Z"
+      },
+      {
+        "id": "134",
+        "title": "Add error handling and retry sync functionality",
+        "description": "Implement robust error handling for Sprites API sync failures, including UI feedback and retry capability when local and remote policies are out of sync.",
+        "details": "Enhance the NetworkPolicySection to handle sync failures gracefully:\n\n```typescript\n// Add sync status tracking to the component\ninterface SyncStatus {\n  synced: boolean;\n  lastSyncAttempt?: Date;\n  error?: string;\n}\n\n// In NetworkPolicySection:\nconst [syncStatus, setSyncStatus] = useState<SyncStatus>({ synced: true });\n\n// Update sync status after policy operations\nconst handleSaveChanges = async () => {\n  if (!localPolicy) return;\n  try {\n    const result = await setPolicy.mutateAsync({ agentId, policy: localPolicy });\n    setSyncStatus({\n      synced: result.synced,\n      lastSyncAttempt: new Date(),\n      error: result.syncError,\n    });\n    // ... existing success handling\n  } catch (error: any) {\n    // ... existing error handling\n  }\n};\n\nconst handleRetrySync = async () => {\n  try {\n    const result = await retrySync.mutateAsync({ agentId });\n    setSyncStatus({\n      synced: result.synced,\n      lastSyncAttempt: new Date(),\n      error: result.error,\n    });\n    if (result.synced) {\n      setMessage({ type: 'success', text: 'Policy synced successfully' });\n    } else {\n      setMessage({ type: 'error', text: `Sync failed: ${result.error}` });\n    }\n  } catch (error: any) {\n    setMessage({ type: 'error', text: error.message });\n  }\n};\n\n// Add sync status banner in UI\n{!syncStatus.synced && (\n  <div className=\"bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-center justify-between\">\n    <div>\n      <h5 className=\"font-medium text-yellow-800\">Policy Not Synced</h5>\n      <p className=\"text-sm text-yellow-700\">\n        {syncStatus.error || 'Failed to sync policy to Sprites sandbox'}\n      </p>\n      {syncStatus.lastSyncAttempt && (\n        <p className=\"text-xs text-yellow-600 mt-1\">\n          Last attempt: {syncStatus.lastSyncAttempt.toLocaleTimeString()}\n        </p>\n      )}\n    </div>\n    <button\n      onClick={handleRetrySync}\n      disabled={retrySync.isPending}\n      className=\"px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700 disabled:opacity-50\"\n    >\n      {retrySync.isPending ? 'Retrying...' : 'Retry Sync'}\n    </button>\n  </div>\n)}\n```\n\nAlso add logging for debugging in the backend:\n\n```typescript\n// In syncAgentNetworkPolicy:\nexport async function syncAgentNetworkPolicy(\n  spriteName: string,\n  policy: NetworkPolicy\n): Promise<{ synced: boolean; error?: string }> {\n  try {\n    console.log(`[NetworkPolicy] Syncing policy for sprite ${spriteName}:`, {\n      mode: policy.mode,\n      ruleCount: policy.rules.length,\n    });\n    \n    await setSpriteNetworkPolicy(spriteName, { rules: policy.rules });\n    \n    console.log(`[NetworkPolicy] Successfully synced policy for sprite ${spriteName}`);\n    return { synced: true };\n  } catch (error: any) {\n    console.error(`[NetworkPolicy] Failed to sync policy for sprite ${spriteName}:`, error);\n    return {\n      synced: false,\n      error: error.response?.data?.message || error.message || 'Unknown error',\n    };\n  }\n}\n```",
+        "testStrategy": "1. Test UI shows sync warning banner when synced=false\n2. Test retry button triggers retrySync mutation\n3. Test successful retry updates sync status and shows success message\n4. Test failed retry shows error message with details\n5. Test last sync attempt timestamp displays correctly\n6. Test loading state on retry button during mutation\n7. Test backend logging outputs correct information\n8. Integration test: simulate Sprites API failure and verify retry flow",
+        "priority": "medium",
+        "dependencies": ["131"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-07T19:06:24.672Z"
+      },
+      {
+        "id": "135",
+        "title": "Write integration tests for network policy feature",
+        "description": "Create comprehensive integration tests covering the full network policy flow including CRUD operations, preset application, and Sprites sync.",
+        "details": "Create test file `packages/integration-tests/tests/network-policy.test.ts`:\n\n```typescript\nimport { describe, it, expect, beforeEach, afterEach } from 'vitest';\nimport { db, parseAgentConfig } from '@nitejar/database';\nimport { NETWORK_POLICY_PRESETS, DEFAULT_NETWORK_POLICY, validateNetworkPolicy } from '@nitejar/agent';\n\ndescribe('Network Policy Feature', () => {\n  let testAgentId: string;\n\n  beforeEach(async () => {\n    // Create test agent\n    testAgentId = `test-agent-${Date.now()}`;\n    await db.insertInto('agents').values({\n      id: testAgentId,\n      handle: 'test-agent',\n      name: 'Test Agent',\n      config: '{}',\n      status: 'idle',\n      created_at: new Date().toISOString(),\n      updated_at: new Date().toISOString(),\n    }).execute();\n  });\n\n  afterEach(async () => {\n    // Clean up test agent\n    await db.deleteFrom('agents').where('id', '=', testAgentId).execute();\n  });\n\n  describe('Policy Presets', () => {\n    it('should have all required presets defined', () => {\n      const presetIds = NETWORK_POLICY_PRESETS.map(p => p.id);\n      expect(presetIds).toContain('unrestricted');\n      expect(presetIds).toContain('github-only');\n      expect(presetIds).toContain('development');\n      expect(presetIds).toContain('lockdown');\n    });\n\n    it('should validate all presets as valid policies', () => {\n      for (const preset of NETWORK_POLICY_PRESETS) {\n        const result = validateNetworkPolicy(preset.policy);\n        expect(result.valid, `Preset ${preset.id} should be valid`).toBe(true);\n      }\n    });\n\n    it('development preset should be the default', () => {\n      expect(DEFAULT_NETWORK_POLICY.presetId).toBe('development');\n    });\n  });\n\n  describe('Policy Storage', () => {\n    it('should save policy to agent config', async () => {\n      const policy = NETWORK_POLICY_PRESETS.find(p => p.id === 'github-only')!.policy;\n      \n      // Simulate setting policy (would be done via tRPC in real usage)\n      const agent = await db.selectFrom('agents').where('id', '=', testAgentId).executeTakeFirst();\n      const config = parseAgentConfig(agent!.config);\n      config.networkPolicy = policy;\n      \n      await db.updateTable('agents')\n        .set({ config: JSON.stringify(config) })\n        .where('id', '=', testAgentId)\n        .execute();\n      \n      // Verify saved\n      const updated = await db.selectFrom('agents').where('id', '=', testAgentId).executeTakeFirst();\n      const savedConfig = parseAgentConfig(updated!.config);\n      \n      expect(savedConfig.networkPolicy).toBeDefined();\n      expect(savedConfig.networkPolicy?.presetId).toBe('github-only');\n      expect(savedConfig.networkPolicy?.rules.length).toBeGreaterThan(0);\n    });\n\n    it('should handle agent without network policy', async () => {\n      const agent = await db.selectFrom('agents').where('id', '=', testAgentId).executeTakeFirst();\n      const config = parseAgentConfig(agent!.config);\n      \n      expect(config.networkPolicy).toBeUndefined();\n    });\n  });\n\n  describe('Policy Validation', () => {\n    it('should reject empty rules array', () => {\n      const result = validateNetworkPolicy({\n        mode: 'allow-list',\n        rules: [],\n      });\n      expect(result.valid).toBe(false);\n      expect(result.errors).toContain('Policy must have at least one rule');\n    });\n\n    it('should reject invalid domain patterns', () => {\n      const result = validateNetworkPolicy({\n        mode: 'allow-list',\n        rules: [{ domain: '', action: 'allow' }],\n      });\n      expect(result.valid).toBe(false);\n    });\n\n    it('should warn about missing catch-all rule', () => {\n      const result = validateNetworkPolicy({\n        mode: 'allow-list',\n        rules: [{ domain: 'github.com', action: 'allow' }],\n      });\n      expect(result.errors).toContain('Policy should include a catch-all (*) rule as the last entry');\n    });\n  });\n\n  // Note: Sprites API sync tests would require mocking or a test Sprites instance\n  describe('Sprites Sync', () => {\n    it.skip('should sync policy when sprite exists', async () => {\n      // Would test actual Sprites API integration\n    });\n  });\n});\n```\n\nRun tests with: `pnpm --filter @nitejar/integration-tests test`",
+        "testStrategy": "Meta: This task IS the test strategy implementation.\n\n1. Run all tests pass in CI/CD pipeline\n2. Verify test coverage meets minimum threshold (aim for 80%+ on new code)\n3. Tests should be deterministic and not flaky\n4. Tests should clean up after themselves (no test pollution)\n5. Consider adding E2E tests with agent-browser for UI flows",
+        "priority": "medium",
+        "dependencies": ["132", "134"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-19T15:27:08.600Z"
+      },
+      {
+        "id": "136",
+        "title": "Document network policy feature and update API documentation",
+        "description": "Add inline code documentation, update any existing API docs, and ensure the feature is well-documented for future developers.",
+        "details": "Add comprehensive JSDoc comments to key functions and types:\n\n```typescript\n// In packages/agent/src/types.ts:\n\n/**\n * Network access control mode for agent sandboxes.\n * - 'allow-list': Only explicitly allowed domains are accessible\n * - 'deny-list': All domains accessible except explicitly denied ones\n * - 'unrestricted': No network restrictions (not recommended for production)\n */\nexport type NetworkPolicyMode = 'allow-list' | 'deny-list' | 'unrestricted';\n\n/**\n * A single rule in a network policy. Rules are evaluated in order;\n * the first matching rule determines whether a request is allowed or denied.\n * \n * @example\n * // Allow all GitHub domains\n * { domain: '*.github.com', action: 'allow' }\n * \n * @example\n * // Deny all (catch-all rule, typically placed last)\n * { domain: '*', action: 'deny' }\n */\nexport interface NetworkPolicyRule {\n  /** \n   * Domain pattern to match. Supports:\n   * - Exact match: 'api.github.com'\n   * - Wildcard subdomain: '*.github.com' (matches subdomains but not root)\n   * - Catch-all: '*' (matches any domain)\n   */\n  domain: string;\n  \n  /** Whether to allow or deny requests to matching domains */\n  action: 'allow' | 'deny';\n}\n\n/**\n * Network policy configuration for an agent's Sprites sandbox.\n * Controls which external domains the agent can access during execution.\n * \n * @see https://docs.sprites.ai/policies/network for Sprites API reference\n */\nexport interface NetworkPolicy {\n  mode: NetworkPolicyMode;\n  rules: NetworkPolicyRule[];\n  \n  /** ID of the preset this policy is based on, if any */\n  presetId?: string;\n  \n  /** True if custom rules have been added on top of a preset */\n  customized?: boolean;\n}\n```\n\nAdd README section or update existing docs:\n\n```markdown\n## Network Policies\n\nAgents can have network policies that restrict which external domains they can access from their Sprites sandbox.\n\n### Presets\n\n- **Unrestricted**: Full network access (not recommended)\n- **GitHub Only**: Only GitHub-related domains\n- **Development**: GitHub + npm + PyPI + crates.io\n- **Lockdown**: No external network access\n\n### Custom Rules\n\nRules are evaluated in order. First matching rule wins. Always include a catch-all (`*`) rule as the last entry.\n\n### API\n\n```typescript\n// Get agent's policy\ntrpc.networkPolicy.get({ agentId })\n\n// Set custom policy\ntrpc.networkPolicy.set({ agentId, policy })\n\n// Apply a preset\ntrpc.networkPolicy.applyPreset({ agentId, presetId: 'development' })\n\n// List available presets\ntrpc.networkPolicy.listPresets()\n```\n```\n\nEnsure all exported functions have clear parameter and return type documentation.",
+        "testStrategy": "1. Run TypeScript compilation to verify JSDoc doesn't break types\n2. Review documentation renders correctly in IDE tooltips\n3. Ensure code examples in docs are accurate and up-to-date\n4. Have another developer review docs for clarity\n5. Verify any external API references (Sprites docs) are correct",
+        "priority": "low",
+        "dependencies": ["135"],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "137",
+        "title": "Install and configure better-auth core",
+        "description": "Install better-auth package and create the core auth configuration with email+password authentication support.",
+        "details": "1. Install better-auth: `pnpm add better-auth --filter @nitejar/web`\n2. Create `apps/web/lib/auth.ts` with betterAuth configuration:\n   - Use existing SQLite database path (./data/nitejar.db)\n   - Enable emailAndPassword with requireEmailVerification: false\n   - Configure session settings (7 day expiry, 24h update age)\n   - Add custom user fields to match existing schema: role (string, default 'member'), status (string, default 'active')\n3. Create `apps/web/lib/auth-client.ts` for React client:\n   - Use createAuthClient from better-auth/react\n   - Export signIn, signUp, signOut, useSession\n   - Set baseURL from NEXT_PUBLIC_APP_URL\n4. Add env vars to .env.example: BETTER_AUTH_SECRET, BETTER_AUTH_URL\n5. Generate BETTER_AUTH_SECRET with `openssl rand -base64 32`",
+        "testStrategy": "1. Import auth config without errors\n2. Verify betterAuth instance initializes\n3. Check auth-client exports work in browser environment\n4. Run `pnpm typecheck` to ensure no type errors",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-19T15:27:11.203Z"
+      },
+      {
+        "id": "138",
+        "title": "Create better-auth database migration",
+        "description": "Create migration for better-auth tables (user, session, account, verification) plus api_tokens table for MCP authentication.",
+        "details": "1. Create migration `packages/database/migrations/20260205_010000_better_auth.ts`\n2. Create better-auth tables:\n   - `user` table: id, name, email, emailVerified, image, createdAt, updatedAt, role (default 'member'), status (default 'active'), nitejar_user_id (nullable, links to existing users table)\n   - `session` table: id, expiresAt, ipAddress, userAgent, userId (FK to user)\n   - `account` table: id, accountId, providerId, userId (FK), accessToken, refreshToken, idToken, expiresAt, password\n   - `verification` table: id, identifier, value, expiresAt\n3. Create `api_tokens` table for MCP auth:\n   - id (text, PK), user_id (text, FK to user), name (text), token_hash (text, unique), last_used_at (integer, nullable), expires_at (integer, nullable), created_at (integer)\n4. Add necessary indexes on userId fields and token_hash\n5. Update `packages/database/src/types.ts` with new table interfaces\n6. Export types: BetterAuthUser, BetterAuthSession, BetterAuthAccount, ApiToken",
+        "testStrategy": "1. Run migration with `pnpm db:migrate`\n2. Verify tables created with correct schema using sqlite3 CLI\n3. Check foreign key constraints work\n4. Verify types compile with `pnpm typecheck`",
+        "priority": "high",
+        "dependencies": ["137"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-19T15:27:13.731Z"
+      },
+      {
+        "id": "139",
+        "title": "Set up better-auth API route handler",
+        "description": "Create the Next.js API route that handles all better-auth endpoints.",
+        "details": "1. Create `apps/web/app/api/auth/[...all]/route.ts`\n2. Import auth from '@/lib/auth'\n3. Import toNextJsHandler from 'better-auth/next-js'\n4. Export GET and POST handlers: `export const { POST, GET } = toNextJsHandler(auth)`\n5. Ensure route is not caught by any middleware\n6. Add route segment config for edge compatibility if needed",
+        "testStrategy": "1. Start dev server\n2. Test GET /api/auth/session returns null or session\n3. Test POST /api/auth/sign-in/email with invalid creds returns error\n4. Check no CORS or routing issues",
+        "priority": "high",
+        "dependencies": ["137", "138"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-19T15:27:16.310Z"
+      },
+      {
+        "id": "140",
+        "title": "Extend email provider for password reset",
+        "description": "Extend existing Resend email setup to support password reset emails and update better-auth config to use it.",
+        "details": "1. Create `apps/web/emails/PasswordResetEmail.tsx` React email template:\n   - Include reset link with token\n   - Style consistent with InviteEmail\n   - Include expiration notice (1 hour)\n2. Add `sendPasswordResetEmail` function to `apps/web/lib/email.tsx`:\n   - Accept { to, resetUrl } params\n   - Use Resend to send\n   - Subject: 'Reset your Nitejar password'\n3. Update auth config in `apps/web/lib/auth.ts`:\n   - Add sendResetPassword callback that calls sendPasswordResetEmail\n   - Construct URL from APP_BASE_URL + /reset-password?token=xxx\n4. Add resetPassword config to better-auth with tokenExpiresIn: 3600 (1 hour)",
+        "testStrategy": "1. Trigger password reset via API\n2. Verify email sent (check Resend dashboard or logs)\n3. Verify email contains correct reset URL\n4. Test token expiration logic",
+        "priority": "high",
+        "dependencies": ["137"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-19T15:27:18.915Z"
+      },
+      {
+        "id": "141",
+        "title": "Add better-auth invitation plugin",
+        "description": "Configure better-auth's invitation plugin to work with the existing invitation flow and email system.",
+        "details": "1. Import invitation plugin from 'better-auth/plugins'\n2. Update `apps/web/lib/auth.ts` to add invitation plugin:\n   ```typescript\n   plugins: [\n     invitation({\n       sendInvitationEmail: async ({ email, invitedBy, url }) => {\n         await sendInvitationEmail({ to: email, name: email.split('@')[0], invitedBy: invitedBy.name, inviteUrl: url })\n       }\n     })\n   ]\n   ```\n3. Create `apps/web/emails/InvitationEmail.tsx` (or update existing InviteEmail):\n   - Include inviter name in message\n   - Include accept link with token\n   - Set 48-hour expiration notice\n4. Add invitationClient plugin to auth-client.ts\n5. Update existing orgRouter.createInvite to use better-auth invitation instead of manual token generation",
+        "testStrategy": "1. Create invitation via admin UI\n2. Verify email sent with correct link format\n3. Test invitation acceptance creates user in better-auth tables\n4. Verify invitations table updated",
+        "priority": "high",
+        "dependencies": ["137", "140"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-19T15:42:54.605Z"
+      },
+      {
+        "id": "142",
+        "title": "Build sign-in page",
+        "description": "Create the email+password sign-in page with forgot password link.",
+        "details": "1. Create `apps/web/app/(auth)/sign-in/page.tsx`\n2. Build sign-in form using shadcn/ui components:\n   - Email input with validation\n   - Password input with show/hide toggle\n   - Submit button with loading state\n   - Link to /forgot-password\n   - Error display for invalid credentials\n3. Use authClient.signIn.email() on submit\n4. Redirect to /admin on successful login\n5. Handle common errors: invalid credentials, account disabled, etc.\n6. Style consistent with existing admin UI (dark theme, gradients)\n7. Create (auth) layout.tsx with centered card layout",
+        "testStrategy": "1. Navigate to /sign-in\n2. Test form validation (empty fields, invalid email)\n3. Test invalid credentials show error\n4. Test successful login redirects to /admin\n5. Test loading state during submission",
+        "priority": "high",
+        "dependencies": ["139"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-19T15:27:21.481Z"
+      },
+      {
+        "id": "143",
+        "title": "Build accept-invitation page",
+        "description": "Create page for invited users to accept invitation and set their password.",
+        "details": "1. Create `apps/web/app/(auth)/accept-invitation/page.tsx`\n2. Accept token via URL query param: /accept-invitation?token=xxx\n3. Validate token on load, show error if invalid/expired\n4. Build form with:\n   - Display invited email (read-only)\n   - Name input (editable)\n   - Password input with requirements\n   - Confirm password input\n5. On submit, call authClient.invitation.acceptInvitation({ token, name, password })\n6. Handle errors: expired token, already accepted, password too weak\n7. On success, auto-login and redirect to /admin\n8. Style consistent with sign-in page",
+        "testStrategy": "1. Access page with valid token\n2. Test invalid/expired token shows error\n3. Test password validation (min length, requirements)\n4. Test password mismatch error\n5. Test successful acceptance creates user and logs in",
+        "priority": "high",
+        "dependencies": ["141", "142"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-19T15:27:24.286Z"
+      },
+      {
+        "id": "144",
+        "title": "Build forgot-password and reset-password pages",
+        "description": "Create password reset flow pages for users who forgot their password.",
+        "details": "1. Create `apps/web/app/(auth)/forgot-password/page.tsx`:\n   - Email input form\n   - Submit triggers authClient.forgetPassword({ email })\n   - Success message: 'If an account exists, you will receive a reset email'\n   - Link back to sign-in\n2. Create `apps/web/app/(auth)/reset-password/page.tsx`:\n   - Accept token via query param: /reset-password?token=xxx\n   - Validate token on load\n   - New password input with requirements\n   - Confirm password input\n   - Submit calls authClient.resetPassword({ token, newPassword })\n   - Success redirects to /sign-in with message\n3. Handle errors: invalid token, expired token, password requirements\n4. Style consistent with other auth pages",
+        "testStrategy": "1. Test forgot-password form submission\n2. Verify reset email received\n3. Test reset-password with valid token\n4. Test invalid/expired token handling\n5. Test successful password reset allows sign-in",
+        "priority": "high",
+        "dependencies": ["140", "142"],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "145",
+        "title": "Protect admin routes with authentication",
+        "description": "Update admin layout to require authentication and redirect unauthenticated users to sign-in.",
+        "details": "1. Update `apps/web/app/admin/layout.tsx`:\n   - Import auth from '@/lib/auth'\n   - Import headers from 'next/headers'\n   - Get session: `const session = await auth.api.getSession({ headers: await headers() })`\n   - If no session, redirect('/sign-in')\n   - If session.user.status === 'disabled', redirect('/account-disabled')\n2. Create `apps/web/app/(auth)/account-disabled/page.tsx`:\n   - Display message that account is disabled\n   - Include sign-out button\n   - Contact admin message\n3. Pass session to AdminProviders if needed for client-side auth state\n4. Create SessionProvider context if needed for useSession hook\n5. Test that all /admin/* routes redirect when not logged in",
+        "testStrategy": "1. Access /admin without session - verify redirect to /sign-in\n2. Sign in - verify access granted\n3. Disable user status - verify redirect to account-disabled\n4. Test all admin subroutes are protected",
+        "priority": "high",
+        "dependencies": ["139", "142"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-19T15:27:26.936Z"
+      },
+      {
+        "id": "146",
+        "title": "Link better-auth users to existing nitejar users",
+        "description": "Create mechanism to link better-auth user records to existing nitejar users table for team membership and permissions.",
+        "details": "1. When invitation is accepted or user signs up:\n   - Check if matching email exists in nitejar `users` table\n   - If yes, update better-auth `user.nitejar_user_id` to link them\n   - If no, create record in nitejar `users` table and link\n2. Add afterSignUp hook in auth config:\n   ```typescript\n   hooks: {\n     afterSignUp: async ({ user }) => {\n       // Find or create nitejar user\n       // Update better-auth user with nitejar_user_id\n     }\n   }\n   ```\n3. Create utility function `linkOrCreateNitejarUser(betterAuthUser)` in database package\n4. Update nitejar user status to 'active' when better-auth user is verified\n5. Ensure team_members FK still works via nitejar_user_id",
+        "testStrategy": "1. Accept invitation - verify both user tables updated\n2. Verify nitejar_user_id is set correctly\n3. Test team membership queries still work\n4. Test existing users can sign in and are linked",
+        "priority": "medium",
+        "dependencies": ["138", "141"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-19T15:27:29.737Z"
+      },
+      {
+        "id": "147",
+        "title": "Build profile settings page",
+        "description": "Create user profile settings page for viewing and editing profile information.",
+        "details": "1. Create `apps/web/app/settings/page.tsx` (profile settings)\n2. Create settings layout `apps/web/app/settings/layout.tsx`:\n   - Sidebar navigation: Profile, Security, Sessions, API Tokens\n   - Require authentication (similar to admin layout)\n3. Profile page features:\n   - Display current user info from session\n   - Editable name field\n   - Avatar URL or upload (optional)\n   - Email display (read-only)\n   - Role and status display (read-only)\n   - Save button with optimistic update\n4. Use authClient.updateUser() for updates\n5. Show success/error toast on save\n6. Add link to settings in admin header",
+        "testStrategy": "1. Access /settings requires login\n2. Test name update persists\n3. Test avatar update works\n4. Test validation errors display\n5. Test unauthorized fields are read-only",
+        "priority": "medium",
+        "dependencies": ["145"],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "148",
+        "title": "Build security settings page with password change",
+        "description": "Create security settings page for changing password.",
+        "details": "1. Create `apps/web/app/settings/security/page.tsx`\n2. Change password form:\n   - Current password input\n   - New password input with requirements\n   - Confirm new password input\n   - Submit button\n3. Use authClient.changePassword({ currentPassword, newPassword })\n4. Handle errors: incorrect current password, password requirements\n5. Show success message on update\n6. Placeholder section for 2FA (Phase 2) with 'Coming Soon' badge",
+        "testStrategy": "1. Test change password with wrong current password\n2. Test password requirements validation\n3. Test successful password change\n4. Verify can sign in with new password\n5. Verify old password no longer works",
+        "priority": "medium",
+        "dependencies": ["147"],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "149",
+        "title": "Build sessions management page",
+        "description": "Create page to view and revoke active sessions.",
+        "details": "1. Create `apps/web/app/settings/sessions/page.tsx`\n2. List all active sessions for current user:\n   - Session ID (partial)\n   - IP address\n   - User agent (browser/device)\n   - Created/last active time\n   - 'Current session' badge for active session\n3. Add 'Revoke' button for each session (except current)\n4. Add 'Revoke all other sessions' button\n5. Use authClient.listSessions() and authClient.revokeSession()\n6. Confirm dialog before revoking\n7. Auto-refresh list after revocation",
+        "testStrategy": "1. View sessions list shows current session\n2. Sign in from another browser/incognito\n3. Verify second session appears in list\n4. Test revoking other session\n5. Test 'revoke all' functionality\n6. Verify revoked session cannot access protected routes",
+        "priority": "medium",
+        "dependencies": ["147"],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "150",
+        "title": "Create MCP server package structure",
+        "description": "Set up the packages/mcp-server package with basic structure, dependencies, and build configuration.",
+        "details": "1. Create `packages/mcp-server/` directory structure:\n   ```\n   packages/mcp-server/\n   ├── src/\n   │   ├── index.ts           # Entry point & CLI\n   │   ├── server.ts          # MCP server setup\n   │   ├── auth/\n   │   │   ├── index.ts\n   │   │   ├── token.ts       # API token validation\n   │   │   └── context.ts     # Auth context for tools\n   │   ├── tools/\n   │   │   ├── index.ts       # Tool registry\n   │   │   ├── auth.ts        # auth_* tools\n   │   │   └── agents.ts      # agent_* tools\n   │   └── types.ts\n   ├── package.json\n   ├── tsconfig.json\n   └── README.md\n   ```\n2. Create package.json with:\n   - name: @nitejar/mcp-server\n   - bin: { nitejar-mcp: './dist/index.js' }\n   - dependencies: @modelcontextprotocol/sdk, @nitejar/database, bcrypt\n3. Create tsconfig.json extending workspace config\n4. Add package to pnpm-workspace.yaml\n5. Create basic server.ts with MCP SDK setup",
+        "testStrategy": "1. Run `pnpm install` to link package\n2. Run `pnpm typecheck` for type errors\n3. Run `pnpm --filter @nitejar/mcp-server build` compiles\n4. Verify bin script is executable",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-19T15:27:32.427Z"
+      },
+      {
+        "id": "151",
+        "title": "Build API token management UI",
+        "description": "Create settings page for generating and managing API tokens used by MCP clients.",
+        "details": "1. Create `apps/web/app/settings/api-tokens/page.tsx`\n2. List existing tokens:\n   - Token name\n   - Created date\n   - Last used date (if any)\n   - Expires at (or 'Never')\n   - Delete button\n3. 'Create new token' form:\n   - Token name input (e.g., 'Claude Code', 'My Laptop')\n   - Optional expiration (never, 30 days, 90 days, 1 year)\n   - Generate button\n4. On create:\n   - Generate secure random token with prefix 'sbot_'\n   - Hash with bcrypt before storing\n   - Show token ONCE in modal (cannot be retrieved again)\n   - Copy to clipboard button\n5. Create tRPC procedures in new `apps/web/server/routers/api-tokens.ts`:\n   - listTokens(): get user's tokens (excluding hash)\n   - createToken({ name, expiresIn? }): create and return raw token once\n   - deleteToken({ id }): revoke token\n6. Wire router into _app.ts",
+        "testStrategy": "1. Navigate to /settings/api-tokens\n2. Create new token\n3. Verify token displayed only once\n4. Verify token appears in list\n5. Test delete token\n6. Verify deleted token doesn't authenticate",
+        "priority": "high",
+        "dependencies": ["138", "147"],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "152",
+        "title": "Implement API token validation in MCP server",
+        "description": "Add token validation logic to MCP server that verifies API tokens against the database.",
+        "details": "1. Create `packages/mcp-server/src/auth/token.ts`:\n   - Function `validateToken(token: string): Promise<User | null>`\n   - Parse token format (expect 'sbot_xxx')\n   - Query api_tokens table for matching token_hash (bcrypt.compare)\n   - Check expires_at if set\n   - Update last_used_at on successful validation\n   - Join to get user details (id, name, email, role)\n   - Return user object or null\n2. Create `packages/mcp-server/src/auth/context.ts`:\n   - AuthContext type with user and isAuthenticated\n   - createAuthContext(token?: string) factory\n3. Store current auth context in server state\n4. Add requireAuth wrapper for tools that need authentication",
+        "testStrategy": "1. Test validateToken with valid token returns user\n2. Test validateToken with invalid token returns null\n3. Test expired token returns null\n4. Test last_used_at is updated\n5. Test bcrypt comparison is timing-safe",
+        "priority": "high",
+        "dependencies": ["150", "151"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-19T15:27:35.060Z"
+      },
+      {
+        "id": "153",
+        "title": "Implement MCP auth tools",
+        "description": "Create the authentication-related MCP tools: auth_login, auth_set_token, auth_whoami, auth_logout.",
+        "details": "1. Create `packages/mcp-server/src/tools/auth.ts`\n2. Implement tools:\n   - `auth_login`: Returns URL to /settings/api-tokens with instructions\n   - `auth_set_token`: Validates token, stores in context, returns user info\n   - `auth_whoami`: Returns current auth state (user details or not authenticated)\n   - `auth_logout`: Clears token from context\n3. Register tools in server.ts with MCP SDK:\n   ```typescript\n   server.setRequestHandler(ListToolsRequestSchema, () => ({\n     tools: [\n       { name: 'auth_login', description: '...', inputSchema: {...} },\n       // etc.\n     ]\n   }))\n   ```\n4. Handle tool calls in CallToolRequestSchema handler\n5. Tools should be stateful within session (token persists until logout)",
+        "testStrategy": "1. Call auth_login - verify returns correct URL\n2. Call auth_set_token with valid token - verify user returned\n3. Call auth_whoami - verify shows authenticated user\n4. Call auth_logout - verify clears auth\n5. Call auth_whoami again - verify not authenticated",
+        "priority": "high",
+        "dependencies": ["152"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-19T15:27:37.670Z"
+      },
+      {
+        "id": "154",
+        "title": "Implement MCP agent read tools",
+        "description": "Create MCP tools for listing and viewing agents the user has access to.",
+        "details": "1. Create `packages/mcp-server/src/tools/agents.ts`\n2. Implement `list_agents` tool:\n   - Require authentication\n   - Input: { team_id?: string, status?: string }\n   - Query logic:\n     - If user.role is 'superadmin' or 'admin': return all agents\n     - Else: return agents in user's teams (via nitejar_user_id -> team_members -> agent_teams)\n   - Apply optional filters\n   - Return: id, handle, name, title, emoji, status, team info\n3. Implement `get_agent` tool:\n   - Require authentication\n   - Input: { id?: string, handle?: string } (one required)\n   - Verify user has access to agent\n   - Return full agent details: id, handle, name, title, emoji, avatar_url, status, soul, model, teams, created_at, updated_at\n4. Create access control helper `canAccessAgent(user, agentId)`\n5. Register tools in server.ts",
+        "testStrategy": "1. Unauthenticated call returns error\n2. Admin can list all agents\n3. Member only sees team's agents\n4. get_agent with valid access returns details\n5. get_agent without access returns error\n6. Filter by team_id works\n7. Filter by status works",
+        "priority": "high",
+        "dependencies": ["152", "153"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-19T15:27:40.429Z"
+      },
+      {
+        "id": "155",
+        "title": "Implement MCP agent update tool",
+        "description": "Create MCP tool for updating agent identity fields (name, title, emoji, avatar).",
+        "details": "1. Add `update_agent` tool to `packages/mcp-server/src/tools/agents.ts`\n2. Tool spec:\n   - Require authentication\n   - Input: { id: string, updates: { name?, title?, emoji?, avatar_url? } }\n   - Verify user has access to agent (same logic as get_agent)\n   - Validate inputs (non-empty strings, valid URL for avatar)\n   - Update agent via database\n   - Return: { success: boolean, agent: updated agent }\n3. Create access control helper `canUpdateAgent(user, agentId)` - same as access for now\n4. Log update to audit_logs table with event_type 'agent_updated', metadata containing changed fields and user_id\n5. Register tool in server.ts",
+        "testStrategy": "1. Update agent name - verify persisted\n2. Update title and emoji together - verify both changed\n3. Invalid avatar URL rejected\n4. User without access gets error\n5. Audit log entry created\n6. Changes visible in admin UI",
+        "priority": "high",
+        "dependencies": ["154"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-19T15:27:43.037Z"
+      },
+      {
+        "id": "156",
+        "title": "Create MCP server CLI and configuration",
+        "description": "Finalize MCP server entry point, CLI interface, and document configuration for Claude Code.",
+        "details": "1. Complete `packages/mcp-server/src/index.ts` CLI entry:\n   - Parse environment variables: SLOPBOT_URL, MCP_DATABASE_PATH\n   - Initialize database connection\n   - Start MCP server on stdio transport\n   - Handle graceful shutdown\n2. Add shebang and make executable\n3. Create README.md with:\n   - Installation instructions (npx @nitejar/mcp-server)\n   - Configuration for Claude Code (.mcp.json example)\n   - Available tools documentation\n   - Authentication flow explanation\n4. Update root package.json build scripts if needed\n5. Test with Claude Code local config:\n   ```json\n   {\n     \"mcpServers\": {\n       \"nitejar\": {\n         \"command\": \"pnpm\",\n         \"args\": [\"--filter\", \"@nitejar/mcp-server\", \"start\"],\n         \"cwd\": \"/path/to/nitejar\"\n       }\n     }\n   }\n   ```",
+        "testStrategy": "1. Run MCP server directly - verify starts without error\n2. Configure in Claude Code .mcp.json\n3. Restart Claude Code - verify MCP connects\n4. Test full auth flow: auth_login -> auth_set_token -> list_agents\n5. Test agent updates work end-to-end",
+        "priority": "high",
+        "dependencies": ["153", "154", "155"],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "157",
+        "title": "Add two-factor authentication plugin",
+        "description": "Configure better-auth's TOTP-based two-factor authentication plugin.",
+        "details": "1. Import twoFactor from 'better-auth/plugins'\n2. Update `apps/web/lib/auth.ts`:\n   ```typescript\n   plugins: [\n     twoFactor({\n       issuer: 'Nitejar',\n       totpOptions: { digits: 6, period: 30 }\n     })\n   ]\n   ```\n3. Add twoFactorClient to auth-client.ts\n4. Migration adds twoFactor table (better-auth handles this)\n5. Create database migration if needed for backup codes storage",
+        "testStrategy": "1. Verify twoFactor table created\n2. Test plugin loads without error\n3. Test client exports 2FA methods",
+        "priority": "low",
+        "dependencies": ["145"],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "158",
+        "title": "Build 2FA setup UI in security settings",
+        "description": "Add UI for enabling, verifying, and managing two-factor authentication.",
+        "details": "1. Update `apps/web/app/settings/security/page.tsx`\n2. Add 2FA section:\n   - Current status: Enabled/Disabled\n   - Enable button (if disabled)\n   - Disable button (if enabled, requires password)\n3. Enable flow:\n   - Call authClient.twoFactor.enable()\n   - Display QR code from returned URI\n   - Show manual entry key\n   - Verify code input (6 digits)\n   - Call authClient.twoFactor.verifyTotp({ code })\n4. After enabling:\n   - Generate and display backup codes\n   - Require user to confirm they've saved codes\n5. Disable flow:\n   - Require password confirmation\n   - Call authClient.twoFactor.disable({ password })\n6. Add recovery codes regeneration option",
+        "testStrategy": "1. Enable 2FA - scan QR with authenticator app\n2. Verify code from app works\n3. Backup codes displayed\n4. Sign out and sign in - 2FA required\n5. Use backup code for recovery\n6. Disable 2FA - verify no longer required on login",
+        "priority": "low",
+        "dependencies": ["148", "157"],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "159",
+        "title": "Update sign-in flow for 2FA",
+        "description": "Modify sign-in page to handle two-factor authentication challenge.",
+        "details": "1. Update `apps/web/app/(auth)/sign-in/page.tsx`\n2. After password auth, check if 2FA required:\n   - If signIn returns twoFactorRequired: true, show 2FA step\n3. Add 2FA verification form:\n   - 6-digit code input (OTP style)\n   - 'Use backup code' link\n   - Submit verifies TOTP\n4. Backup code flow:\n   - Switch to backup code input\n   - Warn that backup codes are single-use\n5. Handle errors: invalid code, no more backup codes\n6. On successful 2FA, complete login and redirect",
+        "testStrategy": "1. Sign in with 2FA enabled account\n2. Verify 2FA prompt appears after password\n3. Enter valid TOTP - verify login completes\n4. Enter invalid TOTP - verify error\n5. Use backup code - verify works and is consumed",
+        "priority": "low",
+        "dependencies": ["142", "158"],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "160",
+        "title": "Implement MCP soul editing tool",
+        "description": "Add MCP tool for updating agent soul/identity documents.",
+        "details": "1. Add `update_agent_soul` tool to agents.ts\n2. Tool spec:\n   - Require authentication\n   - Input: { id: string, soul: string }\n   - Verify user has access to agent\n   - Validate soul content (max length, no dangerous content)\n   - Update agent.config with new soul\n   - Return updated agent\n3. Access control: same as update_agent (team members can edit)\n4. Log to audit_logs with event_type 'soul_updated'\n5. Consider adding soul history/versioning in future",
+        "testStrategy": "1. Update soul via MCP\n2. Verify soul persisted in database\n3. Verify agent uses new soul in prompts\n4. Audit log entry created\n5. Unauthorized access rejected",
+        "priority": "low",
+        "dependencies": ["155"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-19T15:27:45.644Z"
+      },
+      {
+        "id": "161",
+        "title": "Implement MCP model configuration tool",
+        "description": "Add MCP tool for admin-only model configuration changes.",
+        "details": "1. Add `update_agent_model` tool to agents.ts\n2. Tool spec:\n   - Require authentication\n   - Require admin or superadmin role\n   - Input: { id: string, model: string, temperature?: number, maxTokens?: number }\n   - Validate model exists in model_catalog\n   - Validate temperature (0-2) and maxTokens (positive int)\n   - Update agent config\n3. Access control function `canUpdateAgentModel(user)` - admin/superadmin only\n4. Log to audit_logs with event_type 'model_updated'\n5. Return warning if model is paid/high-cost",
+        "testStrategy": "1. Admin can update model\n2. Member cannot update model (error)\n3. Invalid model rejected\n4. Temperature/maxTokens validation works\n5. Audit log entry created",
+        "priority": "low",
+        "dependencies": ["155"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-19T15:27:48.258Z"
+      },
+      {
+        "id": "162",
+        "title": "Implement MCP team tools",
+        "description": "Add MCP tools for listing teams and viewing team details.",
+        "details": "1. Create `packages/mcp-server/src/tools/teams.ts`\n2. Implement `list_teams` tool:\n   - Require authentication\n   - Returns teams user belongs to (via nitejar_user_id -> team_members)\n   - Include: id, name, description, role in team, agent_count, member_count\n3. Implement `get_team` tool:\n   - Require authentication\n   - Input: { id: string }\n   - Verify user is member of team\n   - Return: id, name, description, agents list, members list\n4. Register tools in server.ts",
+        "testStrategy": "1. list_teams returns user's teams\n2. Admin sees all teams\n3. get_team returns correct details\n4. Unauthorized team access rejected\n5. Counts are accurate",
+        "priority": "low",
+        "dependencies": ["154"],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "163",
+        "title": "Enhance audit logging for MCP operations",
+        "description": "Ensure all MCP operations are properly logged to the audit_logs table.",
+        "details": "1. Create audit logging utility in MCP server:\n   ```typescript\n   async function logAudit({\n     eventType,\n     agentId,\n     userId,\n     metadata\n   })\n   ```\n2. Standardize event types:\n   - 'mcp.agent.read' - agent viewed\n   - 'mcp.agent.updated' - identity fields changed\n   - 'mcp.agent.soul_updated' - soul changed\n   - 'mcp.agent.model_updated' - model config changed\n   - 'mcp.auth.token_used' - token validated\n3. Include in metadata:\n   - user_id, user_email\n   - changed_fields for updates\n   - previous_value, new_value for sensitive changes\n   - ip_address if available\n4. Update all MCP tools to call logAudit\n5. Add tRPC query in admin to view recent audit logs",
+        "testStrategy": "1. Perform MCP operations\n2. Query audit_logs table\n3. Verify all operations logged\n4. Verify metadata is complete\n5. Admin UI shows audit trail",
+        "priority": "low",
+        "dependencies": ["155", "160", "161", "162"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-19T15:27:50.827Z"
+      },
+      {
+        "id": "164",
+        "title": "Update admin members page with invite button",
+        "description": "Update the existing members page to use better-auth invitation flow and add invite button.",
+        "details": "1. Update `apps/web/app/admin/members/page.tsx`\n2. Add 'Invite Member' button that opens dialog\n3. Invite dialog form:\n   - Email input\n   - Role select (member, admin)\n   - Submit button\n4. On submit, call better-auth invitation endpoint via authClient\n5. Show success message with invitation link (for development/debugging)\n6. Display pending invitations in separate section\n7. Allow resending or canceling pending invitations\n8. Update member list to show better-auth user status",
+        "testStrategy": "1. Open invite dialog\n2. Submit invitation\n3. Verify email sent\n4. Verify invitation appears in pending list\n5. Test resend invitation\n6. Test cancel invitation",
+        "priority": "medium",
+        "dependencies": ["141", "145"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-19T15:27:53.567Z"
+      },
+      {
+        "id": "165",
+        "title": "Add sign-out functionality",
+        "description": "Add sign-out button to admin header and implement sign-out flow.",
+        "details": "1. Update admin layout header to show current user info\n2. Add user dropdown menu:\n   - Display user name and avatar\n   - Link to /settings\n   - Sign out button\n3. Implement sign-out:\n   - Call authClient.signOut()\n   - Redirect to /sign-in\n   - Clear any client-side state\n4. Use shadcn/ui DropdownMenu component\n5. Show loading state during sign-out",
+        "testStrategy": "1. Verify user info displayed in header\n2. Click sign out\n3. Verify session cleared\n4. Verify redirect to sign-in\n5. Verify protected routes no longer accessible",
+        "priority": "medium",
+        "dependencies": ["145"],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-19T15:27:56.246Z"
+      },
+      {
+        "id": "166",
+        "title": "Telegram: Accept images and include in agent context",
+        "description": "Handle Telegram photo uploads by fetching the file and attaching it to the work item context so the agent can see images when the model supports vision.",
+        "details": "1. Extend Telegram webhook parsing to detect photo/document images and capture file_id/file_unique_id + caption.\n2. Fetch Telegram file URL or bytes via Bot API using stored bot token.\n3. Store image metadata/URL in work item or message context (no heavy blob storage required initially).\n4. Update prompt builder to include image attachments in the user message for vision-capable models; if model lacks vision, include a short notice and skip images.\n5. Add safe guards for file size limits and unsupported mime types.\n6. Add integration tests with mocked Telegram API responses (CI-safe, no network).",
+        "testStrategy": "1. Post a mocked Telegram webhook with a photo + caption.\n2. Verify image metadata is persisted on the work item.\n3. Verify prompt builder includes image attachments for vision models.\n4. Verify non-vision models skip images with a notice.\n5. Ensure CI tests use mocked Telegram API calls.",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-19T15:27:58.826Z"
+      }
+    ],
+    "metadata": {
+      "version": "1.0.0",
+      "lastModified": "2026-02-19T15:42:54.606Z",
+      "taskCount": 86,
+      "completedCount": 72,
+      "tags": ["master"]
+    }
+  }
+}

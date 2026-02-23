@@ -1,0 +1,189 @@
+---
+title: Webhook Setup
+description: Send JSON, get a response. HMAC verification optional.
+---
+
+The Generic Webhook plugin is the simplest way to get data into Nitejar. Send a JSON POST, the agent processes it, you check the result. No OAuth flows, no bot tokens, no platform SDKs.
+
+## Create a plugin instance
+
+1. Open **Admin > Plugins** and find **Generic Webhook** in the catalog.
+2. Click **New Instance**.
+3. Assign one or more agents to the instance.
+4. Optionally enter an **HMAC Secret** if you want request signature verification (more on that below).
+5. Save. Copy the instance ID -- you need it for the endpoint URL.
+
+## Endpoint format
+
+Every plugin instance gets its own URL:
+
+```
+POST /api/webhooks/plugins/webhook/YOUR_INSTANCE_ID
+```
+
+In local development, that is:
+
+```
+http://localhost:3000/api/webhooks/plugins/webhook/YOUR_INSTANCE_ID
+```
+
+Replace `YOUR_INSTANCE_ID` with the ID from the admin UI.
+
+## Payload shape
+
+The webhook accepts a JSON body. The only field the plugin truly requires is something it can treat as message text. Here is the full shape:
+
+```json
+{
+  "text": "Your message here",
+  "sender_id": "user-123",
+  "sender_name": "Jane",
+  "event_type": "message",
+  "metadata": {}
+}
+```
+
+| Field         | Type     | Required | Description                                                                                                         |
+| ------------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
+| `text`        | `string` | yes      | The message the agent will process. Falls back to `message`, then `body`, then the entire JSON payload stringified. |
+| `sender_id`   | `string` | no       | Identifies the sender. Used to build the session key (`webhook:<sender_id>`). Defaults to `anonymous`.              |
+| `sender_name` | `string` | no       | Human-readable sender name. Defaults to the `sender_id` value.                                                      |
+| `event_type`  | `string` | no       | Arbitrary event label. Defaults to `message`.                                                                       |
+| `metadata`    | `object` | no       | Any extra data. Stored in the work item payload under `raw`.                                                        |
+
+The plugin is lenient. If you send `{"message": "hello"}` instead of `{"text": "hello"}`, it still works. But `text` is the canonical field.
+
+## Send a test message
+
+```bash
+curl -X POST http://localhost:3000/api/webhooks/plugins/webhook/YOUR_INSTANCE_ID \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Hello, what can you do?", "sender_id": "test-user"}'
+```
+
+You should get a `201` response with a body containing the work item ID:
+
+```json
+{
+  "ok": true,
+  "workItemId": "wi_abc123..."
+}
+```
+
+That `201` means the work item was created. The agent processes it asynchronously.
+
+<Callout type="info" title="Where to verify">
+Open **Admin > Activity** to see the work item and the agent's response. Click into the work item for the full receipt trail: webhook received, run dispatched, inference calls, tools executed, response delivered. Each step has timestamps and cost.
+</Callout>
+
+## HMAC verification (optional)
+
+If you set an HMAC Secret during instance setup, every request must include a valid signature header. This prevents unauthorized callers from triggering your agent.
+
+**How it works:**
+
+1. Compute the HMAC-SHA256 hex digest of the raw request body using your shared secret.
+2. Send it in the `X-Webhook-Signature` header.
+
+**Signing example (bash):**
+
+```bash
+SECRET="your-shared-secret"
+BODY='{"text": "Hello from CI", "sender_id": "deploy-bot"}'
+SIGNATURE=$(echo -n "$BODY" | openssl dgst -sha256 -hmac "$SECRET" | awk '{print $2}')
+
+curl -X POST http://localhost:3000/api/webhooks/plugins/webhook/YOUR_INSTANCE_ID \
+  -H "Content-Type: application/json" \
+  -H "X-Webhook-Signature: $SIGNATURE" \
+  -d "$BODY"
+```
+
+**Signing example (Node.js):**
+
+```ts
+import { createHmac } from 'node:crypto'
+
+const secret = 'your-shared-secret'
+const body = JSON.stringify({ text: 'Hello from CI', sender_id: 'deploy-bot' })
+const signature = createHmac('sha256', secret).update(body).digest('hex')
+
+await fetch('http://localhost:3000/api/webhooks/plugins/webhook/YOUR_INSTANCE_ID', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-Webhook-Signature': signature,
+  },
+  body,
+})
+```
+
+If the signature is missing or does not match, the webhook is silently dropped -- no work item is created, no agent runs.
+
+## Response handling
+
+The webhook endpoint returns `201` immediately after creating the work item. The agent processes asynchronously. There is no synchronous response body containing the agent's answer.
+
+To get the agent's response, you have three options:
+
+**1. Check Admin > Activity**
+
+Open the admin UI, find the work item, and read the agent's response in the timeline. Good for development and debugging.
+
+**2. Poll the work item via the admin API**
+
+Use the `workItemId` from the `201` response to poll for completion:
+
+```bash
+# Check work item status (via tRPC or direct DB query in development)
+# The work item status transitions: PENDING -> IN_PROGRESS -> DONE (or FAILED)
+```
+
+**3. Build a callback plugin**
+
+For production integrations that need the response programmatically, build a custom plugin that implements `postResponse` to forward the agent's answer to your callback URL. The Generic Webhook plugin itself is fire-and-forget -- it has no outbound delivery channel.
+
+## Use cases
+
+- **Testing agents during development.** The fastest way to throw a message at an agent and see what happens. Pair with Admin > Activity for the full receipt trail.
+- **Custom integrations from internal tools.** Wire up any internal dashboard, Retool app, or admin panel to trigger agent work.
+- **Connecting services without a dedicated plugin.** If Nitejar does not have a native plugin for your platform, the webhook is the escape hatch.
+- **CI/CD pipeline notifications.** Post deploy summaries, test failures, or PR events. Use HMAC verification to lock it down.
+- **Cron jobs and scheduled triggers.** Hit the webhook on a schedule to have an agent summarize logs, check dashboards, or generate reports.
+
+## Troubleshooting
+
+### Wrong Content-Type
+
+The endpoint expects `Content-Type: application/json`. If you send `text/plain` or `application/x-www-form-urlencoded`, the JSON parse fails and the webhook is dropped silently.
+
+```bash
+# Wrong
+curl -X POST .../YOUR_INSTANCE_ID -d '{"text": "hi"}'
+
+# Right
+curl -X POST .../YOUR_INSTANCE_ID -H "Content-Type: application/json" -d '{"text": "hi"}'
+```
+
+### Missing or malformed JSON body
+
+The body must be valid JSON. If the body is empty, not JSON, or unparseable, the plugin returns `shouldProcess: false` and no work item is created.
+
+### HMAC signature mismatch
+
+If you configured a secret but the `X-Webhook-Signature` header is missing or wrong, the request is silently dropped. Double-check:
+
+- The header name is exactly `X-Webhook-Signature` (case-insensitive on most servers, but use this casing to be safe).
+- The signature is the hex-encoded HMAC-SHA256 of the **raw request body** (not a re-serialized version).
+- The secret matches what you entered in the admin UI.
+
+### Instance ID not found
+
+If the instance ID in the URL does not match any plugin instance, you get a `404`. Verify the ID in **Admin > Plugins**.
+
+### No agents assigned
+
+If the plugin instance has no agents assigned, the work item is created but immediately marked `FAILED`. Assign at least one agent in the admin UI.
+
+### Agent not responding
+
+Check **Admin > Activity** for the work item. Look at the run timeline for errors. Common causes: model rate limits, missing API keys, agent configuration issues.

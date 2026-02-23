@@ -1,0 +1,38 @@
+{
+  "payload": {
+    "action": "created",
+    "issue": {
+      "number": 42,
+      "title": "Test issue for nitejar development",
+      "state": "open",
+      "body": "This is a test issue body."
+    },
+    "comment": {
+      "id": 12345678,
+      "body": "@nitejar help me with this task",
+      "user": {
+        "login": "test-user",
+        "id": 123456
+      },
+      "created_at": "2024-01-15T10:30:00Z"
+    },
+    "repository": {
+      "name": "test-repo",
+      "full_name": "test-org/test-repo",
+      "owner": {
+        "login": "test-org"
+      }
+    },
+    "sender": {
+      "login": "test-user",
+      "id": 123456
+    },
+    "installation": {
+      "id": 98765432
+    }
+  },
+  "headers": {
+    "x-github-event": "issue_comment",
+    "x-github-delivery": "dev-replay-12345678"
+  }
+}

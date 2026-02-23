@@ -1,0 +1,149 @@
+---
+title: Testing Plugins
+description: SDK test utilities for contract testing your plugin.
+---
+
+The `@nitejar/plugin-sdk` ships three test utilities. Use them with any test runner (Vitest, Jest, etc.) to verify your plugin meets the handler contract.
+
+## `testHandler(pluginExport, options?)`
+
+Runs a full contract test suite against your plugin export. It validates `definePlugin()`, calls `validateConfig()`, and optionally exercises `parseWebhook()` and `postResponse()`.
+
+```ts
+import { describe, it, expect } from 'vitest'
+import { testHandler } from '@nitejar/plugin-sdk'
+import plugin from '../src/index'
+
+describe('my plugin contract', () => {
+  it('passes all contract checks', async () => {
+    const result = await testHandler(plugin, {
+      config: { apiKey: 'test-key' },
+      webhookBody: { text: 'hello', user_id: 'u1' },
+      postResponseArgs: {
+        workItemId: 'wi-1',
+        content: 'Here is the answer.',
+      },
+    })
+
+    expect(result.definePlugin.pass).toBe(true)
+    expect(result.validateConfig.pass).toBe(true)
+    expect(result.parseWebhook?.pass).toBe(true)
+    expect(result.postResponse?.pass).toBe(true)
+  })
+})
+```
+
+### Options
+
+| Option             | Type                                                                 | Description                                       |
+| ------------------ | -------------------------------------------------------------------- | ------------------------------------------------- |
+| `config`           | `unknown`                                                            | Passed to `validateConfig`. Defaults to `{}`.     |
+| `webhookBody`      | `unknown`                                                            | JSON body for `parseWebhook`. Skipped if omitted. |
+| `webhookHeaders`   | `Record<string, string>`                                             | Extra headers for the mock request.               |
+| `pluginInstance`   | `Partial<PluginInstance>`                                            | Overrides for the mock plugin instance.           |
+| `postResponseArgs` | `{ workItemId: string; content: string; responseContext?: unknown }` | Args for `postResponse`. Skipped if omitted.      |
+
+### Result shape
+
+```ts
+interface TestHandlerResult {
+  definePlugin: { pass: boolean; error?: string }
+  validateConfig: {
+    pass: boolean
+    result?: ConfigValidationResult
+    error?: string
+  }
+  parseWebhook?: {
+    pass: boolean
+    result?: WebhookParseResult
+    error?: string
+  }
+  postResponse?: {
+    pass: boolean
+    result?: PostResponseResult
+    error?: string
+  }
+}
+```
+
+Each step includes the raw result so you can assert on specific fields (e.g., check that `parseWebhook.result.workItem.source` matches your plugin type).
+
+## `createMockRequest(body, options?)`
+
+Creates a `Request` with JSON content-type defaults. Useful for writing your own `parseWebhook` tests.
+
+```ts
+import { createMockRequest } from '@nitejar/plugin-sdk'
+
+// Defaults: POST http://localhost/webhook, Content-Type: application/json
+const req = createMockRequest({ text: 'hello' })
+
+// Custom method and headers
+const custom = createMockRequest('raw body', {
+  method: 'PUT',
+  headers: { 'x-custom': 'yes' },
+})
+```
+
+## `createMockPluginInstance(overrides?)`
+
+Creates a `PluginInstance` with sensible defaults. Merge in your overrides.
+
+```ts
+import { createMockPluginInstance } from '@nitejar/plugin-sdk'
+
+const instance = createMockPluginInstance()
+// { id: 'test-001', type: 'test', config: null }
+
+const configured = createMockPluginInstance({
+  type: 'my-plugin',
+  config: JSON.stringify({ apiKey: 'sk-test' }),
+})
+```
+
+## Writing manual tests
+
+For more control, test your handler methods directly:
+
+```ts
+import { describe, it, expect } from 'vitest'
+import plugin from '../src/index'
+
+const { handler } = plugin
+
+describe('parseWebhook', () => {
+  it('rejects requests with bad HMAC signature', async () => {
+    const request = new Request('http://localhost/webhook', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-webhook-signature': 'deadbeef',
+      },
+      body: JSON.stringify({ text: 'secret payload' }),
+    })
+
+    const instance = {
+      id: 'test-001',
+      type: 'webhook',
+      config: JSON.stringify({ secret: 'test-secret' }),
+    }
+
+    const result = await handler.parseWebhook(request, instance)
+    expect(result.shouldProcess).toBe(false)
+  })
+})
+```
+
+## Local development loop
+
+1. Build your plugin: `npm run build`
+2. Open the admin UI: **Plugins > Install Custom Plugin**
+3. Enter the absolute path to your plugin directory (the one containing `nitejar-plugin.json`)
+4. Edit, rebuild, and the next webhook uses your latest code -- no restart needed
+
+For automated testing during development, pair your test suite with a file watcher:
+
+```bash
+# Run tests on every change
+npx vitest --watch
+```

@@ -1,0 +1,26 @@
+{
+  "name": "@nitejar/integration-tests",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint tests --ext .ts --no-error-on-unmatched-pattern",
+    "test:integration": "vitest run -c vitest.config.ts",
+    "test:integration:watch": "vitest -c vitest.config.ts"
+  },
+  "dependencies": {
+    "@nitejar/agent": "workspace:*",
+    "@nitejar/database": "workspace:*",
+    "@nitejar/plugin-handlers": "workspace:*",
+    "@nitejar/sprites": "workspace:*"
+  },
+  "devDependencies": {
+    "@nitejar/eslint-config": "workspace:*",
+    "@nitejar/typescript-config": "workspace:*",
+    "@types/node": "^22.10.5",
+    "eslint": "^8.57.0",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

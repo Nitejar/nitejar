@@ -1,0 +1,195 @@
+---
+title: Evals
+description: Measure output quality and catch regressions before they spread.
+---
+
+Evals score agent behavior against explicit expectations. Use them to prevent drift when prompts, skills, or tools change.
+
+## How evals work
+
+Every time an agent completes a job, Nitejar can automatically run the response through an evaluation pipeline. The pipeline is non-blocking — the agent's response is delivered immediately, and scoring happens in the background.
+
+The flow:
+
+1. **Agent completes a job.** The run-dispatch worker finalizes the job and delivers the response.
+2. **Eval enqueue check.** The system checks whether the agent has active evaluators, respects daily limits and sampling rates, and creates a pending eval run if conditions pass.
+3. **Eval worker claims the run.** A background worker polls for pending eval runs every 5 seconds, claims one, and assembles the evaluation context (transcript, agent info, work item metadata).
+4. **Gates run first.** Gate evaluators are pass/fail checks. If any gate fails, the pipeline stops — scorers are skipped.
+5. **Scorers run second.** Scorer evaluators produce a 0–1 quality score. Each scorer has a weight, and the overall score is the weighted average.
+6. **Results are stored.** Each evaluator produces an `eval_result` with its score, reasoning, and cost. The `eval_run` record is updated with the overall score, gate status, and a pipeline result summary.
+
+The entire pipeline runs without affecting the agent's response time. Eval failures never block agent work.
+
+## Rubrics and criteria
+
+A rubric defines what "good" looks like. Each rubric contains one or more **criteria**, and each criterion has:
+
+- **Name** — what you're measuring (e.g., "Accuracy", "Helpfulness").
+- **Description** — what the judge model should evaluate.
+- **Weight** — how much this criterion matters relative to others. Higher weight means more influence on the overall score.
+- **Scale** — 5-level descriptors (1 through 5) that anchor the judge's scoring. Each level describes what that score means for this criterion.
+
+The judge model scores each criterion independently on the 1–5 scale, then the system computes a weighted average and normalizes it to a 0–1 range: `(raw_score - 1) / 4`.
+
+### Built-in templates
+
+Nitejar ships four rubric templates to get you started:
+
+| Template                | Criteria                                                                  | Best for              |
+| ----------------------- | ------------------------------------------------------------------------- | --------------------- |
+| **General Assistant**   | Accuracy (w:3), Helpfulness (w:3), Tone (w:2), Efficiency (w:1)           | Most agents           |
+| **Code Review**         | Correctness (w:3), Thoroughness (w:3), Actionability (w:2), Tone (w:1)    | GitHub-focused agents |
+| **Customer Support**    | Accuracy (w:3), Resolution (w:3), Empathy (w:2), Response Awareness (w:1) | Support agents        |
+| **Research & Analysis** | Accuracy (w:3), Depth (w:3), Source Quality (w:2), Clarity (w:2)          | Research agents       |
+
+Templates are starting points. You can customize criteria, adjust weights, and add or remove criteria after creation.
+
+<Callout type="info" title="Where to verify">
+Open **Admin > Agents > [agent] > Evals** and click **Add Evaluator** to see available templates. Each template lists its criteria and weights before you assign it.
+</Callout>
+
+## Evaluators
+
+An evaluator wraps a rubric and configures how it runs. For the current version, the only evaluator type is `llm_judge` — a separate LLM call that reads the agent's transcript and scores it against the rubric criteria.
+
+Each evaluator has:
+
+- **Type** — `llm_judge` (other types like `programmatic`, `statistical`, and `safety` are scaffolded for future use).
+- **Config** — references the rubric to use (stored as `{"rubric_id": "..."}` internally).
+- **Judge model** — optional override for which model runs the evaluation.
+
+### Judge model resolution
+
+The system picks a judge model using this priority chain:
+
+1. **Evaluator-level override** — set per assignment.
+2. **Rubric-level default** — set when creating the rubric.
+3. **System default** — set in eval settings.
+4. **Auto-fallback** — if the agent uses an OpenAI/GPT model, the judge defaults to Claude. Otherwise, it defaults to GPT-4o-mini. This cross-family judging reduces self-evaluation bias.
+
+## Gates vs scorers
+
+Every evaluator assigned to an agent is either a **gate** or a **scorer**. The distinction controls pipeline behavior.
+
+**Gates** are pass/fail checks. A gate passes if the normalized score is ≥ 0.5 (50%). Gates run first, in order of assignment. If any gate fails, the pipeline stops immediately — no scorers run, and the overall score is null. Use gates for safety, compliance, or minimum-quality thresholds.
+
+**Scorers** produce quality scores. They run only after all gates pass. Each scorer has a weight, and the overall score is the weighted average of all scorer results. Use scorers for nuanced quality measurement.
+
+Example setup:
+
+- **Gate:** Safety rubric (1 criterion, weight 1, `is_gate: true`). Must pass before anything else runs.
+- **Scorer:** General Assistant rubric (4 criteria, weight 1, `is_gate: false`). Produces the quality score.
+
+If the safety gate fails, the overall score is null and `gates_passed` is 0. If the gate passes, the scorer runs and produces a weighted score.
+
+## Assigning evaluators to agents
+
+Assign evaluators from the agent configuration page under the **Evals** section.
+
+Each assignment has:
+
+- **Weight** — how much this evaluator's score contributes to the overall score (only matters for scorers). Default: 1.0.
+- **Is gate** — whether this evaluator runs as a pass/fail gate. Default: false.
+- **Sample rate** — per-evaluator sampling override. `null` means "always run." A value of `0.5` means "run 50% of the time." Default: null.
+- **Is active** — toggle to disable without removing the assignment. Default: true.
+
+You can assign multiple evaluators to the same agent. Gates run in assignment order, scorers run after all gates pass.
+
+<Callout type="info" title="Where to verify">
+Open **Admin > Agents > [agent] > Evals** to see all assigned evaluators, their gate/scorer status, weights, and sample rates. You can add, edit, or remove assignments from this panel.
+</Callout>
+
+## Sampling and daily limits
+
+Evals cost tokens. Sampling controls prevent runaway eval spend on high-volume agents.
+
+### Pipeline-level sampling
+
+Configured in **Admin > Evals > Settings**:
+
+- **Sample rate (default)** — the probability of running evals on any completed job. Default: 1.0 (100%).
+- **High-volume threshold** — once an agent completes this many runs in a day, the sample rate drops. Default: 20 runs/day.
+- **High-volume rate** — the reduced sample rate after hitting the threshold. Default: 0.2 (20%).
+- **Max daily evals** — hard ceiling on eval runs per agent per day. Default: 50.
+
+The sampling logic: if today's completed runs are below the threshold, use the default sample rate. Once the threshold is crossed, drop to the high-volume rate. Once the daily max is hit, no more evals run for that agent until tomorrow.
+
+### Per-evaluator sampling
+
+Each evaluator assignment has its own `sample_rate` field. This is a second layer of sampling on top of the pipeline-level rate. If the pipeline decides to run an eval, each individual evaluator still checks its own sample rate.
+
+Set per-evaluator sample rates when you have expensive evaluators that don't need to run on every eval.
+
+## Understanding scores
+
+Scores are normalized to a **0–1 range**. The raw 1–5 criterion scores are weighted, averaged, and mapped: `(weighted_average - 1) / 4`.
+
+| Normalized score | Raw average | Interpretation     |
+| ---------------- | ----------- | ------------------ |
+| 0.00             | 1.0         | Worst possible     |
+| 0.25             | 2.0         | Below expectations |
+| 0.50             | 3.0         | Meets expectations |
+| 0.75             | 4.0         | Above expectations |
+| 1.00             | 5.0         | Excellent          |
+
+### Trend direction
+
+The system compares the last 7 days of scores against the previous 7 days:
+
+- **Improving** — recent average is more than 0.02 above the previous period.
+- **Declining** — recent average is more than 0.02 below the previous period.
+- **Stable** — difference is within ±0.02.
+- **Insufficient data** — fewer than 3 completed evals in either period.
+
+### Per-evaluator breakdown
+
+The agent eval summary shows each evaluator's average score and pass rate. Gates show pass rate (what percentage of evals passed the gate). Scorers show average normalized score. The lowest and highest scoring evaluators are highlighted.
+
+<Callout type="info" title="Where to verify">
+Open **Admin > Agents > [agent] > Evals** for the agent's eval summary, score trend chart, and per-evaluator breakdown. Click any eval run to see the full pipeline result, individual criterion scores, and the judge's reasoning.
+</Callout>
+
+## Running evals manually
+
+You can trigger an eval on any completed job without waiting for the automatic pipeline.
+
+From the agent's **Evals** section or from a job's detail view, use the **Run Eval** action. This creates a pending eval run with `trigger: manual` that the eval worker picks up on its next tick (within 5 seconds).
+
+Manual runs bypass sampling — they always run all active evaluators. They still respect the daily eval limit.
+
+## Practical eval loop
+
+1. **Define criteria.** Pick a rubric template or create a custom rubric with criteria that match your agent's purpose.
+2. **Assign to agent.** Add the evaluator as a scorer (for quality tracking) or a gate (for minimum standards).
+3. **Run real traffic.** Let the agent handle actual work. Evals run automatically based on sampling settings.
+4. **Review scores.** Check the eval summary for trends. Look at the per-evaluator breakdown to find weak spots.
+5. **Adjust and re-run.** Tune the agent's soul, skills, or tools based on eval feedback. Compare scores before and after.
+
+Keep scenarios concrete. "Correct issue labels applied" is better than "good triage quality."
+
+<Callout type="info" title="Where to verify">
+Open **Admin > Evals** for run history, evaluator results, and quality trends over time.
+</Callout>
+
+## Cost of evals
+
+Each eval run makes one or more LLM calls to the judge model. These calls consume tokens and incur costs, tracked per-result and rolled up to the eval run.
+
+Cost depends on:
+
+- **Judge model** — cheaper models (GPT-4o-mini) cost fractions of a cent per eval. Frontier models cost more.
+- **Transcript length** — longer transcripts mean more input tokens for the judge.
+- **Number of evaluators** — each evaluator runs a separate judge call.
+
+Control eval costs with:
+
+- **Sampling rates** — reduce how often evals run on high-volume agents.
+- **Daily limits** — cap total eval runs per agent per day.
+- **Per-evaluator sampling** — skip expensive evaluators on some runs.
+- **Cost budget** — set a USD budget ceiling in eval settings.
+
+Eval costs are tracked separately from agent inference costs. Each eval result records its own `cost_usd` and `duration_ms`, and the eval run aggregates total cost across all results.
+
+<Callout type="info" title="Where to verify">
+Open **Admin > Agents > [agent] > Evals** to see total eval cost alongside the eval summary. Individual eval runs show per-result cost breakdowns.
+</Callout>

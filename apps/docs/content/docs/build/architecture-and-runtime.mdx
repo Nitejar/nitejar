@@ -1,0 +1,163 @@
+---
+title: Architecture Overview
+description: How Nitejar's packages, runtime, and data flow fit together.
+---
+
+## System overview
+
+Nitejar is a monorepo with a Next.js web application at its center and several supporting packages. Messages arrive from external channels, get routed to agents, run through an inference loop with tool access, and produce responses that are delivered back to the source. Every step is recorded.
+
+```
+Channels (Telegram, GitHub, Webhooks)
+        │
+        ▼
+┌─────────────────────────────────┐
+│  apps/web  (Next.js 15)        │
+│  ┌───────────┐  ┌────────────┐ │
+│  │ Webhook   │  │ Admin UI   │ │
+│  │ Routes    │  │ (tRPC)     │ │
+│  └─────┬─────┘  └────────────┘ │
+│        │                        │
+│  ┌─────▼─────────────────────┐ │
+│  │  Plugin Handlers          │ │
+│  │  (parse, route, respond)  │ │
+│  └─────┬─────────────────────┘ │
+│        │                        │
+│  ┌─────▼─────────────────────┐ │
+│  │  Queue + Run Dispatch     │ │
+│  │  (durable, recoverable)   │ │
+│  └─────┬─────────────────────┘ │
+│        │                        │
+│  ┌─────▼─────────────────────┐ │
+│  │  Agent Runtime            │ │
+│  │  (inference loop + tools) │ │
+│  └─────┬─────────────────────┘ │
+│        │                        │
+│  ┌─────▼─────────────────────┐ │
+│  │  Effect Outbox            │ │
+│  │  (response delivery)      │ │
+│  └───────────────────────────┘ │
+│                                 │
+│  ┌───────────────────────────┐ │
+│  │  Database (SQLite/PG)     │ │
+│  └───────────────────────────┘ │
+└─────────────────────────────────┘
+        │
+        ▼
+Sprites (sandboxed VMs for agent execution)
+```
+
+## Key packages
+
+### `apps/web`
+
+The Next.js 15 application. Contains:
+
+- **Webhook routes** — HTTP endpoints that receive inbound messages from channels (`/api/webhooks/plugins/[type]/[instanceId]`).
+- **Dashboard** — React pages for managing agents, plugins, skills, work items, and runtime settings.
+- **tRPC routers** — Server-side procedures for the admin UI, organized by domain (agents, plugins, skills, credentials, etc.).
+- **Runtime workers** — Background processes for queue dispatch, run execution, and effect outbox delivery. Started eagerly on server boot via `instrumentation.ts`.
+
+### `packages/agent`
+
+The agent runtime. Handles:
+
+- **Prompt building** — Constructs system prompts from agent config, soul, memories, skills, and tool definitions.
+- **Inference loop** — Calls model providers, processes tool calls, handles streaming responses.
+- **Tool handlers** — Built-in tools (bash, read/write files, GitHub, Telegram, credentials) and plugin-contributed tools.
+- **Skill resolver** — Merges skills from repo discovery, database, and plugins into a unified index.
+- **Sandbox management** — Interfaces with Sprites for sandboxed execution environments.
+
+### `packages/database`
+
+Kysely-based database layer. Supports SQLite (default for local dev) and Postgres (for production). Contains:
+
+- **Migrations** — Schema evolution files in `migrations/`.
+- **Repositories** — Data access functions organized by domain: agents, work items, plugins, skills, credentials, memories.
+- **Type definitions** — TypeScript types for all database tables.
+
+### `packages/plugin-sdk`
+
+The public SDK for building plugins. Ships:
+
+- `definePlugin()` — Validates and wraps a plugin export.
+- `PluginHandler` — The interface plugin authors implement (webhook parsing, response delivery, config validation).
+- `PluginProvider` — Optional interface for contributing agent-side tools.
+- Test utilities — `testHandler()`, `createMockRequest()`, `createMockPluginInstance()`.
+
+Zero workspace dependencies. Plugin authors install this package alone.
+
+### `packages/plugin-runtime`
+
+The host-side plugin lifecycle manager. Handles:
+
+- **Plugin loader** — Discovers and loads plugin modules from the filesystem.
+- **Manifest validation** — Validates `nitejar-plugin.json` against the schema.
+- **Install/upgrade/rollback** — Manages plugin versions in the data directory.
+- **Registry integration** — Registers plugin-contributed handlers and providers with the runtime.
+- **Catalog** — Static list of known/recommended plugins.
+
+### `packages/plugin-handlers`
+
+Plugin handler registry and built-in integration implementations:
+
+- **Integration registry** — Maps plugin types to their handlers.
+- **Built-in handlers** — Telegram and GitHub handlers wrapped as plugins.
+- **Webhook routing** — Routes inbound webhooks to the correct handler by type.
+
+### `packages/sprites`
+
+Interface to the Sprites VM service for sandboxed agent execution. Manages sprite lifecycle, filesystem operations, and command execution within agent sandboxes.
+
+### `packages/core`
+
+Core types, work item store interfaces, and orchestrator contracts shared across the codebase.
+
+### `packages/config`
+
+Environment configuration with Zod validation. Reads from `apps/web/.env`.
+
+## Data flow: message to response
+
+1. **Inbound webhook** arrives at `/api/webhooks/plugins/[type]/[instanceId]`.
+2. **Plugin handler** parses the webhook, extracts a work item, and checks idempotency.
+3. **Work item** is created in the database with status `pending`.
+4. **Queue dispatch** claims the work item and assigns it to a run.
+5. **Agent runtime** builds the system prompt, enters the inference loop, and executes tool calls.
+6. **Effect outbox** picks up the agent's response and delivers it back through the plugin handler's `postResponse()` method.
+7. **Receipts** are recorded at every step: work item creation, run dispatch, inference calls, tool executions, response delivery.
+
+## Design philosophy
+
+### Receipts not vibes
+
+Every action the system takes produces an inspectable record. Work item timelines show exactly what happened, when, and at what cost. If something looks wrong, you can trace the full chain from inbound webhook to delivered response.
+
+### Plugin model
+
+Nitejar ships as a standalone application. Plugins extend it without forking. A plugin is a package with a manifest (`nitejar-plugin.json`) and an entry point that exports a handler. Plugins run in-process in the current release — there is no hard sandbox isolation for plugin code. Permission grants exist for governance and audit, but enforcement is limited to host-managed API boundaries.
+
+### Skills vs plugins vs memories
+
+| Primitive  | What it adds                                 | Who runs it                |
+| ---------- | -------------------------------------------- | -------------------------- |
+| **Plugin** | Functionality: tools, webhooks, integrations | Host process               |
+| **Skill**  | Intelligence: knowledge, workflows, scripts  | Agent (reads from sandbox) |
+| **Memory** | Experience: learned facts, session context   | Agent (creates/updates)    |
+
+Plugins connect to external services. Skills teach agents how to do things. Memories are ephemeral learned state. They compose but do not overlap.
+
+## Runtime reliability
+
+The runtime uses two durable ledgers:
+
+- **Compute ledger** (`run_dispatches`) — Tracks run claim/execution state per queue lane.
+- **Effect ledger** (`effect_outbox`) — Tracks external side-effect delivery state.
+
+On startup, the system recovers stale state: abandoned dispatches are marked for replay, unknown effect outcomes are held for manual release. Queue messages and lane state survive restarts. This means you can stop and restart Nitejar without losing in-flight work.
+
+## Database
+
+SQLite is the default for local development. Postgres is supported for production deployments. The database stores everything: agent configs, work items, run traces, plugin manifests, skill content, credentials (encrypted), memories, and queue state.
+
+For local development, the database file lives at `packages/database/data/nitejar.db`. Configuration data (agents, plugins, teams) should be preserved across resets. Transactional data (jobs, messages, work items) can be wiped freely during development.

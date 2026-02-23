@@ -1,0 +1,4 @@
+{
+  "title": "Plugin SDK",
+  "pages": ["index", "handler-reference", "manifest", "testing"]
+}

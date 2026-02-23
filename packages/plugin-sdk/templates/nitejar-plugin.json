@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "com.example.my-plugin",
+  "name": "My Nitejar Plugin",
+  "version": "0.1.0",
+  "description": "A custom Nitejar integration plugin",
+  "entry": "dist/index.js",
+  "permissions": {
+    "network": [],
+    "secrets": []
+  }
+}

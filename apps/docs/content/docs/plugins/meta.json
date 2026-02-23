@@ -1,0 +1,4 @@
+{
+  "title": "Plugins",
+  "pages": ["index", "handler-reference", "manifest", "testing"]
+}

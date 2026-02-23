@@ -1,0 +1,132 @@
+---
+title: Your First Agent
+description: Create an agent, connect a channel, send a message, and inspect the receipts.
+---
+
+This walkthrough takes you from zero to a working agent in about five minutes. By the end, you will have an agent that receives a message, runs inference, and produces a response you can inspect step by step.
+
+## 1. Start Nitejar
+
+Make sure Nitejar is running. If you followed the [Quickstart](/start-here), you already have it up.
+
+**From source:**
+
+```bash
+pnpm dev
+```
+
+**Docker:**
+
+```bash
+docker run -d \
+  --name nitejar \
+  -p 3000:3000 \
+  -v nitejar-data:/app/data \
+  -e ENCRYPTION_KEY="$(openssl rand -hex 32)" \
+  ghcr.io/nitejar/nitejar:latest
+```
+
+Either way, confirm you can reach [http://localhost:3000](http://localhost:3000) before continuing.
+
+## 2. Open the admin
+
+Navigate to [http://localhost:3000](http://localhost:3000).
+
+The sidebar is your home base. Here is what you will find:
+
+- **Agents** -- the AI agents you create and configure
+- **Plugins** -- channel integrations (Telegram, GitHub, webhooks)
+- **Skills** -- reusable workflows you can teach agents
+- **Activity** -- work items and run history
+- **Costs** -- token usage and spend tracking
+- **Settings** -- gateway config, encryption, and system options
+
+For now, head to **Agents**.
+
+## 3. Create an agent
+
+Click **New Agent**. Fill in the basics:
+
+- **Name:** Pick something you will recognize. `my-first-agent` works.
+- **Soul:** This is the personality prompt that shapes how your agent behaves. Write a short description of what the agent should be. For example:
+
+```text
+You are a helpful assistant that responds concisely and honestly.
+When you don't know something, say so.
+```
+
+- **Model:** Leave this as the default (`arcee-ai/trinity-large-preview:free`) unless you have a different model API key configured in your gateway settings. The default is free and works out of the box.
+
+Click **Save**.
+
+<Callout type="info" title="Tip">
+  A good soul prompt is specific about behavior, not vague about personality. Instead of "be
+  friendly and smart," try "answer questions in two sentences or fewer. If the user asks for code,
+  include a working example. If you are unsure, say what you do not know and suggest where to look."
+  The more concrete the instructions, the more predictable the agent.
+</Callout>
+
+## 4. Set up a channel
+
+Your agent needs a way to receive messages. The **Generic Webhook** plugin is the simplest path -- no external accounts, no API keys, just HTTP.
+
+1. Go to **Plugins** in the sidebar.
+2. Find **Generic Webhook** and click it to create a new instance.
+3. Give it a name -- `test-webhook` is fine.
+4. **Assign your agent** to this plugin instance. This tells Nitejar which agent should handle messages arriving on this webhook.
+5. Click **Save**.
+
+After saving, you will see the **instance ID** displayed on the page. Copy it -- you need it for the next step.
+
+## 5. Send a message
+
+Open a terminal and send a message to your agent using `curl`. Replace `YOUR_INSTANCE_ID` with the ID you copied:
+
+```bash
+curl -X POST http://localhost:3000/api/webhooks/plugins/webhook/YOUR_INSTANCE_ID \
+  -H "Content-Type: application/json" \
+  -d '{"text": "What can you do?", "sender_id": "me"}'
+```
+
+You should get a JSON response back. Behind the scenes, Nitejar received your webhook, created a work item, dispatched it to your agent, ran inference, and delivered the response.
+
+## 6. Watch it work
+
+Go to **Admin > Activity** in the sidebar. You should see a new work item at the top of the list.
+
+Click into it. The detail page shows you everything that happened:
+
+- **The inbound message** -- the raw payload from your webhook
+- **The agent run timeline** -- a step-by-step record of what the agent did
+- **Inference calls and token counts** -- which model was called, how many tokens went in and out
+- **The generated response** -- what the agent said back
+
+<Callout type="info" title="Where to verify">
+  The Activity page is your primary debugging tool. Every webhook, every run, every inference call,
+  and every response delivery shows up here with timestamps and cost. If something seems wrong,
+  start here. Follow the receipts from the timeline.
+</Callout>
+
+## 7. Inspect the receipts
+
+The work item detail page is the receipt trail for a single interaction. Here is what each section shows:
+
+- **Timeline:** Every step in order, with timestamps. Webhook received, work item created, run dispatched, inference started, response generated, response delivered. You can see exactly when each step happened and how long it took.
+
+- **Inference calls:** Each call to the model is logged separately. You can see the model identifier, input token count, output token count, and the estimated cost. If the agent made multiple inference calls (for example, to use tools), each one appears as its own entry.
+
+- **Tool calls:** If the agent invoked any tools during its run, they are listed here with their inputs and outputs. This is how you verify the agent did what you expected, not just what it said.
+
+- **Response delivery:** The final response content and its delivery status. Did the response make it back to the channel? If delivery failed, the error is logged here.
+
+This is the core design principle: the UI can be playful, but the receipts are boring and deterministic. Every claim the agent makes about what it did is backed by an inspectable artifact.
+
+## 8. Next steps
+
+You have a working agent. Here is where to go from here:
+
+- **[Telegram Setup](/use/integrations/telegram-setup)** -- Connect a Telegram bot for real-time chat with your agent.
+- **[GitHub Setup](/use/integrations/github-setup)** -- Let your agent respond to issues and pull requests.
+- **[Skills](/use/skills)** -- Teach your agent reusable workflows that extend what it can do.
+- **[Tools Reference](/use/tools)** -- See the full set of tools available to agents during runs.
+- **[Costs & Budgets](/use/costs-and-budgets)** -- Track token usage and set spending limits so nothing surprises you.

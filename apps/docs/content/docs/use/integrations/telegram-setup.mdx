@@ -1,0 +1,147 @@
+---
+title: Telegram Setup
+description: Connect a Telegram bot to Nitejar — from BotFather to first message.
+---
+
+This guide walks through connecting a Telegram bot to Nitejar. By the end, your bot will receive messages, route them to an agent, and stream responses back into the chat.
+
+The Telegram plugin is a `messaging` type plugin with `streaming` response mode — it sends typing indicators and updates messages as the agent works, so users see progress in real time.
+
+## 1. Create a Telegram bot
+
+You need a bot token from Telegram's BotFather.
+
+1. Open Telegram and search for **@BotFather**, or go to [t.me/botfather](https://t.me/botfather).
+2. Send `/newbot`.
+3. Follow the prompts: pick a display name, then a username (must end in `bot`).
+4. BotFather replies with your **bot token**. It looks like `123456789:ABCdefGhIjKlMnOpQrStUvWxYz`. Copy it.
+
+<Callout type="warn" title="Important">
+  Your bot token is a secret. Anyone with it can control your bot. Do not commit it to version
+  control or share it in public channels. Nitejar encrypts it at rest in the database, but the token
+  in your `.env` file or clipboard is your responsibility.
+</Callout>
+
+## 2. Add the bot token to Nitejar
+
+You have two options:
+
+**Option A: Environment variable**
+
+Add the token to your `apps/web/.env` file:
+
+```bash
+TELEGRAM_BOT_TOKEN=123456789:ABCdefGhIjKlMnOpQrStUvWxYz
+```
+
+This sets a default token for new Telegram plugin instances. You can override it per-instance in the admin UI.
+
+**Option B: Per-instance in admin**
+
+Skip the env var and paste the token directly when creating a plugin instance (next step). This is the right approach if you run multiple Telegram bots.
+
+## 3. Create a plugin instance
+
+1. Open the dashboard at `/`.
+2. Go to **Plugins** in the sidebar.
+3. Find the **Telegram** plugin and click **New Instance**.
+4. Paste your bot token in the `botToken` field.
+5. Assign an **agent** to handle incoming messages.
+6. Save.
+
+Nitejar validates the token on save. If it fails, double-check the token — BotFather tokens expire if you regenerate them.
+
+## 4. Set up webhooks
+
+Telegram delivers messages to your Nitejar instance via webhooks. The webhook URL follows this pattern:
+
+```
+{APP_BASE_URL}/api/webhooks/plugins/telegram/{INSTANCE_ID}
+```
+
+**Production:** If `APP_BASE_URL` is set in your environment, Nitejar auto-registers the webhook with Telegram when you save the plugin instance. Nothing else to do.
+
+**Local development:** Telegram needs a public URL to reach your machine. Use ngrok:
+
+```bash
+ngrok http 3000
+```
+
+Then set `APP_BASE_URL` in your `.env` to the ngrok URL:
+
+```bash
+APP_BASE_URL=https://your-subdomain.ngrok-free.app
+```
+
+Nitejar uses this to construct the webhook URL and registers it with Telegram automatically. If you use a paid ngrok plan with a stable domain, set it once and forget it.
+
+## 5. Test it
+
+1. Open Telegram and find your bot by its username.
+2. Send a message — anything works.
+3. The bot should show a typing indicator, then reply with the agent's response.
+4. Open **Admin > Activity** to see the work item. Click it to inspect the full run: webhook payload, inference calls, tool executions, token counts, and the delivered response.
+
+If the bot does not respond, see [Troubleshooting](#7-troubleshooting) below.
+
+<Callout type="info" title="Where to verify">
+Go to Admin > Plugins and click your Telegram instance. The instance detail page shows webhook registration status, recent events, and delivery outcomes. This is the first place to check when something is not working.
+</Callout>
+
+## 6. Optional: restrict access
+
+By default, the bot responds to anyone who messages it. To lock it down, use the `allowedChatIds` config field.
+
+1. Open your Telegram plugin instance in the admin UI.
+2. Add chat IDs to the `allowedChatIds` array.
+3. Save.
+
+To find a chat ID, send a message to the bot and check the work item payload in Admin > Activity. The `chat.id` field in the Telegram payload is what you need.
+
+When `allowedChatIds` is set, the bot silently ignores messages from any chat not on the list.
+
+### Other optional settings
+
+| Field               | Default | What it does                                                                                                                              |
+| ------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `webhookSecret`     | none    | A secret string Telegram sends in webhook headers. Nitejar uses it to verify callbacks are authentic.                                     |
+| `useMessageThreads` | `true`  | When enabled, the bot tracks supergroup message threads via `message_thread_id` and maintains separate conversation histories per thread. |
+
+## 7. Troubleshooting
+
+**Bot does not respond at all**
+
+- Verify the token is correct. Go to Admin > Plugins > your instance and check for config validation errors.
+- Check that the webhook is registered. The instance detail page shows webhook status. If it says "not registered," your `APP_BASE_URL` may be missing or incorrect.
+- Check Admin > Activity for work items. If work items are being created but responses fail, the issue is on the delivery side — look at the work item detail for errors.
+
+**Bot does not respond in groups**
+
+- Add the bot to the group. It will not receive messages from groups it has not joined.
+- Check BotFather privacy mode. By default, bots in groups only see messages that mention them or start with `/`. To change this, send `/setprivacy` to BotFather, select your bot, and set it to **Disable** (which means the bot sees all messages).
+- If using supergroups with topics, make sure `useMessageThreads` is enabled (it is by default).
+
+**Bot echoes itself or gets stuck in a loop**
+
+This should not happen — the Telegram plugin ignores bot-authored messages. If it does, check that no other automation is forwarding messages back into the same chat.
+
+**Rate limit errors**
+
+Telegram has rate limits on bot API calls. If the agent generates very long responses, the plugin splits them into chunks, but rapid-fire messages can still hit limits. The plugin reacts with a shrug emoji when rate-limited. Slow down or reduce message volume.
+
+## Supported message types
+
+The Telegram plugin handles: text, photos, documents, audio, voice messages, video, video notes, animations/GIFs, and stickers. Non-text content is passed to the agent as metadata in the work item payload.
+
+## Built-in commands
+
+The bot recognizes `/clear`, which resets the conversation history for the current chat (or thread, in supergroups). This is useful when the agent's context window fills up or you want a fresh start.
+
+## Session keys
+
+The plugin organizes conversations using session keys:
+
+- Direct messages and regular groups: `telegram:{chatId}`
+- Supergroup threads: `telegram:{chatId}:thread:{threadId}`
+
+Each session key maps to an independent conversation history. The agent sees only messages from the same session when building context.

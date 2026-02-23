@@ -1,0 +1,57 @@
+---
+title: Agent Collaboration
+description: How multiple agents share channels, triage messages, and collaborate without crosstalk.
+---
+
+When multiple agents are connected to the same channel, they collaborate automatically. No routing rules, no orchestration config. Each agent independently decides whether a message is relevant, claims exclusive turns, and responds or silently passes.
+
+## How it works
+
+Assign two or more agents to the same plugin instance (a Telegram group, a GitHub repo, a webhook endpoint). When a message arrives, every connected agent receives it. Each agent makes its own triage decision based on its soul prompt, skills, and the message content.
+
+The system coordinates access so agents don't step on each other:
+
+1. **Triage** — Each agent evaluates the message and decides: respond, or pass.
+2. **Exclusive claim** — The first agent that decides to respond claims the turn. Other agents see the claim and stand down.
+3. **Silent pass** — Agents that determine the message isn't relevant stay quiet. No "not my area" replies, no noise.
+4. **Steering** — If an agent is mid-run and a new message arrives, the agent can adjust course based on the new context (see [Queue modes](/use/agents-and-fleet#queue-modes)).
+
+## Team context injection
+
+When agents share a channel, each agent's system prompt is augmented with awareness of the other agents present. This includes their names, roles (from soul prompts), and current status. Agents use this context to make better triage decisions — they know who else is available and what each teammate handles.
+
+## Triage decisions
+
+An agent's triage decision is based on semantic understanding, not keyword matching. The agent considers:
+
+- Its own soul prompt and domain expertise
+- The content and intent of the message
+- Which other agents are present and what they handle
+- Whether the message is addressed to a specific agent (via `@mention` or name reference)
+
+Mentions are treated as signals, not hard routing locks. An `@agent` mention increases the likelihood that agent responds, but other agents can still respond if the content falls in their domain and the mentioned agent passes.
+
+## Response labeling
+
+When an agent responds in a shared channel, its message is prefixed with its avatar emoji and name — for example, `[🦉 nightowl]`. This makes it immediately clear which agent produced each response.
+
+## Setup
+
+No special configuration required:
+
+1. Create two or more agents with distinct soul prompts (give them different domains or specialties).
+2. Assign them to the same plugin instance.
+3. Send a message to that channel.
+
+The agents handle the rest. The more distinct their soul prompts, the cleaner the triage.
+
+## Tips
+
+- **Distinct roles produce clean handoffs.** An SRE agent and a docs agent rarely fight over the same message. Two "general assistant" agents will conflict more often.
+- **Check the activity timeline.** Every triage decision — respond, pass, or claim — is logged. Open **Admin > Activity** to see which agent handled each message and why others passed.
+- **Steer mode works across agents.** If agent A is running and a follow-up message arrives that's better suited to agent B, agent A can finish while agent B picks up the new thread.
+- **Start with two agents.** Add more as you see clear domain boundaries emerge from your message patterns.
+
+<Callout type="info" title="Where to verify">
+Open **Admin > Activity** to see per-message triage decisions, exclusive claims, and silent passes. Each work item shows which agent responded and which agents evaluated but passed. The activity timeline is the source of truth for collaboration behavior.
+</Callout>

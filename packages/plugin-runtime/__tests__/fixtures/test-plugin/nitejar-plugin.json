@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "test.echo",
+  "name": "Test Echo Plugin",
+  "version": "0.1.0",
+  "description": "A test plugin that echoes messages",
+  "entry": "entry.js"
+}

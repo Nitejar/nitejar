@@ -1,0 +1,25 @@
+{
+  "name": "create-nitejar-plugin",
+  "version": "0.1.0",
+  "private": false,
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "create-nitejar-plugin": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --no-error-on-unmatched-pattern"
+  },
+  "devDependencies": {
+    "@nitejar/eslint-config": "workspace:*",
+    "@nitejar/typescript-config": "workspace:*",
+    "@types/node": "^22.10.5",
+    "eslint": "^8.57.0",
+    "typescript": "^5.7.3"
+  }
+}

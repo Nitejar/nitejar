@@ -1,0 +1,171 @@
+---
+title: Manifest Format
+description: The nitejar-plugin.json schema that every plugin requires.
+---
+
+Every plugin needs a `nitejar-plugin.json` file at its package root. This manifest tells the runtime what the plugin provides, what permissions it needs, and where to find the entry point.
+
+## Minimal manifest
+
+For simple plugins that only contribute an integration handler:
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "nitejar.my-plugin",
+  "name": "My Plugin",
+  "description": "What this plugin does",
+  "entry": "dist/index.js",
+  "permissions": []
+}
+```
+
+## Full manifest
+
+For plugins that contribute integrations, hooks, and skills with permission declarations:
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "com.acme.jira",
+  "name": "Acme Jira",
+  "version": "1.0.0",
+  "description": "Jira integration and triage hooks",
+  "entry": "./dist/index.js",
+  "engine": {
+    "nitejar": ">=0.1.0 <1.0.0",
+    "node": ">=20"
+  },
+  "author": "Acme",
+  "license": "MIT",
+  "homepage": "https://acme.dev/nitejar-jira",
+  "repository": "https://github.com/acme/nitejar-jira",
+  "activation": {
+    "onStartup": true,
+    "onIntegrationTypes": ["jira"],
+    "onHooks": ["tool.pre_exec", "response.pre_deliver"]
+  },
+  "permissions": {
+    "network": ["api.atlassian.com"],
+    "secrets": ["jira.api_token"],
+    "filesystemRead": [],
+    "filesystemWrite": [],
+    "allowProcessSpawn": false
+  },
+  "contributes": {
+    "integrations": ["jira"],
+    "hooks": ["tool.pre_exec", "tool.post_exec", "response.pre_deliver"],
+    "skills": ["jira-triage"]
+  }
+}
+```
+
+## Field reference
+
+### Required fields
+
+| Field           | Type     | Description                                                                                                                |
+| --------------- | -------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `schemaVersion` | `1`      | Always `1`. Will increment if the manifest format changes.                                                                 |
+| `id`            | `string` | Globally unique plugin ID. Convention: `nitejar.<type>` for first-party, reverse domain for third-party (`com.acme.jira`). |
+| `name`          | `string` | Human-readable name. Shown in the admin catalog.                                                                           |
+| `entry`         | `string` | Path to the built ESM entry point, relative to the plugin root.                                                            |
+
+### Optional metadata
+
+| Field         | Type     | Description                                          |
+| ------------- | -------- | ---------------------------------------------------- |
+| `version`     | `string` | Semver version string.                               |
+| `description` | `string` | One-liner for catalog cards. Keep it concrete.       |
+| `author`      | `string` | Plugin author name or organization.                  |
+| `license`     | `string` | SPDX license identifier.                             |
+| `homepage`    | `string` | URL to the plugin's documentation or marketing page. |
+| `repository`  | `string` | URL to the source code repository.                   |
+
+### `engine`
+
+Declares compatibility constraints. The runtime checks these before activation.
+
+| Field            | Type     | Description                                     |
+| ---------------- | -------- | ----------------------------------------------- |
+| `engine.nitejar` | `string` | Semver range for Nitejar version compatibility. |
+| `engine.node`    | `string` | Semver range for Node.js version.               |
+
+### `activation`
+
+Controls when the plugin is loaded.
+
+| Field                           | Type       | Description                                     |
+| ------------------------------- | ---------- | ----------------------------------------------- |
+| `activation.onStartup`          | `boolean`  | Load this plugin at boot time.                  |
+| `activation.onIntegrationTypes` | `string[]` | Load when an integration of these types exists. |
+| `activation.onHooks`            | `string[]` | Load when these hook events are dispatched.     |
+
+### `permissions`
+
+Declares what the plugin accesses. In `self_host_open` mode, these are disclosure-only (not enforced at runtime). In `self_host_guarded` mode, enforcement applies at host-managed API boundaries.
+
+| Field                           | Type       | Description                                |
+| ------------------------------- | ---------- | ------------------------------------------ |
+| `permissions.network`           | `string[]` | Hostnames the plugin needs to reach.       |
+| `permissions.secrets`           | `string[]` | Named secret keys the plugin reads.        |
+| `permissions.filesystemRead`    | `string[]` | Filesystem paths the plugin reads.         |
+| `permissions.filesystemWrite`   | `string[]` | Filesystem paths the plugin writes.        |
+| `permissions.allowProcessSpawn` | `boolean`  | Whether the plugin spawns child processes. |
+
+### `contributes`
+
+Declares what the plugin adds to the runtime.
+
+| Field                      | Type       | Description                                        |
+| -------------------------- | ---------- | -------------------------------------------------- |
+| `contributes.integrations` | `string[]` | Integration type identifiers this plugin provides. |
+| `contributes.hooks`        | `string[]` | Hook event names this plugin handles.              |
+| `contributes.skills`       | `string[]` | Skill IDs this plugin contributes.                 |
+
+## Building
+
+Plugins bundle to a single ESM file. Keep `@nitejar/plugin-sdk` as an external dependency -- the host runtime provides it.
+
+One-liner with esbuild:
+
+```bash
+npx esbuild src/index.ts \
+  --bundle \
+  --format=esm \
+  --outfile=dist/index.js \
+  --platform=node \
+  --external:@nitejar/plugin-sdk
+```
+
+Or in your `package.json`:
+
+```json
+{
+  "scripts": {
+    "build": "npx esbuild src/index.ts --bundle --format=esm --outfile=dist/index.js --platform=node --external:@nitejar/plugin-sdk"
+  }
+}
+```
+
+Why external? The host runtime already has `@nitejar/plugin-sdk` loaded. Bundling it in creates duplicate types and breaks `instanceof` checks.
+
+## Publishing to npm
+
+1. Make sure `nitejar-plugin.json` and `dist/index.js` are included in your package.
+2. Set up your `package.json`:
+
+```json
+{
+  "name": "nitejar-plugin-my-plugin",
+  "version": "0.1.0",
+  "type": "module",
+  "files": ["dist", "nitejar-plugin.json"],
+  "dependencies": {
+    "@nitejar/plugin-sdk": "^0.1.0"
+  }
+}
+```
+
+3. Run `npm publish`.
+4. Users install via the admin UI: **Plugins > Install from npm** and enter the package name.

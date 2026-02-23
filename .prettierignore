@@ -1,0 +1,5 @@
+# Keep Markdown hand-wrapped/styled and avoid structural rewrites.
+*.md
+
+# Ephemeral build caches
+.next

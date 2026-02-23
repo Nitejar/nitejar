@@ -1,0 +1,142 @@
+---
+title: Tools
+description: All built-in tools available to Nitejar agents, organized by category.
+---
+
+Nitejar agents interact with the world through tools. Each tool is a discrete capability the agent can invoke during a run. Tools are registered by the platform and optionally by plugins. This page lists every built-in tool, grouped by category.
+
+<Callout type="info" title="Where to verify">
+Open **Admin > Agents > [agent] > Tools** to see which tools are enabled for a specific agent. Tools can be toggled per-agent. Disabled tools are hidden from the agent's system prompt and cannot be called.
+</Callout>
+
+## Core Execution
+
+| Tool     | Description                                                                                                         | Key Parameters                                                  |
+| -------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| **bash** | Execute bash commands in the agent's sandbox. Auto-includes CI environment variables and optional `~/.nitejar/env`. | `command` (required), `working_directory`, `timeout` (max 600s) |
+
+## Filesystem
+
+| Tool                 | Description                                                                                                                                            | Key Parameters                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| **read_file**        | Read file contents with line numbers. Supports partial reads for large files.                                                                          | `path` (required), `start_line`, `max_lines` (default 500)                         |
+| **write_file**       | Write content to a file. Creates the file and parent directories if they do not exist.                                                                 | `path` (required), `content` (required)                                            |
+| **list_directory**   | List directory contents with file type indicators.                                                                                                     | `path` (required)                                                                  |
+| **create_directory** | Create a directory, including parent directories as needed.                                                                                            | `path` (required)                                                                  |
+| **edit_file**        | Surgical string replacement within a file. Returns a unified diff of the change. `old_string` must be unique in the file unless `replace_all` is true. | `path` (required), `old_string` (required), `new_string` (required), `replace_all` |
+
+## Memory
+
+| Tool              | Description                                                                                                                                | Key Parameters                                   |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
+| **add_memory**    | Store a long-term memory. Pinned memories persist indefinitely; unpinned memories may be evicted under pressure.                           | `content` (required), `pinned`                   |
+| **remove_memory** | Delete a memory by ID or by content matching.                                                                                              | `id` or `content`                                |
+| **update_memory** | Update or delete a memory with version-based concurrency control. Prevents lost-update conflicts when multiple runs touch the same memory. | `id` (required), `content`, `version` (required) |
+
+## Collections
+
+Collections are shared, schema-defined data stores that agents can propose, query, and write to. Schemas require admin approval before use.
+
+| Tool                  | Description                                                                                  | Key Parameters                                                                                                      |
+| --------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **define_collection** | Propose a new collection schema. Requires admin review before the collection becomes active. | `name` (required), `fields` (required). Field types: `string`, `number`, `boolean`, `datetime`, `enum`, `longtext`. |
+| **collection_query**  | Query rows by metadata filters and sort order. Returns a maximum of 100 rows per call.       | `collection` (required), `filters`, `sort`, `limit`                                                                 |
+| **collection_search** | Full-text search across `longtext` content in a collection.                                  | `collection` (required), `query` (required)                                                                         |
+| **collection_read**   | Get a single row by ID, with optional field projections to limit returned data.              | `collection` (required), `id` (required), `fields`                                                                  |
+| **collection_write**  | Insert or upsert rows into a collection.                                                     | `collection` (required), `rows` (required), `upsert`                                                                |
+
+## Scheduling
+
+| Tool                 | Description                                                                                            | Key Parameters                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------- |
+| **schedule_check**   | Schedule a deferred check-in. The agent will be woken at the scheduled time with the provided context. | `minutes` (required, 1--1440), `context` (required) |
+| **list_schedule**    | List all pending scheduled items for the current agent.                                                | --                                                  |
+| **cancel_scheduled** | Cancel a pending scheduled item.                                                                       | `id` (required)                                     |
+
+## Services
+
+Agents can create and manage long-running background services inside their sandbox. Services auto-restart on crash and can expose HTTP ports through the sprite URL.
+
+| Tool               | Description                                                                                                          | Key Parameters                                                    |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| **create_service** | Create a managed long-running service. Supports `http_port` for routing HTTP traffic through the agent's sprite URL. | `name` (required), `command` (required), `http_port`              |
+| **list_services**  | List services with their status, PID, and uptime.                                                                    | --                                                                |
+| **manage_service** | Start, stop, or delete a service by name.                                                                            | `name` (required), `action` (required: `start`, `stop`, `delete`) |
+| **get_sprite_url** | Get the public URL for routing traffic to the agent's sprite. Used to expose service endpoints.                      | --                                                                |
+
+## Web
+
+| Tool            | Description                                                                                    | Key Parameters                              |
+| --------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| **web_search**  | Search the web. Returns top results with titles, URLs, and snippets.                           | `query` (required), `time_range`, `domains` |
+| **extract_url** | Extract content from one or more URLs as markdown. Supports semantic chunking for large pages. | `urls` (required, max 20), `chunk`          |
+
+## Sandboxes
+
+Each agent runs in an isolated sandbox. These tools let the agent manage multiple sandboxes for parallel workstreams.
+
+| Tool                         | Description                                                                  | Key Parameters          |
+| ---------------------------- | ---------------------------------------------------------------------------- | ----------------------- |
+| **list_sandboxes**           | List available sandboxes with status and staleness indicators.               | --                      |
+| **switch_sandbox**           | Switch the active sandbox. Resets shell state but preserves filesystem.      | `sandbox_id` (required) |
+| **create_ephemeral_sandbox** | Create a temporary isolated sandbox. Automatically cleaned up after the run. | --                      |
+| **delete_sandbox**           | Delete a sandbox and its contents.                                           | `sandbox_id` (required) |
+
+## Activity
+
+| Tool               | Description                                                                                                   | Key Parameters                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| **query_activity** | Search the cross-agent activity log. Uses semantic embedding for similarity search across all agent activity. | `query` (required), `agent_id`, `status`, `max_age` |
+
+## Credentials
+
+| Tool                             | Description                                                                                                                          | Key Parameters                             |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
+| **configure_github_credentials** | Mint a short-lived GitHub App installation token and configure `GH_TOKEN`/`GITHUB_TOKEN` plus git credential helper in the sandbox.  | `repo_name`, `duration`                    |
+| **credentials**                  | Manage stored API credentials. Backed by an encrypted vault with scoped access -- agents can only read credentials assigned to them. | `action` (required: `get`, `list`), `name` |
+
+## Routines
+
+| Tool         | Description                                                             | Key Parameters                                                                                    |
+| ------------ | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| **routines** | Create and manage recurring automated runs using cron-based scheduling. | `action` (required: `create`, `list`, `update`, `delete`), `schedule` (cron expression), `prompt` |
+
+## Other
+
+| Tool                       | Description                                                                                                               | Key Parameters                                 |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| **refresh_network_policy** | Update the sandbox's network access policies. Used after admin changes to allowed domains or egress rules.                | --                                             |
+| **get_self_config**        | Retrieve the agent's own configuration, including name, model, soul, and assigned tools.                                  | --                                             |
+| **run_todo**               | Execute todo list management within a run.                                                                                | `action` (required), `items`                   |
+| **background_tasks**       | Manage background processes running in the sandbox.                                                                       | `action` (required: `list`, `kill`), `task_id` |
+| **attachments**            | Download and handle message attachments from inbound messages.                                                            | `attachment_id` (required)                     |
+| **run_history**            | Access past run execution history for the current agent.                                                                  | `limit`, `offset`                              |
+| **use_skill**              | Look up a skill by name and get its sandbox path and file listing. The agent then uses `read_file` to load skill content. | `name` (required)                              |
+
+## Plugin-contributed tools
+
+Plugins can contribute additional tools through the `PluginProvider` interface. When a plugin registers a provider, its tools appear alongside the built-in tools in the agent's system prompt and in the admin tools list.
+
+```ts
+export default definePlugin({
+  handler,
+  provider: {
+    tools: [
+      {
+        name: 'jira_create_issue',
+        description: 'Create a Jira issue',
+        parameters: {
+          /* JSON Schema */
+        },
+        execute: async (params, context) => {
+          /* ... */
+        },
+      },
+    ],
+  },
+})
+```
+
+Plugin tools follow the same enable/disable rules as built-in tools. They are toggled per-agent from **Admin > Agents > [agent] > Tools**.
+
+For details on building plugins, see the [Plugin SDK documentation](/build/plugins).

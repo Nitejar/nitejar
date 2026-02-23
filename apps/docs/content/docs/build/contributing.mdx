@@ -1,0 +1,186 @@
+---
+title: Contributing
+description: Repo setup, testing, code style, and how to submit changes.
+---
+
+## Repo setup
+
+```bash
+git clone https://github.com/nitejar/nitejar.git
+cd nitejar
+pnpm install
+```
+
+Copy the environment file and fill in the values you need:
+
+```bash
+cp .env.example apps/web/.env
+```
+
+At minimum, generate an encryption key:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+Paste the output as `ENCRYPTION_KEY` in `apps/web/.env`.
+
+## Running locally
+
+Start the dev server:
+
+```bash
+pnpm dev
+```
+
+This starts the Next.js app at [http://localhost:3000](http://localhost:3000). The dashboard is at `/`. The docs site runs at [http://localhost:3001](http://localhost:3001).
+
+SQLite is the default database. No Docker required for basic development. The database file lives at `packages/database/data/nitejar.db`.
+
+## Running tests
+
+```bash
+# Run all tests
+pnpm test
+
+# Run tests with coverage
+pnpm test:coverage
+
+# Run integration tests (requires running services)
+pnpm test:integration
+```
+
+Coverage thresholds are set per-package in each package's `vitest.config.ts`.
+
+## Code style
+
+The project uses Prettier for formatting and ESLint for linting.
+
+```bash
+# Format all files
+pnpm format
+
+# Check formatting without writing
+pnpm format:check
+
+# Run linter
+pnpm lint
+```
+
+## Type checking
+
+```bash
+pnpm typecheck
+```
+
+Do **not** run `pnpm build` while the dev server is running. It corrupts the `.next` cache. Use `pnpm typecheck` instead for type checking during development.
+
+## Verification checklist
+
+Before submitting a PR, verify:
+
+1. `pnpm format` -- Code is formatted.
+2. `pnpm lint` -- No lint errors.
+3. `pnpm typecheck` -- Zero type errors.
+4. `pnpm test` -- All tests pass.
+5. `pnpm test:coverage` -- Coverage thresholds met.
+6. If schema changed: `pnpm --filter @nitejar/database db:migrate`
+
+### Media capability verification (no Telegram required)
+
+When changing image/STT/TTS capabilities, validate from the app first:
+
+1. Start dev server: `pnpm dev`
+2. Configure capability cards in `/settings/capabilities`
+3. Use an in-app test path (for example Generic Webhook + assigned agent) to trigger media tools
+4. Confirm receipts:
+   - Work item timeline shows tool calls/results
+   - Costs page shows external API costs
+   - `media_artifacts` contains artifact records for the job
+
+Telegram webhook E2E is still useful for channel transport regression, but it is not required to verify media capability wiring.
+
+## Database
+
+SQLite is used for local development. Postgres is supported for production.
+
+```bash
+# Run migrations after schema changes
+pnpm --filter @nitejar/database db:migrate
+
+# Open database studio
+pnpm db:studio
+```
+
+**Safe to destroy:** Transactional data (jobs, messages, work items, inference calls, spans) can be wiped freely during development.
+
+**Do not destroy:** Configuration data (agents, integrations, teams, gateway settings, model catalog).
+
+For Postgres development:
+
+```bash
+# Start Postgres via Docker
+pnpm db:up
+
+# Initialize schema
+pnpm db:init
+
+# Stop Postgres
+pnpm db:down
+
+# Full reset (destroys all data)
+pnpm db:reset
+```
+
+## Project structure
+
+```
+nitejar/
+  apps/
+    web/                    # Next.js 15 App Router (main application)
+    docs/                   # Fumadocs documentation site
+  packages/
+    agent/                  # Agent runtime, tools, prompt builder
+    database/               # Kysely ORM, migrations, repositories
+    plugin-sdk/             # Public SDK for plugin authors
+    plugin-runtime/         # Host-side plugin lifecycle manager
+    plugin-handlers/        # Handler registry + built-in integrations
+    sprites/                # Sprites VM interface
+    core/                   # Shared types and interfaces
+    config/                 # Environment config with Zod validation
+    create-nitejar-plugin/  # Plugin scaffolding CLI
+    typescript-config/      # Shared TypeScript configs
+    eslint-config/          # Shared ESLint configs
+  plugins/
+    nitejar-plugin-webhook/ # Example: generic webhook plugin
+  docs/
+    specs/                  # Internal design specs
+```
+
+## How to add a plugin
+
+1. Scaffold with `npx create-nitejar-plugin my-plugin`.
+2. Implement the `PluginHandler` interface (see the [Plugin SDK guide](/build/plugins)).
+3. Write tests using `testHandler()` from `@nitejar/plugin-sdk`.
+4. Create a `nitejar-plugin.json` manifest (see [Manifest Format](/build/plugins/manifest)).
+5. Build with esbuild: `npx esbuild src/index.ts --bundle --format=esm --outfile=dist/index.js --platform=node --external:@nitejar/plugin-sdk`
+6. Test locally: install via admin UI **Plugins > Install Custom Plugin** and point to your directory.
+7. For inclusion in the main repo, add your plugin under `plugins/` and submit a PR.
+
+## How to add a skill
+
+1. Create a directory with a `SKILL.md` file (see the [Skills guide](/build/skills-authoring)).
+2. Add optional supporting files (references, scripts, templates).
+3. Test by creating the skill in the admin UI and assigning it to an agent.
+4. Verify the agent can discover and use the skill via `use_skill`.
+5. For sharing, export as JSON from the admin UI.
+
+## Architecture guidance
+
+- **tRPC for admin UI data flows.** Add procedures in `apps/web/server/routers/`, wire through `apps/web/server/routers/_app.ts`, consume via the tRPC client in admin pages.
+- **Remove unused code** when iterating. Delete obsolete routes, components, configs, and docs.
+- **Be proactive.** Fix type errors and lint issues as you encounter them. Run migrations after schema changes. Do not stop for fixable problems.
+
+## Model configuration
+
+The default model is `arcee-ai/trinity-large-preview:free` via OpenRouter. **Do not change the agent model** unless explicitly asked. Switching to paid models causes rate limit and cost issues in development.
