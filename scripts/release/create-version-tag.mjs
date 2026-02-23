@@ -86,11 +86,18 @@ async function main() {
   const cliVersion = readCliVersion()
   const tagName = `v${cliVersion}`
   const dryRun = process.env.NITEJAR_TAG_DRY_RUN === '1'
+  const forceDispatchExistingTag = process.env.NITEJAR_DISPATCH_IF_TAG_EXISTS === '1'
 
   const exists = tagExistsLocally(tagName) || tagExistsRemotely(tagName)
 
   if (exists) {
     console.log(`Tag ${tagName} already exists; skipping tag creation.`)
+    if (!forceDispatchExistingTag) {
+      console.log(
+        `Skipping release workflow dispatch for ${tagName}; set NITEJAR_DISPATCH_IF_TAG_EXISTS=1 to force.`,
+      )
+      return
+    }
   } else if (dryRun) {
     console.log(`[dry-run] Would create and push tag ${tagName}.`)
     return
