@@ -158,8 +158,16 @@ export const discordHandler: PluginHandler<DiscordConfig> = {
 
     try {
       if (canUseInteractionResponse) {
+        const appId = applicationId
+        const token = interactionToken
+        if (!appId || !token) {
+          return {
+            success: false,
+            error: 'Missing Discord interaction response context.',
+          }
+        }
         for (const chunk of chunks) {
-          await sendFollowUpMessage(applicationId, interactionToken, chunk)
+          await sendFollowUpMessage(appId, token, chunk)
         }
       } else {
         if (!channelId) {
