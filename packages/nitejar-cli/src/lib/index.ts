@@ -10,7 +10,12 @@ export {
   downloadFile,
 } from './manifest.js'
 export { ensureRuntimeRelease } from './runtime.js'
-export { acquireMigrationLock, releaseMigrationLock, runMigrations } from './migration.js'
+export {
+  acquireMigrationLock,
+  ensureBetterSqlite3Compatibility,
+  releaseMigrationLock,
+  runMigrations,
+} from './migration.js'
 export {
   readPid,
   isProcessRunning,
