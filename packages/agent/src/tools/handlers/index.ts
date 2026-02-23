@@ -45,6 +45,7 @@ import { generateImageTool, synthesizeSpeechTool, transcribeAudioTool } from './
 import { queryActivityTool } from './activity-log'
 import { listRunsTool, getRunTool } from './run-history'
 import {
+  collectionDescribeTool,
   defineCollectionTool,
   collectionGetTool,
   collectionInsertTool,
@@ -97,6 +98,7 @@ export const toolHandlers: Record<string, ToolHandler> = {
   delete_routine: deleteRoutineTool,
   run_routine_now: runRoutineNowTool,
   define_collection: defineCollectionTool,
+  collection_describe: collectionDescribeTool,
   collection_query: collectionQueryTool,
   collection_search: collectionSearchTool,
   collection_get: collectionGetTool,

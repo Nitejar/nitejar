@@ -53,6 +53,12 @@ const sourceIcons: Record<string, string> = {
   github: '\u2318',
   slack: '#',
   manual: '\u25B8',
+  discord: '\u266B',
+  agent_dm: '\u2709',
+  app_chat: '\u263A',
+  scheduler: '\u23F1',
+  routine: '\u27F3',
+  'builder-test': '\u2697',
 }
 
 const MAX_VISIBLE_AVATARS = 5
@@ -342,8 +348,9 @@ function EventCard({ event }: { event: WorkItemEvent }) {
   const overallStatus = deriveOverallStatus(allRuns)
   const { label: overallLabel, className: overallClass } = statusText(overallStatus)
   const totalCost = allRuns.reduce((s, r) => s + r.totalCost, 0)
-  const sourceIcon = sourceIcons[event.source] ?? '\u00B7'
-  const githubUrl = event.source === 'github' ? githubUrlFromSourceRef(event.sourceRef) : null
+  const sourceKey = event.source.toLowerCase()
+  const sourceIcon = sourceIcons[sourceKey] ?? '\u00B7'
+  const githubUrl = sourceKey === 'github' ? githubUrlFromSourceRef(event.sourceRef) : null
   const visibleRuns = event.runs.slice(0, MAX_VISIBLE_AVATARS)
   const overflowCount = event.runs.length - MAX_VISIBLE_AVATARS
   const queueTotal =

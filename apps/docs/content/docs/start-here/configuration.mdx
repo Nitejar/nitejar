@@ -65,10 +65,7 @@ Most variables are optional.
 | `OPENROUTER_API_KEY`    | No               | None                                  | OpenRouter API key. The default model routes through OpenRouter, but the free tier requires no key. Set this if you use paid models.              |
 | `OPENAI_API_KEY`        | No               | None                                  | OpenAI API key. Used as a fallback if no OpenRouter key is set. Also required for embeddings if you don't have an OpenRouter key.                 |
 | `SPRITES_TOKEN`         | No               | None                                  | Token from [sprites.dev](https://sprites.dev) for sandboxed agent execution. Without this, agents run without sandbox isolation.                  |
-| `TELEGRAM_BOT_TOKEN`    | No               | None                                  | Bot token from [@BotFather](https://t.me/botfather). Only needed if you're connecting a Telegram channel.                                         |
 | `GITHUB_WEBHOOK_SECRET` | No               | None                                  | Secret for verifying GitHub webhook signatures. Required for GitHub integration.                                                                  |
-| `GITHUB_APP_ID`         | No               | None                                  | GitHub App ID. Used with `GITHUB_PRIVATE_KEY` for production GitHub integration.                                                                  |
-| `GITHUB_PRIVATE_KEY`    | No               | None                                  | GitHub App private key (PEM format). Pair with `GITHUB_APP_ID`.                                                                                   |
 | `AGENT_MODEL`           | No               | `arcee-ai/trinity-large-preview:free` | Default model for newly created agents. Existing agents keep their configured model.                                                              |
 | `POSTGRES_URL`          | No               | None                                  | Legacy Postgres connection string. Deprecated -- use `DATABASE_URL` instead. Will be removed.                                                     |
 

@@ -31,7 +31,7 @@ export function CollectionsClient() {
     )
   }, [collections, search])
 
-  // Find the first collection with pending reviews to link the banner
+  // Find the first collection with pending reviews to deep-link into collection-specific reviews.
   const firstPendingCollectionId = useMemo(() => {
     if (!reviewsQuery.data?.length) return null
     const firstReview = reviewsQuery.data[0]
@@ -39,6 +39,10 @@ export function CollectionsClient() {
     const match = collections.find((c) => c.name === firstReview.collection_name)
     return match?.id ?? null
   }, [reviewsQuery.data, collections])
+
+  const pendingReviewHref = firstPendingCollectionId
+    ? `/collections/${firstPendingCollectionId}?tab=reviews`
+    : '/collections/reviews'
 
   if (collectionsQuery.isLoading) {
     return <p className="text-sm text-muted-foreground">Loading collections...</p>
@@ -56,13 +60,11 @@ export function CollectionsClient() {
               review
             </span>
           </div>
-          {firstPendingCollectionId && (
-            <Link href={`/collections/${firstPendingCollectionId}?tab=reviews`}>
-              <Button variant="outline" size="sm">
-                Review &rarr;
-              </Button>
-            </Link>
-          )}
+          <Link href={pendingReviewHref}>
+            <Button variant="outline" size="sm">
+              Review &rarr;
+            </Button>
+          </Link>
         </div>
       )}
 

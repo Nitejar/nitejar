@@ -9,6 +9,7 @@ export default function CollectionsPage() {
         category="Organization"
         title="Collections"
         description="Shared structured data for agents. Review schema changes, edit schemas, and manage per-agent access."
+        action={{ href: '/collections/reviews', label: 'Schema Reviews' }}
       />
 
       <ClientErrorBoundary label="Collections">

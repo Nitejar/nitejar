@@ -103,8 +103,6 @@ Same URL. Same dashboard.
 | `DATABASE_URL` | No | SQLite by default. Postgres URL for production. |
 | `APP_BASE_URL` | No (required for public webhooks) | Public URL used for webhook/invite/callback links. |
 | `BETTER_AUTH_SECRET` | Yes (source/prod) | Stable auth signing secret. |
-| `TELEGRAM_BOT_TOKEN` | No | Talk to your agents on Telegram. [@BotFather](https://t.me/BotFather). |
-| `GITHUB_APP_ID` + `GITHUB_PRIVATE_KEY` | No | Agents that review PRs and respond to issues. |
 
 Full list in `apps/web/.env.example`.
 

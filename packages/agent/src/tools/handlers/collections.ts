@@ -2,6 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk'
 import {
   canAgentReadCollection,
   canAgentWriteCollection,
+  countCollectionRows,
   findCollectionByName,
   getCollectionRowById,
   insertCollectionRow,
@@ -75,6 +76,18 @@ export const collectionDefinitions: Anthropic.Tool[] = [
         },
       },
       required: ['name', 'fields'],
+    },
+  },
+  {
+    name: 'collection_describe',
+    description:
+      'Inspect collection schema and metadata. Use this before inserts/updates when field names or types are unknown.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        collection: { type: 'string', description: 'Collection name.' },
+      },
+      required: ['collection'],
     },
   },
   {
@@ -350,6 +363,50 @@ export const collectionQueryTool: ToolHandler = async (input, context) => {
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to query collection.',
+    }
+  }
+}
+
+export const collectionDescribeTool: ToolHandler = async (input, context) => {
+  if (!context.agentId) {
+    return { success: false, error: 'Missing agent identity.' }
+  }
+
+  try {
+    const collectionName = parseCollectionName(input.collection)
+    const collection = await getCollectionForAccess({
+      collectionName,
+      agentId: context.agentId,
+      mode: 'read',
+    })
+
+    const [rowCount, canWrite] = await Promise.all([
+      countCollectionRows(collection.id),
+      canAgentWriteCollection(collection.id, context.agentId),
+    ])
+
+    return {
+      success: true,
+      output: JSON.stringify(
+        {
+          collection: collection.name,
+          description: collection.description,
+          schema_version: collection.schema_version,
+          schema: collection.schema,
+          row_count: rowCount,
+          permissions: {
+            can_read: true,
+            can_write: canWrite,
+          },
+        },
+        null,
+        2
+      ),
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to describe collection.',
     }
   }
 }
