@@ -1,5 +1,11 @@
 # @nitejar/cli
 
+## 0.2.2
+
+### Patch Changes
+
+- [#8](https://github.com/Nitejar/nitejar/pull/8) [`31cb3f0`](https://github.com/Nitejar/nitejar/commit/31cb3f0c6dfcb8815bf6fcf661180edd019bf460) Thanks [@joshmatz](https://github.com/joshmatz)! - Improve `nitejar up` startup output to always print the actual local URL and show configured `APP_BASE_URL` separately when it differs. Also harden `--port auto` startup retries to move to the next port after an in-use collision.
+
 ## 0.2.1
 
 ### Patch Changes
