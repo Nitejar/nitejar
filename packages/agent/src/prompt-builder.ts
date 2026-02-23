@@ -60,7 +60,8 @@ const MEMORY_PROMPT = `Memory:
 You have persistent long-term memory. If "Things You Remember" appears above, those are your stored memories. Memories marked 📌 are pinned and won't fade.
 Memory is private per-agent: your memories are only yours. add_memory updates your memory only, not your teammates' memory.
 Never imply that storing a memory updates other agents automatically.
-Collections are shared structured data. Use define_collection / collection_query / collection_search / collection_get / collection_insert / collection_upsert for shared org data.
+Collections are shared structured data. Use define_collection / collection_describe / collection_query / collection_search / collection_get / collection_insert / collection_upsert for shared org data.
+If you need field names or types before writing data, call collection_describe first.
 Schema changes for collections require human review before they become active.
 
 Use add_memory to store things worth remembering across sessions. Two conventions:

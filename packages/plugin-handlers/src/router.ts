@@ -178,6 +178,10 @@ export async function routeWebhook(
   let workItemPayload = parseResult.workItem.payload
     ? (JSON.parse(parseResult.workItem.payload) as Record<string, unknown>)
     : {}
+  const normalizedSource =
+    typeof parseResult.workItem.source === 'string'
+      ? parseResult.workItem.source.toLowerCase()
+      : parseResult.workItem.source
 
   // Add responseContext to payload so we can reply later
   if (parseResult.responseContext) {
@@ -187,6 +191,7 @@ export async function routeWebhook(
   // Hook 1: work_item.pre_create — can block or transform payload
   let workItemData: Record<string, unknown> = {
     ...parseResult.workItem,
+    source: normalizedSource,
     payload: workItemPayload,
     plugin_instance_id: pluginInstance.id,
   }
@@ -213,6 +218,7 @@ export async function routeWebhook(
 
   const workItem = await createWorkItem({
     ...parseResult.workItem,
+    source: normalizedSource,
     payload: JSON.stringify(workItemPayload),
     plugin_instance_id: pluginInstance.id,
   })

@@ -9,10 +9,8 @@ export const configSchema = z.object({
   ENCRYPTION_KEY: z.string().optional(),
   // Sprites API
   SPRITES_TOKEN: z.string().optional(),
-  // GitHub App authentication (for production)
+  // GitHub webhook verification (optional)
   GITHUB_WEBHOOK_SECRET: z.string().optional(),
-  GITHUB_APP_ID: z.string().optional(),
-  GITHUB_PRIVATE_KEY: z.string().optional(),
 })
 
 export type Config = z.infer<typeof configSchema>
