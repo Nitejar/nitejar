@@ -36,11 +36,8 @@ RUN pnpm install --frozen-lockfile
 # Copy source code
 COPY . .
 
-# Generate database migrations
-RUN pnpm db:generate
-
 # Build the application
-RUN pnpm build
+RUN pnpm --filter @nitejar/web build
 
 # Production stage
 FROM base AS runner
