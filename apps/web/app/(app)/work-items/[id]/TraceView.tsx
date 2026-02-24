@@ -288,6 +288,7 @@ const spanIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   job: IconActivity,
   turn: IconArrowIteration,
   model_call: IconBrain,
+  passive_memory_extract: IconBrain,
   tool_batch: IconTool,
   tool_exec: IconTool,
   session_retry: IconRefresh,
@@ -308,7 +309,16 @@ const EMPTY_PROMPT_SESSION_HISTORY: PromptSessionHistory = {
 }
 
 const TOOL_FIRST_FLATTEN_SPAN_NAMES = new Set(['model_call', 'tool_batch'])
-const TOOL_FIRST_KEEP_SPAN_NAMES = new Set(['job', 'turn', 'tool_exec', 'post_process', 'triage'])
+const TOOL_FIRST_KEEP_SPAN_NAMES = new Set([
+  'job',
+  'turn',
+  'tool_exec',
+  'post_process',
+  'triage',
+  'passive_memory_extract',
+])
+const PASSIVE_MEMORY_EXTRACT_TURN_BASE = 10_000
+const PASSIVE_MEMORY_REFINE_TURN_BASE = 20_000
 
 // ---------------------------------------------------------------------------
 // Tree helpers
@@ -1155,6 +1165,9 @@ function DetailPanel({
             inferenceCalls={inferenceCalls}
           />
         )}
+        {span.name === 'passive_memory_extract' && (
+          <PassiveMemoryDetail span={span} inferenceCalls={inferenceCalls} />
+        )}
         {span.name === 'post_process' && <PostProcessDetail span={span} messages={messages} />}
         {span.name === 'turn' && (
           <TurnDetail
@@ -1933,6 +1946,61 @@ function ModelCallDetail({
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function passiveMemoryStageLabel(call: InferenceCallReceipt): string {
+  if (call.attempt_kind === 'passive_memory_refine' || call.turn >= PASSIVE_MEMORY_REFINE_TURN_BASE) {
+    return 'refine'
+  }
+  return 'extract'
+}
+
+function PassiveMemoryDetail({
+  span,
+  inferenceCalls = [],
+}: {
+  span: Span
+  inferenceCalls?: InferenceCallReceipt[]
+}) {
+  const receipts = inferenceCalls
+    .filter((call) => {
+      if (call.model_span_id === span.id) return true
+      if (call.model_span_id !== null) return false
+      return call.turn >= PASSIVE_MEMORY_EXTRACT_TURN_BASE
+    })
+    .sort((a, b) => {
+      if (a.created_at !== b.created_at) return a.created_at - b.created_at
+      const aIndex = a.attempt_index ?? 0
+      const bIndex = b.attempt_index ?? 0
+      return aIndex - bIndex
+    })
+
+  if (receipts.length === 0) return null
+
+  return (
+    <div className="border-b border-white/5 px-4 py-3">
+      <h5 className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+        Passive Memory Calls
+      </h5>
+      <div className="space-y-2">
+        {receipts.map((call) => (
+          <div key={call.id} className="rounded border border-white/10 bg-white/[0.02] px-3 py-2">
+            <div className="flex items-center justify-between text-[10px]">
+              <span className="font-mono text-foreground/90">
+                {passiveMemoryStageLabel(call)} · {call.model}
+              </span>
+              <span className="tabular-nums text-muted-foreground">
+                {formatCost(call.cost_usd ?? 0)}
+              </span>
+            </div>
+            <div className="mt-1 text-[10px] text-muted-foreground">
+              {call.prompt_tokens.toLocaleString()} in / {call.completion_tokens.toLocaleString()} out
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
