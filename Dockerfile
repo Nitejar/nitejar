@@ -25,7 +25,7 @@ COPY packages/config/package.json ./packages/config/
 COPY packages/connectors-github/package.json ./packages/connectors-github/
 COPY packages/core/package.json ./packages/core/
 COPY packages/database/package.json ./packages/database/
-COPY packages/integrations/package.json ./packages/integrations/
+COPY packages/plugin-handlers/package.json ./packages/plugin-handlers/
 COPY packages/sprites/package.json ./packages/sprites/
 COPY packages/eslint-config/package.json ./packages/eslint-config/
 COPY packages/typescript-config/package.json ./packages/typescript-config/
