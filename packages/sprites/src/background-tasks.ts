@@ -1,5 +1,6 @@
 import { type SpriteCommand, type Sprite, type Session } from '@fly/sprites'
 import { getSprite } from './client'
+import { requireSpritesToken } from './token-settings'
 
 const API_BASE = 'https://api.sprites.dev/v1'
 
@@ -27,7 +28,7 @@ export async function spawnDetachableBackgroundTask(
   wrappedCommand: string,
   options?: SpawnBackgroundTaskOptions
 ): Promise<SpawnBackgroundTaskResult> {
-  const sprite = getSprite(spriteName)
+  const sprite = await getSprite(spriteName)
 
   // Step 1: Create a non-TTY detachable session to get the session ID.
   const sessionId = await createDetachableSession(sprite, options?.cwd)
@@ -45,8 +46,11 @@ export async function spawnDetachableBackgroundTask(
   return { cmd, sessionId }
 }
 
-export function attachBackgroundTaskSession(spriteName: string, sessionId: string): SpriteCommand {
-  const sprite = getSprite(spriteName)
+export async function attachBackgroundTaskSession(
+  spriteName: string,
+  sessionId: string
+): Promise<SpriteCommand> {
+  const sprite = await getSprite(spriteName)
   return sprite.spawn('', [], {
     sessionId,
     tty: false,
@@ -57,7 +61,7 @@ export async function isBackgroundTaskSessionActive(
   spriteName: string,
   sessionId: string
 ): Promise<boolean> {
-  const sprite = getSprite(spriteName)
+  const sprite = await getSprite(spriteName)
   const sessions = await sprite.listSessions()
   return sessions.some((session) => String(session.id) === String(sessionId) && session.isActive)
 }
@@ -66,10 +70,7 @@ export async function killBackgroundTaskSession(
   spriteName: string,
   sessionId: string
 ): Promise<void> {
-  const token = process.env.SPRITES_TOKEN
-  if (!token) {
-    throw new Error('SPRITES_TOKEN environment variable is required')
-  }
+  const token = await requireSpritesToken()
 
   const response = await fetch(
     `${API_BASE}/sprites/${encodeURIComponent(spriteName)}/exec/${encodeURIComponent(sessionId)}/kill`,

@@ -15,6 +15,7 @@ const {
   mockFinalizeRunDispatch,
   mockCreateEffectOutbox,
   mockListQueueMessagesByDispatch,
+  mockListRunDispatchesByWorkItem,
   mockConsumeSteeringMessages,
   mockConsumeSteeringMessagesByIds,
   mockDropPendingQueueMessagesByIds,
@@ -52,6 +53,7 @@ const {
   const finalizeRunDispatch = vi.fn()
   const createEffectOutbox = vi.fn()
   const listQueueMessagesByDispatch = vi.fn()
+  const listRunDispatchesByWorkItem = vi.fn()
   const consumeSteeringMessages = vi.fn()
   const consumeSteeringMessagesByIds = vi.fn()
   const dropPendingQueueMessagesByIds = vi.fn()
@@ -94,6 +96,7 @@ const {
     mockFinalizeRunDispatch: finalizeRunDispatch,
     mockCreateEffectOutbox: createEffectOutbox,
     mockListQueueMessagesByDispatch: listQueueMessagesByDispatch,
+    mockListRunDispatchesByWorkItem: listRunDispatchesByWorkItem,
     mockConsumeSteeringMessages: consumeSteeringMessages,
     mockConsumeSteeringMessagesByIds: consumeSteeringMessagesByIds,
     mockDropPendingQueueMessagesByIds: dropPendingQueueMessagesByIds,
@@ -134,6 +137,7 @@ vi.mock('@nitejar/database', () => ({
   finalizeRunDispatch: mockFinalizeRunDispatch,
   createEffectOutbox: mockCreateEffectOutbox,
   listQueueMessagesByDispatch: mockListQueueMessagesByDispatch,
+  listRunDispatchesByWorkItem: mockListRunDispatchesByWorkItem,
   consumeSteeringMessages: mockConsumeSteeringMessages,
   consumeSteeringMessagesByIds: mockConsumeSteeringMessagesByIds,
   dropPendingQueueMessagesByIds: mockDropPendingQueueMessagesByIds,
@@ -203,6 +207,7 @@ const runtimeControl: RuntimeControl = {
   paused_at: null,
   control_epoch: 7,
   max_concurrent_dispatches: 2,
+  app_base_url: null,
   updated_at: 0,
 }
 
@@ -309,6 +314,7 @@ describe('run dispatch worker control flow', () => {
     mockAttachJobIdToRunDispatch.mockResolvedValue(undefined)
     mockFinalizeRunDispatch.mockResolvedValue(true)
     mockListQueueMessagesByDispatch.mockResolvedValue([])
+    mockListRunDispatchesByWorkItem.mockResolvedValue([{ ...baseDispatch, status: 'completed' }])
     mockUpdateWorkItem.mockResolvedValue(undefined)
     mockCreateEffectOutbox.mockResolvedValue(undefined)
 
@@ -589,6 +595,44 @@ describe('run dispatch worker control flow', () => {
       expect(mockCreateEffectOutbox).not.toHaveBeenCalled()
     })
 
+    it('dismisses receipt when final response is empty and no sibling dispatch is active', async () => {
+      const dismissReceipt = vi.fn(() => Promise.resolve(undefined))
+      mockPluginHandlerGet.mockReturnValue({
+        responseMode: 'streaming',
+        dismissReceipt,
+      })
+      mockRunAgent.mockResolvedValue(makeRunResult(null))
+      mockListRunDispatchesByWorkItem.mockResolvedValue([
+        { ...baseDispatch, id: 'dispatch-1', status: 'completed' },
+      ])
+
+      await __dispatchWorkerTest.executeDispatch(makeClaimedDispatch(), runtimeControl)
+
+      expect(mockListRunDispatchesByWorkItem).toHaveBeenCalledWith('wi-1')
+      expect(dismissReceipt).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'int-1', type: 'telegram' }),
+        null
+      )
+    })
+
+    it('keeps receipt when sibling dispatches are still queued/running', async () => {
+      const dismissReceipt = vi.fn(() => Promise.resolve(undefined))
+      mockPluginHandlerGet.mockReturnValue({
+        responseMode: 'streaming',
+        dismissReceipt,
+      })
+      mockRunAgent.mockResolvedValue(makeRunResult(null))
+      mockListRunDispatchesByWorkItem.mockResolvedValue([
+        { ...baseDispatch, id: 'dispatch-1', status: 'completed' },
+        { ...baseDispatch, id: 'dispatch-2', status: 'queued' },
+      ])
+
+      await __dispatchWorkerTest.executeDispatch(makeClaimedDispatch(), runtimeControl)
+
+      expect(mockListRunDispatchesByWorkItem).toHaveBeenCalledWith('wi-1')
+      expect(dismissReceipt).not.toHaveBeenCalled()
+    })
+
     it('records exclusive claim annotation when triage returns exclusive', async () => {
       mockRunAgent.mockImplementation(
         (_agentId: string, _workItemId: string, options?: RunOptions) => {
@@ -770,6 +814,57 @@ describe('run dispatch worker control flow', () => {
         'arbiter:ignore:duplicate'
       )
       expect(mockConsumeSteeringMessagesByIds).not.toHaveBeenCalled()
+    })
+
+    it('keeps run uninterrupted when arbiter chooses do_not_interrupt', async () => {
+      mockGetRunDispatchControlDirective.mockResolvedValue({
+        action: 'steer',
+        messages: [{ id: 'msg-2', text: 'wait until done', senderName: 'Josh' }],
+      })
+      mockDecideSteeringAction.mockResolvedValue({
+        decision: 'do_not_interrupt',
+        reason: 'not urgent',
+      })
+
+      mockRunAgent.mockImplementation(
+        async (_agentId: string, _workItemId: string, options?: RunOptions) => {
+          const directive = (await options?.getRunControlDirective?.()) as
+            | RunControlDirective
+            | undefined
+          expect(directive).toEqual({ action: 'continue' })
+          return makeRunResult(null)
+        }
+      )
+
+      await __dispatchWorkerTest.executeDispatch(makeClaimedDispatch(), runtimeControl)
+
+      expect(mockAnnotateRunDispatchDecision).toHaveBeenCalledWith(
+        'dispatch-1',
+        'arbiter:do_not_interrupt:not urgent'
+      )
+      expect(mockDropPendingQueueMessagesByIds).not.toHaveBeenCalled()
+      expect(mockConsumeSteeringMessagesByIds).not.toHaveBeenCalled()
+      expect(mockConsumeSteeringMessages).not.toHaveBeenCalled()
+    })
+
+    it('does not attempt steering consumption when control directive is continue', async () => {
+      mockGetRunDispatchControlDirective.mockResolvedValue({ action: 'continue' })
+
+      mockRunAgent.mockImplementation(
+        async (_agentId: string, _workItemId: string, options?: RunOptions) => {
+          const directive = (await options?.getRunControlDirective?.()) as
+            | RunControlDirective
+            | undefined
+          expect(directive).toEqual({ action: 'continue' })
+          return makeRunResult(null)
+        }
+      )
+
+      await __dispatchWorkerTest.executeDispatch(makeClaimedDispatch(), runtimeControl)
+
+      expect(mockConsumeSteeringMessagesByIds).not.toHaveBeenCalled()
+      expect(mockConsumeSteeringMessages).not.toHaveBeenCalled()
+      expect(mockDropPendingQueueMessagesByIds).not.toHaveBeenCalled()
     })
   })
 })

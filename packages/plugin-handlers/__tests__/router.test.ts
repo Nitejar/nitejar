@@ -5,8 +5,8 @@ import { pluginHandlerRegistry } from '../src/registry'
 import {
   findPluginInstanceById,
   createWorkItem,
-  findIdempotencyKey,
-  createIdempotencyKey,
+  findIdempotencyKeyByAnyKey,
+  createIdempotencyKeysIgnoreConflicts,
   decryptConfig,
   type PluginInstanceRecord,
   type IdempotencyKey,
@@ -16,15 +16,15 @@ import {
 vi.mock('@nitejar/database', () => ({
   findPluginInstanceById: vi.fn(),
   createWorkItem: vi.fn(),
-  findIdempotencyKey: vi.fn(),
-  createIdempotencyKey: vi.fn(),
+  findIdempotencyKeyByAnyKey: vi.fn(),
+  createIdempotencyKeysIgnoreConflicts: vi.fn(),
   decryptConfig: vi.fn((config: Record<string, unknown>) => config),
 }))
 
 const findPluginInstanceByIdMock = vi.mocked(findPluginInstanceById)
 const createWorkItemMock = vi.mocked(createWorkItem)
-const findIdempotencyKeyMock = vi.mocked(findIdempotencyKey)
-const createIdempotencyKeyMock = vi.mocked(createIdempotencyKey)
+const findIdempotencyKeyByAnyKeyMock = vi.mocked(findIdempotencyKeyByAnyKey)
+const createIdempotencyKeysIgnoreConflictsMock = vi.mocked(createIdempotencyKeysIgnoreConflicts)
 const decryptConfigMock = vi.mocked(decryptConfig)
 
 const handlerType = 'test-integration'
@@ -64,8 +64,8 @@ beforeEach(() => {
   parseWebhook.mockReset()
   findPluginInstanceByIdMock.mockReset()
   createWorkItemMock.mockReset()
-  findIdempotencyKeyMock.mockReset()
-  createIdempotencyKeyMock.mockReset()
+  findIdempotencyKeyByAnyKeyMock.mockReset()
+  createIdempotencyKeysIgnoreConflictsMock.mockReset()
   decryptConfigMock.mockReset()
 })
 
@@ -114,7 +114,7 @@ describe('routeWebhook', () => {
       work_item_id: 'existing',
       created_at: Date.now(),
     }
-    findIdempotencyKeyMock.mockResolvedValue(existingKey)
+    findIdempotencyKeyByAnyKeyMock.mockResolvedValue(existingKey)
 
     const result = await routeWebhook(
       handlerType,
@@ -141,7 +141,7 @@ describe('routeWebhook', () => {
         payload: JSON.stringify({ foo: 'bar' }),
       },
     })
-    findIdempotencyKeyMock.mockResolvedValue(null)
+    findIdempotencyKeyByAnyKeyMock.mockResolvedValue(null)
     const workItem: WorkItem = {
       id: 'work-1',
       plugin_instance_id: pluginInstance.id,
@@ -170,10 +170,7 @@ describe('routeWebhook', () => {
     const payload = JSON.parse(createdArgs?.payload ?? '{}') as Record<string, unknown>
     expect(payload.responseContext).toEqual({ channel: 'c1' })
 
-    expect(createIdempotencyKeyMock).toHaveBeenCalledWith({
-      key: 'unique-key',
-      work_item_id: 'work-1',
-    })
+    expect(createIdempotencyKeysIgnoreConflictsMock).toHaveBeenCalledWith(['unique-key'], 'work-1')
   })
 
   it('returns handler-provided immediate webhook response while still creating a work item', async () => {
@@ -193,7 +190,7 @@ describe('routeWebhook', () => {
         payload: JSON.stringify({ body: 'hello' }),
       },
     })
-    findIdempotencyKeyMock.mockResolvedValue(null)
+    findIdempotencyKeyByAnyKeyMock.mockResolvedValue(null)
     createWorkItemMock.mockResolvedValue({
       id: 'work-immediate-1',
       plugin_instance_id: pluginInstance.id,

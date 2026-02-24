@@ -11,6 +11,11 @@ import { Badge } from '@/components/ui/badge'
 export function RuntimeControlClient() {
   const [reason, setReason] = useState('')
   const [maxConcurrent, setMaxConcurrent] = useState<string>('')
+  const [appBaseUrl, setAppBaseUrl] = useState('')
+  const [appBaseUrlStatus, setAppBaseUrlStatus] = useState<{
+    type: 'success' | 'error'
+    text: string
+  } | null>(null)
   const seededRef = useRef(false)
   const runtimeQuery = trpc.runtimeControl.get.useQuery(undefined, { refetchInterval: 3000 })
   const utils = trpc.useUtils()
@@ -19,6 +24,7 @@ export function RuntimeControlClient() {
   useEffect(() => {
     if (runtimeQuery.data && !seededRef.current) {
       setMaxConcurrent(String(runtimeQuery.data.maxConcurrentDispatches))
+      setAppBaseUrl(runtimeQuery.data.appBaseUrl ?? '')
       seededRef.current = true
     }
   }, [runtimeQuery.data])
@@ -45,6 +51,21 @@ export function RuntimeControlClient() {
     onSuccess: async (result) => {
       setMaxConcurrent(String(result.maxConcurrentDispatches))
       await utils.runtimeControl.get.invalidate()
+    },
+  })
+
+  const appBaseUrlMutation = trpc.runtimeControl.setAppBaseUrl.useMutation({
+    onSuccess: async (result) => {
+      setAppBaseUrl(result.appBaseUrl ?? '')
+      setAppBaseUrlStatus({ type: 'success', text: 'Saved' })
+      setTimeout(() => setAppBaseUrlStatus(null), 2500)
+      await utils.runtimeControl.get.invalidate()
+    },
+    onError: (error) => {
+      setAppBaseUrlStatus({
+        type: 'error',
+        text: error.message || 'Failed to save',
+      })
     },
   })
 
@@ -164,6 +185,44 @@ export function RuntimeControlClient() {
               />
               <span className="text-[11px] text-white/40">1 – 100</span>
             </div>
+          </div>
+
+          <div className="space-y-2 border-t border-white/5 pt-3">
+            <Label className="text-xs text-muted-foreground">Public app URL</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                type="url"
+                className="h-8 text-xs"
+                placeholder="https://your-domain.example"
+                value={appBaseUrl}
+                onChange={(event) => setAppBaseUrl(event.target.value)}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setAppBaseUrlStatus(null)
+                  const value = appBaseUrl.trim()
+                  appBaseUrlMutation.mutate({ value: value.length > 0 ? value : null })
+                }}
+                disabled={appBaseUrlMutation.isPending}
+              >
+                {appBaseUrlMutation.isPending ? 'Saving...' : 'Save'}
+              </Button>
+            </div>
+            {appBaseUrlStatus && (
+              <p
+                className={`text-[11px] ${
+                  appBaseUrlStatus.type === 'success' ? 'text-emerald-300' : 'text-destructive'
+                }`}
+              >
+                {appBaseUrlStatus.text}
+              </p>
+            )}
+            <p className="text-[11px] text-white/50">
+              Used by integration manifests and webhook URLs (Slack/GitHub). Leave blank to use env
+              fallback.
+            </p>
           </div>
 
           <div className="text-[11px] text-white/50">Control epoch: {data?.controlEpoch ?? 0}</div>

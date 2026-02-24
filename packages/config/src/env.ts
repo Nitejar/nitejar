@@ -7,8 +7,6 @@ export const configSchema = z.object({
   DATABASE_URL: z.string().optional(),
   // Encryption key for secrets (required in production)
   ENCRYPTION_KEY: z.string().optional(),
-  // Sprites API
-  SPRITES_TOKEN: z.string().optional(),
   // GitHub webhook verification (optional)
   GITHUB_WEBHOOK_SECRET: z.string().optional(),
 })

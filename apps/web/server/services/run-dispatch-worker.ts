@@ -26,9 +26,11 @@ import {
   listAppSessionParticipantAgents,
   findLatestExclusiveClaimForWorkItem,
   reapExpiredLeases,
+  listRunDispatchesByWorkItem,
   type RuntimeControl,
   type ClaimedRunDispatch,
 } from '@nitejar/database'
+import { logSchemaMismatchOnce } from './schema-mismatch'
 import { runAgent, type AgentEventCallback } from '@nitejar/agent/runner'
 import { createEventCallback } from '@nitejar/agent/streaming'
 import { decideSteeringAction } from '@nitejar/agent/steer-arbiter'
@@ -446,6 +448,28 @@ async function executeDispatch(
       await updateWorkItem(workItemId, { status: 'DONE' })
     }
 
+    if (pluginInstance && !result.finalResponse) {
+      // All agents passed — dismiss the receipt reaction so it doesn't linger.
+      const handler = pluginHandlerRegistry.get(pluginInstance.type)
+      if (handler?.dismissReceipt) {
+        const siblingDispatches = await listRunDispatchesByWorkItem(dispatch.work_item_id)
+        const hasActiveSiblingDispatch = siblingDispatches.some(
+          (entry) =>
+            entry.id !== dispatch.id && ['queued', 'running', 'paused'].includes(entry.status)
+        )
+
+        if (!hasActiveSiblingDispatch) {
+          const responseContext = safeParseJson(dispatch.response_context)
+          await handler.dismissReceipt(pluginInstance, responseContext).catch((err) => {
+            console.warn('[RunDispatchWorker] dismissReceipt failed (non-blocking)', {
+              dispatchId: dispatch.id,
+              error: err instanceof Error ? err.message : String(err),
+            })
+          })
+        }
+      }
+    }
+
     if (pluginInstance && result.finalResponse) {
       // Prefix with [AgentName] when multiple agents share the pluginInstance
       let content = result.finalResponse
@@ -631,6 +655,10 @@ export function ensureRunDispatchWorker(): void {
     try {
       await claimAndDispatch()
     } catch (error) {
+      if (logSchemaMismatchOnce(error, 'RunDispatchWorker')) {
+        stopRunDispatchWorker()
+        return
+      }
       console.warn('[RunDispatchWorker] Tick failed', error)
     } finally {
       state.claiming = false

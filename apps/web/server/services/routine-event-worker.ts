@@ -8,6 +8,7 @@ import {
   markRoutineEventFailed,
   updateRoutine,
 } from '@nitejar/database'
+import { logSchemaMismatchOnce } from './schema-mismatch'
 import { RoutineEnvelopeSchema } from './routines/envelope'
 import {
   evaluateRoutineRule,
@@ -166,6 +167,10 @@ export function ensureRoutineEventWorker(): void {
     try {
       await state.processFn!()
     } catch (error) {
+      if (logSchemaMismatchOnce(error, 'RoutineEventWorker')) {
+        stopRoutineEventWorker()
+        return
+      }
       console.warn('[RoutineEventWorker] Tick failed', error)
     } finally {
       state.running = false

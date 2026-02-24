@@ -7,7 +7,11 @@ import {
   getAgentIdsWithActiveJobs,
   getDb,
 } from '@nitejar/database'
-import { deprovisionSprite } from '@nitejar/sprites'
+import {
+  deprovisionSprite,
+  getSpritesTokenSettings,
+  isSpritesExecutionAvailable,
+} from '@nitejar/sprites'
 import { getMemorySettings, parseAgentConfig } from '@nitejar/agent/config'
 import { DeleteButton } from '../../components/DeleteButton'
 import { SoulSection } from './SoulSection'
@@ -47,7 +51,8 @@ async function deleteAgentAction(formData: FormData) {
 
   const id = formData.get('id') as string
   const agent = await findAgentById(id)
-  if (agent?.sprite_id && process.env.SPRITES_TOKEN) {
+  const spriteSettings = await getSpritesTokenSettings()
+  if (agent?.sprite_id && isSpritesExecutionAvailable(spriteSettings)) {
     try {
       await deprovisionSprite(agent)
     } catch (error) {

@@ -6,6 +6,7 @@ import {
   updateRoutine,
   type Routine,
 } from '@nitejar/database'
+import { logSchemaMismatchOnce } from './schema-mismatch'
 import { computeNextCronRunAt, getMinimumRoutineRecurrenceSeconds } from './routines/cron'
 import { evaluateRoutineRule, getAlwaysTrueRuleForProbe, parseRoutineRule } from './routines/rules'
 import { runConditionProbe } from './routines/probes'
@@ -284,6 +285,10 @@ export function ensureRoutineSchedulerWorker(): void {
     try {
       await state.processFn!()
     } catch (error) {
+      if (logSchemaMismatchOnce(error, 'RoutineSchedulerWorker')) {
+        stopRoutineSchedulerWorker()
+        return
+      }
       console.warn('[RoutineSchedulerWorker] Tick failed', error)
     } finally {
       state.running = false

@@ -8,7 +8,8 @@ import process from 'node:process'
 
 import type { ReleaseManifest } from './types.js'
 
-export const DEFAULT_RELEASES_BASE_URL = 'https://github.com/nitejar/nitejar/releases/latest/download'
+export const DEFAULT_RELEASES_BASE_URL =
+  'https://github.com/nitejar/nitejar/releases/latest/download'
 
 export function getReleasesBaseUrl(): string {
   return process.env.NITEJAR_RELEASES_BASE_URL ?? DEFAULT_RELEASES_BASE_URL

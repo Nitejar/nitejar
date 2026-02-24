@@ -16,6 +16,7 @@ import {
   PASSIVE_MEMORY_EXTRACT_TURN_BASE,
   PASSIVE_MEMORY_REFINE_TURN_BASE,
 } from '@nitejar/database'
+import { logSchemaMismatchOnce } from './schema-mismatch'
 import {
   createMemoryWithEmbedding,
   findRelatedMemories,
@@ -1030,11 +1031,16 @@ async function processNextPassiveMemoryQueue(): Promise<void> {
     }
 
     if (reconcile.usage) {
-      await insertPassiveInferenceUsage(queueRow, reconcile.usage, PASSIVE_MEMORY_REFINE_TURN_BASE, {
-        modelSpanId: span?.id ?? null,
-        attemptKind: 'passive_memory_refine',
-        attemptIndex: 1,
-      })
+      await insertPassiveInferenceUsage(
+        queueRow,
+        reconcile.usage,
+        PASSIVE_MEMORY_REFINE_TURN_BASE,
+        {
+          modelSpanId: span?.id ?? null,
+          attemptKind: 'passive_memory_refine',
+          attemptIndex: 1,
+        }
+      )
     }
 
     const applyResult = await applyCandidates(
@@ -1125,6 +1131,10 @@ export function ensurePassiveMemoryWorker(): void {
     try {
       await state.processFn?.()
     } catch (error) {
+      if (logSchemaMismatchOnce(error, 'PassiveMemoryWorker')) {
+        stopPassiveMemoryWorker()
+        return
+      }
       console.warn('[PassiveMemoryWorker] Tick failed', error)
     } finally {
       state.running = false

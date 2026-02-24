@@ -8,6 +8,7 @@ vi.mock('@nitejar/database', () => ({
   listMessagesByJobPaged: vi.fn(),
   listBackgroundTasksByJobPaged: vi.fn(),
   listExternalApiCallsByJobPaged: vi.fn(),
+  listInferenceCallsByJobPaged: vi.fn(),
   listInferenceCallsByJobWithPayloadsPaged: vi.fn(),
   countSpansByJob: vi.fn(),
   countMessagesByJob: vi.fn(),
@@ -23,6 +24,7 @@ import {
   getJobSpanSummary,
   listBackgroundTasksByJobPaged,
   listExternalApiCallsByJobPaged,
+  listInferenceCallsByJobPaged,
   listInferenceCallsByJobWithPayloadsPaged,
   listMessagesByJobPaged,
   listSpansByJobPaged,
@@ -42,6 +44,7 @@ const mockedListSpansByJobPaged = vi.mocked(listSpansByJobPaged)
 const mockedListMessagesByJobPaged = vi.mocked(listMessagesByJobPaged)
 const mockedListBackgroundTasksByJobPaged = vi.mocked(listBackgroundTasksByJobPaged)
 const mockedListExternalApiCallsByJobPaged = vi.mocked(listExternalApiCallsByJobPaged)
+const mockedListInferenceCallsByJobPaged = vi.mocked(listInferenceCallsByJobPaged)
 const mockedListInferenceCallsByJobWithPayloadsPaged = vi.mocked(
   listInferenceCallsByJobWithPayloadsPaged
 )
@@ -92,6 +95,7 @@ describe('trace ops', () => {
     mockedCountInferenceCallsByJob.mockResolvedValue(0)
     mockedCountBackgroundTasksByJob.mockResolvedValue(0)
     mockedCountExternalApiCallsByJob.mockResolvedValue(0)
+    mockedListInferenceCallsByJobWithPayloadsPaged.mockResolvedValue([])
   })
 
   it('returns summary-only trace by default', async () => {
@@ -111,7 +115,7 @@ describe('trace ops', () => {
     mockedListMessagesByJobPaged.mockResolvedValue([
       { id: 'm-1', content: '{"text":"ok"}' } as never,
     ])
-    mockedListInferenceCallsByJobWithPayloadsPaged.mockResolvedValue([{ id: 'ic-1' } as never])
+    mockedListInferenceCallsByJobPaged.mockResolvedValue([{ id: 'ic-1' } as never])
     mockedListBackgroundTasksByJobPaged.mockResolvedValue([{ id: 'b-1' } as never])
     mockedListExternalApiCallsByJobPaged.mockResolvedValue([{ id: 'e-1' } as never])
     mockedFindRunDispatchByJobId.mockResolvedValue({ id: 'd-1' } as never)
@@ -137,5 +141,63 @@ describe('trace ops', () => {
     expect(trace.externalCalls).toBeDefined()
     expect(trace.externalCallsPage?.total).toBe(1)
     expect(trace.dispatch).toBeDefined()
+  })
+
+  it('keeps inference payload blobs omitted by default', async () => {
+    mockedCountInferenceCallsByJob.mockResolvedValue(1)
+    mockedListInferenceCallsByJobPaged.mockResolvedValue([
+      {
+        id: 'ic-lite',
+        request_payload_hash: 'req-hash',
+        response_payload_hash: 'res-hash',
+      } as never,
+    ])
+
+    const trace = await getRunTraceOp({
+      jobId: 'job-1',
+      includeInferenceCalls: true,
+    })
+
+    const call = trace.inferenceCalls?.[0] as
+      | { request_payload_json?: string | null; requestPayloadMeta?: { omitted?: boolean } }
+      | undefined
+    expect(call?.request_payload_json).toBeNull()
+    expect(call?.requestPayloadMeta?.omitted).toBe(true)
+  })
+
+  it('includes and truncates inference payload blobs when requested', async () => {
+    mockedCountInferenceCallsByJob.mockResolvedValue(1)
+    mockedListInferenceCallsByJobWithPayloadsPaged.mockResolvedValue([
+      {
+        id: 'ic-full',
+        request_payload_json: 'x'.repeat(500),
+        request_payload_byte_size: 500,
+        response_payload_json: 'y'.repeat(500),
+        response_payload_byte_size: 500,
+      } as never,
+    ])
+
+    const trace = await getRunTraceOp({
+      jobId: 'job-1',
+      includeInferenceCalls: true,
+      includeInferencePayloads: true,
+      inferencePayloadMaxBytes: 128,
+    })
+
+    const call = trace.inferenceCalls?.[0] as
+      | {
+          request_payload_json?: string | null
+          response_payload_json?: string | null
+          requestPayloadMeta?: { truncated?: boolean; returnedBytes?: number }
+          responsePayloadMeta?: { truncated?: boolean; returnedBytes?: number }
+        }
+      | undefined
+
+    expect(call?.request_payload_json?.length).toBeLessThan(500)
+    expect(call?.response_payload_json?.length).toBeLessThan(500)
+    expect(call?.requestPayloadMeta?.truncated).toBe(true)
+    expect(call?.responsePayloadMeta?.truncated).toBe(true)
+    expect(call?.requestPayloadMeta?.returnedBytes).toBeLessThanOrEqual(128)
+    expect(call?.responsePayloadMeta?.returnedBytes).toBeLessThanOrEqual(128)
   })
 })

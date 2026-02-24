@@ -34,6 +34,16 @@ export interface WebhookParseResult {
   workItem?: Omit<NewWorkItem, 'plugin_instance_id'>
   /** Idempotency key for deduplication */
   idempotencyKey?: string
+  /** Optional additional idempotency aliases for deduplication */
+  idempotencyKeys?: string[]
+  /** Optional plugin-provided inbound event identifier for receipts */
+  ingressEventId?: string
+  /** Optional inbound receipt reason code for ignored/rejected payloads */
+  ingressReasonCode?: string
+  /** Optional inbound receipt reason text for ignored/rejected payloads */
+  ingressReasonText?: string
+  /** Optional plugin-specific inbound receipt metadata */
+  ingressMeta?: Record<string, unknown>
   /** Context for response handling */
   responseContext?: unknown
   /** If this is a bot command (e.g., /reset), the command name without slash */
@@ -59,6 +69,19 @@ export interface PostResponseResult {
 export interface ConfigValidationResult {
   valid: boolean
   errors?: string[]
+}
+
+/**
+ * Result of testing a plugin connection.
+ */
+export interface TestConnectionResult {
+  ok: boolean
+  error?: string
+  /**
+   * Optional config values to persist after a successful test.
+   * Use for discovered runtime metadata (for example Slack botUserId).
+   */
+  configUpdates?: Record<string, unknown>
 }
 
 /**
@@ -159,7 +182,7 @@ export interface PluginHandler<TConfig = unknown> {
   /**
    * Test the plugin connection (e.g., validate API keys)
    */
-  testConnection?(config: TConfig): Promise<{ ok: boolean; error?: string }>
+  testConnection?(config: TConfig): Promise<TestConnectionResult>
 
   /**
    * Acknowledge receipt of a message (e.g., react with emoji)
@@ -169,6 +192,12 @@ export interface PluginHandler<TConfig = unknown> {
     pluginInstance: PluginInstanceRecord,
     responseContext?: unknown
   ): Promise<void>
+
+  /**
+   * Dismiss a receipt acknowledgement (e.g., remove reaction emoji)
+   * Called when all agents pass without responding, so the receipt doesn't linger.
+   */
+  dismissReceipt?(pluginInstance: PluginInstanceRecord, responseContext?: unknown): Promise<void>
 }
 
 /** @deprecated Use PluginHandler instead */

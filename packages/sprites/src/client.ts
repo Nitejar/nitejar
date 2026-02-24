@@ -1,21 +1,21 @@
 import { SpritesClient, type Sprite } from '@fly/sprites'
+import { requireSpritesToken } from './token-settings'
 
 let client: SpritesClient | null = null
+let clientToken: string | null = null
 
 /**
  * Get the Sprites client singleton
  */
-export function getSpritesClient(): SpritesClient {
-  if (client) {
+export async function getSpritesClient(): Promise<SpritesClient> {
+  const token = await requireSpritesToken()
+
+  if (client && clientToken === token) {
     return client
   }
 
-  const token = process.env.SPRITES_TOKEN
-  if (!token) {
-    throw new Error('SPRITES_TOKEN environment variable is required')
-  }
-
   client = new SpritesClient(token)
+  clientToken = token
   return client
 }
 
@@ -30,7 +30,7 @@ export async function getOrCreateSprite(
     region?: string
   }
 ): Promise<Sprite> {
-  const spritesClient = getSpritesClient()
+  const spritesClient = await getSpritesClient()
 
   // Try to get existing sprite first
   try {
@@ -52,7 +52,7 @@ export async function getOrCreateSprite(
  * Get a sprite by name
  */
 export async function getSpriteByName(name: string): Promise<Sprite | null> {
-  const spritesClient = getSpritesClient()
+  const spritesClient = await getSpritesClient()
 
   try {
     return await spritesClient.getSprite(name)
@@ -64,8 +64,8 @@ export async function getSpriteByName(name: string): Promise<Sprite | null> {
 /**
  * Get a sprite handle (doesn't check if it exists)
  */
-export function getSprite(name: string): Sprite {
-  const spritesClient = getSpritesClient()
+export async function getSprite(name: string): Promise<Sprite> {
+  const spritesClient = await getSpritesClient()
   return spritesClient.sprite(name)
 }
 
@@ -73,7 +73,7 @@ export function getSprite(name: string): Sprite {
  * List all sprites
  */
 export async function listSprites(prefix?: string): Promise<Sprite[]> {
-  const spritesClient = getSpritesClient()
+  const spritesClient = await getSpritesClient()
   return spritesClient.listAllSprites(prefix)
 }
 
@@ -81,7 +81,7 @@ export async function listSprites(prefix?: string): Promise<Sprite[]> {
  * Delete a sprite by name
  */
 export async function deleteSprite(name: string): Promise<boolean> {
-  const spritesClient = getSpritesClient()
+  const spritesClient = await getSpritesClient()
 
   try {
     await spritesClient.deleteSprite(name)

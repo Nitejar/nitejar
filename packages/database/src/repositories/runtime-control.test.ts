@@ -26,6 +26,7 @@ async function createTestSchema(database: ReturnType<typeof getDb>): Promise<voi
     .addColumn('paused_at', 'integer')
     .addColumn('control_epoch', 'integer', (col) => col.notNull().defaultTo(0))
     .addColumn('max_concurrent_dispatches', 'integer', (col) => col.notNull().defaultTo(20))
+    .addColumn('app_base_url', 'text')
     .addColumn('updated_at', 'integer', (col) => col.notNull().defaultTo(now()))
     .execute()
 }
@@ -57,6 +58,7 @@ describe('runtime control repository', () => {
       expect(control.id).toBe('default')
       expect(control.processing_enabled).toBe(1)
       expect(control.max_concurrent_dispatches).toBe(20)
+      expect(control.app_base_url).toBeNull()
     }
 
     const rows = await db.selectFrom('runtime_control').selectAll().execute()

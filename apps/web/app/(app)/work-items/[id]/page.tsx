@@ -16,6 +16,7 @@ import {
   listEffectOutboxByWorkItem,
   listQueueMessagesByWorkItem,
   listMediaArtifactsForWorkItem,
+  listWebhookIngressEventsByWorkItem,
 } from '@nitejar/database'
 import {
   parseAgentConfig,
@@ -152,12 +153,27 @@ function summarizeText(value: string | null, maxLength = 120): string | null {
 type SystemTimelineEvent = {
   id: string
   timestamp: number
-  lane: 'decision' | 'queue' | 'effect'
+  lane: 'decision' | 'queue' | 'effect' | 'inbound'
   badge: string
   badgeClassName: string
   title: string
   detail: string | null
   relatedDispatchId?: string | null
+}
+
+function inboundStatusClassName(status: string): string {
+  switch (status) {
+    case 'accepted':
+      return 'bg-emerald-500/15 text-emerald-300/80'
+    case 'duplicate':
+      return 'bg-amber-500/15 text-amber-300/80'
+    case 'skipped':
+      return 'bg-zinc-500/15 text-zinc-300/80'
+    case 'rejected':
+      return 'bg-red-500/15 text-red-300/80'
+    default:
+      return 'bg-white/10 text-white/60'
+  }
 }
 
 function shortDispatchId(id: string): string {
@@ -643,10 +659,11 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
     : null
 
   const jobs = await listJobsByWorkItem(id)
-  const [dispatches, effects, queueMessages] = await Promise.all([
+  const [dispatches, effects, queueMessages, ingressReceipts] = await Promise.all([
     listRunDispatchesByWorkItem(id),
     listEffectOutboxByWorkItem(id),
     listQueueMessagesByWorkItem(id, { limit: 500 }),
+    listWebhookIngressEventsByWorkItem(id, 200),
   ])
   const jobCostData = await getCostByJobs(jobs.map((j) => j.id))
   const jobCostMap = new Map(jobCostData.map((c) => [c.job_id, c]))
@@ -891,6 +908,10 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
     if (a.created_at === b.created_at) return a.id.localeCompare(b.id)
     return a.created_at - b.created_at
   })
+  const sortedIngressReceipts = [...ingressReceipts].sort((a, b) => {
+    if (a.created_at === b.created_at) return a.id.localeCompare(b.id)
+    return a.created_at - b.created_at
+  })
   const systemEvents: SystemTimelineEvent[] = [
     ...sortedDispatches.map((dispatch) => {
       const parsedDecision = parseArbiterControlReason(dispatch.control_reason)
@@ -967,6 +988,32 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
           .join(' · ') || null,
       relatedDispatchId: effect.dispatch_id,
     })),
+    ...sortedIngressReceipts.map((receipt) => {
+      const detail = parseJsonObject(receipt.detail_json)
+      const meta =
+        detail && typeof detail.meta === 'object' && detail.meta
+          ? (detail.meta as Record<string, unknown>)
+          : null
+      const reasonCode = typeof detail?.reasonCode === 'string' ? detail.reasonCode : null
+      const sourceRef = typeof detail?.sourceRef === 'string' ? detail.sourceRef : null
+      const providerEventId =
+        typeof detail?.providerEventId === 'string' ? detail.providerEventId : null
+      const eventType = typeof meta?.eventType === 'string' ? meta.eventType : null
+      const detailLine =
+        [sourceRef, providerEventId ? `event=${providerEventId}` : null, eventType, reasonCode]
+          .filter((part): part is string => Boolean(part))
+          .join(' · ') || null
+
+      return {
+        id: `inbound:${receipt.id}`,
+        timestamp: receipt.created_at,
+        lane: 'inbound' as const,
+        badge: 'Inbound',
+        badgeClassName: inboundStatusClassName(receipt.status),
+        title: `Webhook ${receipt.status}`,
+        detail: detailLine,
+      }
+    }),
   ].sort((a, b) => {
     if (a.timestamp === b.timestamp) return a.id.localeCompare(b.id)
     return a.timestamp - b.timestamp
@@ -1147,6 +1194,9 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
                 </span>
                 <span className="rounded bg-violet-500/10 px-1.5 py-0.5">
                   {sortedEffects.length} effects
+                </span>
+                <span className="rounded bg-emerald-500/10 px-1.5 py-0.5">
+                  {sortedIngressReceipts.length} inbound
                 </span>
               </div>
 

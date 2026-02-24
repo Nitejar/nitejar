@@ -180,7 +180,13 @@ function SidebarNav({
       >
         <a href="/" className="flex items-center gap-2.5">
           <div className="h-8 w-8 shrink-0 overflow-hidden rounded-lg">
-            <Image src="/icon.png" alt="Nitejar" width={32} height={32} className="h-full w-full object-cover" />
+            <Image
+              src="/icon.png"
+              alt="Nitejar"
+              width={32}
+              height={32}
+              className="h-full w-full object-cover"
+            />
           </div>
           {!collapsed && (
             <div>
@@ -425,7 +431,13 @@ export function AdminSidebar({ user: userProp }: AdminSidebarProps) {
         </button>
         <a href="/" className="flex items-center gap-2">
           <div className="h-7 w-7 overflow-hidden rounded-lg">
-            <Image src="/icon.png" alt="Nitejar" width={28} height={28} className="h-full w-full object-cover" />
+            <Image
+              src="/icon.png"
+              alt="Nitejar"
+              width={28}
+              height={28}
+              className="h-full w-full object-cover"
+            />
           </div>
           <span className="text-sm font-semibold text-white/90">Nitejar</span>
         </a>

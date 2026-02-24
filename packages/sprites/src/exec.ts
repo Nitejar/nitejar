@@ -1,4 +1,5 @@
 import type { ISpriteSession } from './session'
+import { requireSpritesToken } from './token-settings'
 
 /**
  * Result of executing a command on a sprite
@@ -33,17 +34,6 @@ export interface ExecWithSessionOptions extends ExecOptions {
 const API_BASE = 'https://api.sprites.dev/v1'
 
 /**
- * Get the sprites token from environment
- */
-function getToken(): string {
-  const token = process.env.SPRITES_TOKEN
-  if (!token) {
-    throw new Error('SPRITES_TOKEN environment variable is required')
-  }
-  return token
-}
-
-/**
  * Execute a command on a sprite
  *
  * If a session is provided in options, uses the session for stateful execution
@@ -75,7 +65,7 @@ export async function spriteExecHttp(
   options?: ExecOptions
 ): Promise<ExecResult> {
   const startTime = Date.now()
-  const token = getToken()
+  const token = await requireSpritesToken()
 
   // Build query params - use bash -c to run shell commands
   const params = new URLSearchParams()

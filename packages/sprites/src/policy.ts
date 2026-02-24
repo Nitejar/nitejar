@@ -55,7 +55,7 @@ export function getNetworkPolicyPreset(preset: NetworkPolicyPresetId): NetworkPo
 }
 
 export async function getSpriteNetworkPolicy(spriteName: string): Promise<NetworkPolicy> {
-  const sprite = getSprite(spriteName)
+  const sprite = await getSprite(spriteName)
   return sprite.getNetworkPolicy()
 }
 
@@ -63,7 +63,7 @@ export async function setSpriteNetworkPolicy(
   spriteName: string,
   policy: NetworkPolicy
 ): Promise<void> {
-  const sprite = getSprite(spriteName)
+  const sprite = await getSprite(spriteName)
   await sprite.updateNetworkPolicy(policy)
 }
 

@@ -3,7 +3,9 @@ import { NextResponse, type NextRequest } from 'next/server'
 const INVALID_SESSION_ERROR = 'Your session is invalid. Please sign in again.'
 
 function isAuthCookie(name: string): boolean {
-  return name.includes('session_token') || name.includes('session_data') || name.includes('better-auth')
+  return (
+    name.includes('session_token') || name.includes('session_data') || name.includes('better-auth')
+  )
 }
 
 export function GET(request: NextRequest): NextResponse {

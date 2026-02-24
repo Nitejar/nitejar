@@ -276,6 +276,36 @@ export interface ListPluginEventsResult {
   nextCursor: PluginEventCursor | null
 }
 
+export async function listRecentWebhookIngressEvents(limit = 25): Promise<PluginEvent[]> {
+  const db = getDb()
+  const boundedLimit = Math.min(Math.max(limit, 1), 200)
+  return db
+    .selectFrom('plugin_events')
+    .selectAll()
+    .where('kind', '=', 'webhook_ingress')
+    .orderBy('created_at', 'desc')
+    .orderBy('id', 'desc')
+    .limit(boundedLimit)
+    .execute()
+}
+
+export async function listWebhookIngressEventsByWorkItem(
+  workItemId: string,
+  limit = 100
+): Promise<PluginEvent[]> {
+  const db = getDb()
+  const boundedLimit = Math.min(Math.max(limit, 1), 500)
+  return db
+    .selectFrom('plugin_events')
+    .selectAll()
+    .where('kind', '=', 'webhook_ingress')
+    .where('work_item_id', '=', workItemId)
+    .orderBy('created_at', 'desc')
+    .orderBy('id', 'desc')
+    .limit(boundedLimit)
+    .execute()
+}
+
 export async function listPluginEvents(
   options: ListPluginEventsOptions
 ): Promise<ListPluginEventsResult> {

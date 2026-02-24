@@ -1951,7 +1951,10 @@ function ModelCallDetail({
 }
 
 function passiveMemoryStageLabel(call: InferenceCallReceipt): string {
-  if (call.attempt_kind === 'passive_memory_refine' || call.turn >= PASSIVE_MEMORY_REFINE_TURN_BASE) {
+  if (
+    call.attempt_kind === 'passive_memory_refine' ||
+    call.turn >= PASSIVE_MEMORY_REFINE_TURN_BASE
+  ) {
     return 'refine'
   }
   return 'extract'
@@ -1996,7 +1999,8 @@ function PassiveMemoryDetail({
               </span>
             </div>
             <div className="mt-1 text-[10px] text-muted-foreground">
-              {call.prompt_tokens.toLocaleString()} in / {call.completion_tokens.toLocaleString()} out
+              {call.prompt_tokens.toLocaleString()} in / {call.completion_tokens.toLocaleString()}{' '}
+              out
             </div>
           </div>
         ))}
@@ -2007,6 +2011,10 @@ function PassiveMemoryDetail({
 
 /** post_process: show the final processed response */
 function PostProcessDetail({ span, messages }: { span: Span; messages: Message[] }) {
+  const attrs = parseAttributes(span.attributes)
+  const skipped = attrs.skipped === true || attrs.skipped === 'true'
+  if (skipped) return null
+
   // Find the assistant message with is_final_response flag within this span's time window
   const startSec = Math.floor(span.start_time / 1000)
   const endSec = span.end_time ? Math.ceil(span.end_time / 1000) + 1 : Infinity

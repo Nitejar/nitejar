@@ -12,6 +12,7 @@ import {
   listByJob as listInferenceCallsByJob,
   insertInferenceCall,
 } from '@nitejar/database'
+import { logSchemaMismatchOnce } from './schema-mismatch'
 import { parseAgentConfig } from '@nitejar/agent/config'
 
 const WORKER_STATE_KEY = '__nitejarEvalWorker'
@@ -612,6 +613,10 @@ export function ensureEvalWorker(): void {
     try {
       await state.processFn!()
     } catch (error) {
+      if (logSchemaMismatchOnce(error, 'EvalWorker')) {
+        stopEvalWorker()
+        return
+      }
       console.warn('[EvalWorker] Tick failed', error)
     } finally {
       state.running = false

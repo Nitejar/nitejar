@@ -1,8 +1,9 @@
 import {
   findPluginInstanceById,
   createWorkItem,
-  findIdempotencyKey,
-  createIdempotencyKey,
+  findIdempotencyKeyByAnyKey,
+  createIdempotencyKeysIgnoreConflicts,
+  createPluginEvent,
   decryptConfig,
   type PluginInstanceRecord,
 } from '@nitejar/database'
@@ -94,6 +95,35 @@ export interface WebhookHooks {
   }) => Promise<void>
 }
 
+function normalizeIdempotencyKeys(parseResult: WebhookParseResult): string[] {
+  const keys = [
+    ...(Array.isArray(parseResult.idempotencyKeys) ? parseResult.idempotencyKeys : []),
+    parseResult.idempotencyKey,
+  ]
+  return [...new Set(keys.map((key) => key?.trim() ?? '').filter((key) => key.length > 0))]
+}
+
+async function recordWebhookIngressEvent(params: {
+  pluginId: string
+  pluginVersion?: string | null
+  status: 'accepted' | 'duplicate' | 'skipped' | 'rejected'
+  workItemId?: string | null
+  detail: Record<string, unknown>
+}): Promise<void> {
+  try {
+    await createPluginEvent({
+      plugin_id: params.pluginId,
+      plugin_version: params.pluginVersion ?? null,
+      kind: 'webhook_ingress',
+      status: params.status,
+      work_item_id: params.workItemId ?? null,
+      detail_json: JSON.stringify(params.detail),
+    })
+  } catch {
+    // Non-fatal observability path.
+  }
+}
+
 export async function routeWebhook(
   pluginType: string,
   pluginInstanceId: string,
@@ -108,16 +138,32 @@ export async function routeWebhook(
   }
 
   if (pluginInstance.type !== pluginType) {
+    await recordWebhookIngressEvent({
+      pluginId: pluginInstance.plugin_id,
+      status: 'rejected',
+      detail: {
+        pluginType,
+        pluginInstanceId,
+        reasonCode: 'plugin_type_mismatch',
+        reasonText: `Plugin type mismatch: expected ${pluginInstance.type}, got ${pluginType}`,
+      },
+    })
     return { status: 400, body: { error: 'Plugin type mismatch' } }
-  }
-
-  if (!pluginInstance.enabled) {
-    return { status: 200, body: { ignored: true, reason: 'Plugin instance disabled' } }
   }
 
   // Get the handler
   const handler = pluginHandlerRegistry.get(pluginType)
   if (!handler) {
+    await recordWebhookIngressEvent({
+      pluginId: pluginInstance.plugin_id,
+      status: 'rejected',
+      detail: {
+        pluginType,
+        pluginInstanceId,
+        reasonCode: 'unknown_plugin_type',
+        reasonText: `Unknown plugin type: ${pluginType}`,
+      },
+    })
     return { status: 400, body: { error: `Unknown plugin type: ${pluginType}` } }
   }
 
@@ -137,12 +183,42 @@ export async function routeWebhook(
     parseResult = await handler.parseWebhook(request, decryptedPluginInstance)
   } catch (error) {
     console.error(`[${pluginType}] Webhook parse error:`, error)
+    await recordWebhookIngressEvent({
+      pluginId: pluginInstance.plugin_id,
+      status: 'rejected',
+      detail: {
+        pluginType,
+        pluginInstanceId,
+        reasonCode: 'parse_error',
+        reasonText: error instanceof Error ? error.message : String(error),
+      },
+    })
     return { status: 500, body: { error: 'Failed to parse webhook' } }
   }
 
   const immediateResponse = parseResult.webhookResponse
+  const idempotencyKeys = normalizeIdempotencyKeys(parseResult)
+  const ingressDetailBase: Record<string, unknown> = {
+    pluginType,
+    pluginInstanceId,
+    ...(parseResult.ingressEventId ? { providerEventId: parseResult.ingressEventId } : {}),
+    ...(parseResult.workItem?.session_key ? { sessionKey: parseResult.workItem.session_key } : {}),
+    ...(parseResult.workItem?.source_ref ? { sourceRef: parseResult.workItem.source_ref } : {}),
+    ...(idempotencyKeys[0] ? { canonicalDedupeKey: idempotencyKeys[0] } : {}),
+    ...(idempotencyKeys.length > 0 ? { idempotencyKeys } : {}),
+    ...(parseResult.ingressMeta ? { meta: parseResult.ingressMeta } : {}),
+  }
 
   if (!parseResult.shouldProcess) {
+    await recordWebhookIngressEvent({
+      pluginId: pluginInstance.plugin_id,
+      status: 'skipped',
+      detail: {
+        ...ingressDetailBase,
+        reasonCode: parseResult.ingressReasonCode ?? 'should_process_false',
+        reasonText: parseResult.ingressReasonText ?? 'Parser marked payload as non-actionable.',
+      },
+    })
     if (immediateResponse) {
       return {
         status: immediateResponse.status ?? 200,
@@ -152,7 +228,29 @@ export async function routeWebhook(
     return { status: 200, body: { ignored: true } }
   }
 
+  if (!pluginInstance.enabled) {
+    await recordWebhookIngressEvent({
+      pluginId: pluginInstance.plugin_id,
+      status: 'rejected',
+      detail: {
+        ...ingressDetailBase,
+        reasonCode: 'plugin_instance_disabled',
+        reasonText: 'Plugin instance disabled',
+      },
+    })
+    return { status: 200, body: { ignored: true, reason: 'Plugin instance disabled' } }
+  }
+
   if (!parseResult.workItem) {
+    await recordWebhookIngressEvent({
+      pluginId: pluginInstance.plugin_id,
+      status: 'skipped',
+      detail: {
+        ...ingressDetailBase,
+        reasonCode: parseResult.ingressReasonCode ?? 'no_work_item',
+        reasonText: parseResult.ingressReasonText ?? 'No work item to create',
+      },
+    })
     if (immediateResponse) {
       return {
         status: immediateResponse.status ?? 200,
@@ -163,10 +261,20 @@ export async function routeWebhook(
   }
 
   // Check idempotency
-  if (parseResult.idempotencyKey) {
-    const existing = await findIdempotencyKey(parseResult.idempotencyKey)
+  if (idempotencyKeys.length > 0) {
+    const existing = await findIdempotencyKeyByAnyKey(idempotencyKeys)
 
     if (existing) {
+      await recordWebhookIngressEvent({
+        pluginId: pluginInstance.plugin_id,
+        status: 'duplicate',
+        workItemId: existing.work_item_id,
+        detail: {
+          ...ingressDetailBase,
+          matchedKey: existing.key,
+          existingWorkItemId: existing.work_item_id,
+        },
+      })
       return {
         status: immediateResponse?.status ?? 200,
         body: immediateResponse?.body ?? { duplicate: true, workItemId: existing.work_item_id },
@@ -203,6 +311,15 @@ export async function routeWebhook(
         pluginInstanceId,
       })
       if (hookResult.blocked) {
+        await recordWebhookIngressEvent({
+          pluginId: pluginInstance.plugin_id,
+          status: 'skipped',
+          detail: {
+            ...ingressDetailBase,
+            reasonCode: 'blocked_by_plugin_hook',
+            reasonText: 'Blocked by plugin hook',
+          },
+        })
         return { status: 200, body: { ignored: true, reason: 'Blocked by plugin hook' } }
       }
       // Apply any mutations from the hook
@@ -223,13 +340,17 @@ export async function routeWebhook(
     plugin_instance_id: pluginInstance.id,
   })
 
-  // Record idempotency key
-  if (parseResult.idempotencyKey) {
-    await createIdempotencyKey({
-      key: parseResult.idempotencyKey,
-      work_item_id: workItem.id,
-    })
+  // Record idempotency keys
+  if (idempotencyKeys.length > 0) {
+    await createIdempotencyKeysIgnoreConflicts(idempotencyKeys, workItem.id)
   }
+
+  await recordWebhookIngressEvent({
+    pluginId: pluginInstance.plugin_id,
+    status: 'accepted',
+    workItemId: workItem.id,
+    detail: ingressDetailBase,
+  })
 
   // Hook 2: work_item.post_create — observability only (fire-and-forget)
   if (hooks?.postCreate) {
@@ -245,7 +366,14 @@ export async function routeWebhook(
   }
 
   // Extract sender name and message text from work item payload for queue
-  const senderName = (workItemPayload.senderName as string) ?? 'Unknown'
+  const senderNameRaw =
+    typeof workItemPayload.senderName === 'string' ? workItemPayload.senderName : null
+  const senderUsername =
+    typeof workItemPayload.senderUsername === 'string' ? workItemPayload.senderUsername : null
+  const senderName =
+    senderNameRaw && senderUsername
+      ? `${senderNameRaw} (@${senderUsername})`
+      : (senderNameRaw ?? (senderUsername ? `@${senderUsername}` : 'Unknown'))
   const messageText = (workItemPayload.body as string) ?? ''
   const actor = extractActorEnvelope(workItemPayload)
 

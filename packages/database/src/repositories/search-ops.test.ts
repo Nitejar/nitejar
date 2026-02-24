@@ -13,6 +13,7 @@ import {
   findIntegrationsByType,
   findPluginInstanceById,
   findPluginInstancesByType,
+  getAgentPluginInstanceAssignment,
   getAgentsForPluginInstance,
   getPluginInstancesForAgent,
   listAgentAssignmentsForPluginInstances,
@@ -152,6 +153,7 @@ async function createTestSchema(database: ReturnType<typeof getDb>): Promise<voi
     .addColumn('agent_id', 'text', (col) => col.notNull())
     .addColumn('plugin_instance_id', 'text', (col) => col.notNull())
     .addColumn('created_at', 'integer', (col) => col.notNull())
+    .addColumn('policy_json', 'text')
     .addPrimaryKeyConstraint('agent_integrations_pk', ['agent_id', 'plugin_instance_id'])
     .execute()
 }
@@ -492,11 +494,23 @@ describe('repository search + control operations', () => {
       pluginInstanceId: integrationA.id,
       agentId: TEST_AGENT_ID,
       enabled: true,
+      policyJson: JSON.stringify({
+        mode: 'allow_list',
+        allowedActions: ['read_thread'],
+      }),
     })
 
     expect(await listAgentIdsForPluginInstance(integrationA.id)).toEqual([TEST_AGENT_ID])
     expect((await getAgentsForPluginInstance(integrationA.id))[0]?.id).toBe(TEST_AGENT_ID)
     expect((await getPluginInstancesForAgent(TEST_AGENT_ID))[0]?.id).toBe(integrationA.id)
+    expect(
+      (
+        await getAgentPluginInstanceAssignment({
+          pluginInstanceId: integrationA.id,
+          agentId: TEST_AGENT_ID,
+        })
+      )?.policy_json
+    ).toContain('allow_list')
 
     const withAgents = await listPluginInstancesWithAgents()
     const mergedA = withAgents.find((entry) => entry.id === integrationA.id)

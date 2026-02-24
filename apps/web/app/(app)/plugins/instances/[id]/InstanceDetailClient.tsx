@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -20,6 +20,7 @@ import {
   IconRefresh,
   IconX,
   IconPlus,
+  IconExternalLink,
 } from '@tabler/icons-react'
 import { trpc } from '@/lib/trpc'
 import { Badge } from '@/components/ui/badge'
@@ -28,6 +29,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -81,7 +83,7 @@ export function InstanceDetailClient({ pluginInstanceId }: { pluginInstanceId: s
     return (
       <div className="py-16 text-center">
         <p className="text-sm text-muted-foreground">Plugin instance not found.</p>
-        <Link href="/plugins" className="mt-2 text-xs text-primary hover:underline">
+        <Link href="/admin/plugins" className="mt-2 text-xs text-primary hover:underline">
           Back to plugins
         </Link>
       </div>
@@ -90,6 +92,10 @@ export function InstanceDetailClient({ pluginInstanceId }: { pluginInstanceId: s
 
   const Icon = meta?.icon ? iconMap[meta.icon] : undefined
   const pluginType = instance.type
+  const credentialVaultHref = `/admin/settings/credentials?from=${encodeURIComponent(
+    `/admin/plugins/instances/${pluginInstanceId}`
+  )}`
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -97,10 +103,20 @@ export function InstanceDetailClient({ pluginInstanceId }: { pluginInstanceId: s
         title={instance.name}
         description={`${meta?.displayName ?? pluginType} connection`}
         backLink={{
-          href: `/plugins/${pluginType}`,
+          href: `/admin/plugins/${pluginType}`,
           label: `Back to ${meta?.displayName ?? pluginType}`,
         }}
       />
+
+      <Card className="border-white/10 bg-white/[0.02]">
+        <CardContent className="py-3 text-xs text-muted-foreground">
+          Need API keys?{' '}
+          <Link href={credentialVaultHref} className="text-primary hover:underline">
+            Open Credentials Vault
+          </Link>
+          .
+        </CardContent>
+      </Card>
 
       {/* Header card: name, type badge, enabled toggle */}
       <HeaderSection
@@ -116,7 +132,7 @@ export function InstanceDetailClient({ pluginInstanceId }: { pluginInstanceId: s
         <ConnectionStatusCard pluginInstanceId={pluginInstanceId} type={pluginType} />
 
         {/* Webhook URL */}
-        <WebhookUrlCard webhookUrl={instance.webhookUrl} pluginType={pluginType} />
+        <WebhookUrlCard webhookUrl={instance.webhookUrl} />
       </div>
 
       {/* Agent Assignment */}
@@ -128,6 +144,7 @@ export function InstanceDetailClient({ pluginInstanceId }: { pluginInstanceId: s
 
       {/* Type-specific settings */}
       {pluginType === 'github' && <GitHubSettingsCard pluginInstanceId={pluginInstanceId} />}
+      {pluginType === 'slack' && <SlackSetupCard pluginInstanceId={pluginInstanceId} />}
 
       {/* Danger zone */}
       <DangerZoneCard
@@ -249,39 +266,6 @@ function HeaderSection({
 // ConnectionStatusCard
 // ---------------------------------------------------------------------------
 
-/** Render test result text, turning URLs into clickable links. */
-function TestResultMessage({
-  testResult,
-}: {
-  testResult: { ok: boolean; error?: string; message?: string }
-}) {
-  const text = testResult.ok
-    ? (testResult.message ?? 'Connection verified')
-    : (testResult.error ?? 'Connection failed')
-
-  // Split on URLs and render them as links
-  const parts = text.split(/(https?:\/\/\S+)/g)
-  return (
-    <span>
-      {parts.map((part, i) =>
-        /^https?:\/\//.test(part) ? (
-          <a
-            key={i}
-            href={part}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline hover:opacity-80"
-          >
-            {testResult.ok ? part : 'Invite bot to server'}
-          </a>
-        ) : (
-          part
-        )
-      )}
-    </span>
-  )
-}
-
 function ConnectionStatusCard({
   pluginInstanceId,
   type,
@@ -294,40 +278,33 @@ function ConnectionStatusCard({
   const config = instanceQuery.data?.pluginInstance.config as Record<string, unknown> | null
 
   const isGitHub = type === 'github'
-  const isDiscord = type === 'discord'
+  const isSlack = type === 'slack'
   const manifestPending = isGitHub && config?.manifestPending === true
+  const slackPending = isSlack && config?.manifestPending === true
+  const connected = isGitHub ? Boolean(config?.appId || config?.appId === '••••••••') : true
 
-  let statusLabel = 'Ready'
-  let statusColor = 'text-emerald-300'
-
+  let statusLabel = 'Unknown'
+  let statusColor = 'text-zinc-400'
   if (isGitHub) {
     if (manifestPending) {
       statusLabel = 'Pending setup'
       statusColor = 'text-amber-400'
-    } else if (config?.appId || config?.appId === '••••••••') {
+    } else if (connected) {
       statusLabel = 'Connected'
       statusColor = 'text-emerald-300'
-    } else {
-      statusLabel = 'Unknown'
-      statusColor = 'text-zinc-400'
     }
-  } else if (isDiscord) {
-    // Discord status: show "Needs endpoint" until user has run a successful test
-    const hasCredentials = Boolean(
-      config?.applicationId && config?.botToken && config?.publicKey && config?.guildId
-    )
-    if (hasCredentials) {
-      statusLabel = 'Credentials saved'
-      statusColor = 'text-emerald-300'
-    } else {
-      statusLabel = 'Incomplete'
+  } else if (isSlack) {
+    if (slackPending) {
+      statusLabel = 'Pending setup'
       statusColor = 'text-amber-400'
+    } else {
+      statusLabel = 'Ready'
+      statusColor = 'text-emerald-300'
     }
+  } else {
+    statusLabel = 'Ready'
+    statusColor = 'text-emerald-300'
   }
-
-  const testResult = testMutation.data as
-    | { ok: boolean; error?: string; message?: string }
-    | undefined
 
   return (
     <Card className="border-white/10 bg-white/[0.02]">
@@ -346,20 +323,22 @@ function ConnectionStatusCard({
           <span className={`text-sm ${statusColor}`}>{statusLabel}</span>
         </div>
 
-        {testResult && (
+        {testMutation.data && (
           <div
-            className={`flex gap-2 rounded-md border px-3 py-2 text-xs ${
-              testResult.ok
+            className={`flex items-center gap-2 rounded-md border px-3 py-2 text-xs ${
+              testMutation.data.ok
                 ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
                 : 'border-red-500/30 bg-red-500/10 text-red-300'
             }`}
           >
-            {testResult.ok ? (
-              <IconCircleCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            {testMutation.data.ok ? (
+              <IconCircleCheck className="h-3.5 w-3.5" />
             ) : (
-              <IconAlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <IconAlertTriangle className="h-3.5 w-3.5" />
             )}
-            <TestResultMessage testResult={testResult} />
+            {testMutation.data.ok
+              ? 'Connection verified'
+              : (testMutation.data.error ?? 'Connection failed')}
           </div>
         )}
 
@@ -367,7 +346,7 @@ function ConnectionStatusCard({
           size="sm"
           variant="outline"
           onClick={() => testMutation.mutate({ pluginInstanceId })}
-          disabled={testMutation.isPending || manifestPending}
+          disabled={testMutation.isPending || manifestPending || slackPending}
         >
           {testMutation.isPending ? (
             <IconLoader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
@@ -385,9 +364,8 @@ function ConnectionStatusCard({
 // WebhookUrlCard
 // ---------------------------------------------------------------------------
 
-function WebhookUrlCard({ webhookUrl, pluginType }: { webhookUrl: string; pluginType: string }) {
+function WebhookUrlCard({ webhookUrl }: { webhookUrl: string }) {
   const [copied, setCopied] = useState(false)
-  const isDiscord = pluginType === 'discord'
 
   function handleCopy() {
     void navigator.clipboard.writeText(webhookUrl)
@@ -398,47 +376,10 @@ function WebhookUrlCard({ webhookUrl, pluginType }: { webhookUrl: string; plugin
   return (
     <Card className="border-white/10 bg-white/[0.02]">
       <CardHeader>
-        <CardTitle className="text-base">
-          {isDiscord ? 'Interactions Endpoint URL' : 'Webhook URL'}
-        </CardTitle>
+        <CardTitle className="text-base">Webhook URL</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
-        {isDiscord ? (
-          <div className="space-y-2 text-xs text-muted-foreground">
-            <p>
-              This goes in <span className="text-foreground">Interactions Endpoint URL</span> — not
-              the Webhooks section.
-            </p>
-            <ol className="list-decimal space-y-1 pl-4">
-              <li>
-                Open the{' '}
-                <a
-                  href="https://discord.com/developers/applications"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline"
-                >
-                  Discord Developer Portal
-                </a>
-              </li>
-              <li>Select your application</li>
-              <li>
-                Go to <span className="text-foreground">General Information</span> (not
-                &ldquo;Webhooks&rdquo;)
-              </li>
-              <li>
-                Find <span className="text-foreground">Interactions Endpoint URL</span> and paste
-                the URL below
-              </li>
-              <li>
-                Click <span className="text-foreground">Save Changes</span> — Discord will verify
-                the endpoint
-              </li>
-            </ol>
-          </div>
-        ) : (
-          <p className="text-xs text-muted-foreground">Point your webhook to this URL.</p>
-        )}
+      <CardContent className="space-y-2">
+        <p className="text-xs text-muted-foreground">Point your webhook to this URL.</p>
         <div className="flex items-center gap-2">
           <code className="flex-1 truncate rounded border border-white/10 bg-black/30 px-2 py-1.5 text-xs">
             {webhookUrl}
@@ -557,7 +498,7 @@ function AgentAssignmentCard({
                 className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-2 py-1"
               >
                 <Link
-                  href={`/agents/${agent.id}`}
+                  href={`/admin/agents/${agent.id}`}
                   className="text-xs hover:text-primary hover:underline"
                 >
                   {agent.name}
@@ -758,6 +699,409 @@ function GitHubSettingsCard({ pluginInstanceId }: { pluginInstanceId: string }) 
 }
 
 // ---------------------------------------------------------------------------
+// SlackSetupCard
+// ---------------------------------------------------------------------------
+
+function SlackSetupCard({ pluginInstanceId }: { pluginInstanceId: string }) {
+  const utils = trpc.useUtils()
+  const instanceQuery = trpc.pluginInstances.get.useQuery({ pluginInstanceId })
+  const updateMutation = trpc.pluginInstances.update.useMutation({
+    onSuccess: () => void utils.pluginInstances.get.invalidate({ pluginInstanceId }),
+  })
+  const testMutation = trpc.pluginInstances.testConnection.useMutation()
+  const testDirectMutation = trpc.pluginInstances.testConnectionDirect.useMutation()
+  const enableMutation = trpc.pluginInstances.setEnabled.useMutation({
+    onSuccess: () => void utils.pluginInstances.get.invalidate({ pluginInstanceId }),
+  })
+
+  const config = instanceQuery.data?.pluginInstance.config as Record<string, unknown> | null
+  const manifestPending = config?.manifestPending === true
+  const manifestQuery = trpc.slack.getManifest.useQuery(
+    { pluginInstanceId },
+    { enabled: manifestPending }
+  )
+
+  const [botToken, setBotToken] = useState('')
+  const [signingSecret, setSigningSecret] = useState('')
+  const [inboundPolicy, setInboundPolicy] = useState<'mentions' | 'all'>('mentions')
+  const [copiedItem, setCopiedItem] = useState<'manifest' | 'webhook' | null>(null)
+  const isSaving =
+    updateMutation.isPending ||
+    testMutation.isPending ||
+    testDirectMutation.isPending ||
+    enableMutation.isPending ||
+    instanceQuery.isLoading
+
+  useEffect(() => {
+    const value = config?.inboundPolicy
+    if (value === 'all' || value === 'mentions') {
+      setInboundPolicy(value)
+    }
+  }, [config?.inboundPolicy])
+
+  if (!manifestPending) {
+    return (
+      <Card className="border-white/10 bg-white/[0.02]">
+        <CardHeader>
+          <CardTitle className="text-base">Slack Credentials</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded border border-white/10 bg-black/20 px-2.5 py-2 text-[11px] text-muted-foreground">
+            <p>Paste a new Bot Token and Signing Secret to rotate credentials.</p>
+            <p>Bot Token: OAuth &amp; Permissions -&gt; Bot User OAuth Token</p>
+            <p>Signing Secret: Basic Information -&gt; App Credentials -&gt; Signing Secret</p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="slack-bot-token">Bot Token</Label>
+              <Input
+                id="slack-bot-token"
+                type="password"
+                placeholder="xoxb-..."
+                value={botToken}
+                onChange={(event) => setBotToken((event.target as HTMLInputElement).value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="slack-signing-secret">Signing Secret</Label>
+              <Input
+                id="slack-signing-secret"
+                type="password"
+                placeholder="abc123..."
+                value={signingSecret}
+                onChange={(event) => setSigningSecret((event.target as HTMLInputElement).value)}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Listen for</Label>
+            <Select
+              value={inboundPolicy}
+              onValueChange={(value) => setInboundPolicy(value as 'mentions' | 'all')}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="mentions">Mentions only (recommended)</SelectItem>
+                <SelectItem value="all">All messages in allowed channels</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={() => void completeSetup()} disabled={isSaving}>
+              {isSaving ? (
+                <>
+                  <IconLoader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save Settings'
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  async function copyValue(key: 'manifest' | 'webhook', value: string) {
+    await navigator.clipboard.writeText(value)
+    setCopiedItem(key)
+    setTimeout(() => setCopiedItem(null), 2000)
+  }
+
+  async function completeSetup() {
+    const trimmedBotToken = botToken.trim()
+    const trimmedSigningSecret = signingSecret.trim()
+    const hasNewCredentials = trimmedBotToken.length > 0 || trimmedSigningSecret.length > 0
+
+    const baseConfig: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(config ?? {})) {
+      if (key === 'botToken' || key === 'signingSecret' || key === 'manifestPending') continue
+      baseConfig[key] = value
+    }
+
+    if (!manifestPending) {
+      if (hasNewCredentials && (!trimmedBotToken || !trimmedSigningSecret)) {
+        toast.error('Paste both Bot Token and Signing Secret to update credentials.')
+        return
+      }
+
+      if (hasNewCredentials) {
+        const directTest = await testDirectMutation.mutateAsync({
+          type: 'slack',
+          config: {
+            ...baseConfig,
+            inboundPolicy,
+            botToken: trimmedBotToken,
+            signingSecret: trimmedSigningSecret,
+          },
+        })
+        if (!directTest.ok) {
+          toast.error(`Connection test failed: ${directTest.error ?? 'Unknown error'}`)
+          return
+        }
+      }
+
+      const updateConfig: Record<string, unknown> = {
+        ...baseConfig,
+        inboundPolicy,
+      }
+      if (hasNewCredentials) {
+        updateConfig.botToken = trimmedBotToken
+        updateConfig.signingSecret = trimmedSigningSecret
+      }
+
+      try {
+        await updateMutation.mutateAsync({
+          pluginInstanceId,
+          config: updateConfig,
+        })
+
+        if (hasNewCredentials) {
+          const verify = await testMutation.mutateAsync({ pluginInstanceId })
+          if (!verify.ok) {
+            toast.error(`Connection test failed: ${verify.error ?? 'Unknown error'}`)
+            return
+          }
+        }
+
+        setBotToken('')
+        setSigningSecret('')
+        toast.success(
+          hasNewCredentials ? 'Slack credentials and settings saved.' : 'Slack settings saved.'
+        )
+        await utils.pluginInstances.get.invalidate({ pluginInstanceId })
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Failed to save Slack settings')
+      }
+      return
+    }
+
+    if (manifestQuery.data && !manifestQuery.data.isPublicBaseUrl) {
+      toast.error(
+        'Slack webhook URL is local. Set a public app URL in Settings -> Runtime, then retry setup.'
+      )
+      return
+    }
+
+    if (!trimmedBotToken || !trimmedSigningSecret) {
+      toast.error('Paste both Bot Token and Signing Secret to continue.')
+      return
+    }
+
+    const readyConfig = {
+      ...baseConfig,
+      inboundPolicy,
+      botToken: trimmedBotToken,
+      signingSecret: trimmedSigningSecret,
+      manifestPending: false,
+    }
+
+    try {
+      await updateMutation.mutateAsync({
+        pluginInstanceId,
+        config: readyConfig,
+      })
+
+      const testResult = await testMutation.mutateAsync({ pluginInstanceId })
+      if (!testResult.ok) {
+        await updateMutation
+          .mutateAsync({
+            pluginInstanceId,
+            config: {
+              ...readyConfig,
+              manifestPending: true,
+            },
+          })
+          .catch(() => {})
+        toast.error(`Connection test failed: ${testResult.error ?? 'Unknown error'}`)
+        return
+      }
+
+      await enableMutation.mutateAsync({ pluginInstanceId, enabled: true })
+      toast.success('Slack connection is live.')
+      await utils.pluginInstances.get.invalidate({ pluginInstanceId })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to complete Slack setup')
+    }
+  }
+
+  const createUrl = manifestQuery.data?.createUrl
+  const manifestJson = manifestQuery.data?.manifestJson
+  const requestUrl = manifestQuery.data?.requestUrl
+  return (
+    <Card className="border-amber-500/20 bg-amber-500/[0.04]">
+      <CardHeader>
+        <CardTitle className="text-base">Finish Slack Setup</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          This connection is waiting for Slack app registration. Follow these steps and we will
+          verify credentials before enabling the connection.
+        </div>
+
+        <div className="flex flex-wrap gap-1.5 text-[11px]">
+          <span className="rounded border border-amber-400/40 bg-amber-500/20 px-2 py-0.5">
+            Step 1: Create app
+          </span>
+          <span className="rounded border border-amber-400/40 bg-amber-500/10 px-2 py-0.5">
+            Step 2: Install + invite
+          </span>
+          <span className="rounded border border-amber-400/40 bg-amber-500/10 px-2 py-0.5">
+            Step 3: Paste + verify
+          </span>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-xs font-medium">1. Create the Slack app with this manifest</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              onClick={() => {
+                if (!createUrl) return
+                window.open(createUrl, '_blank', 'noopener,noreferrer')
+              }}
+              disabled={!createUrl}
+            >
+              <IconExternalLink className="mr-1.5 h-3.5 w-3.5" />
+              Open Slack App Builder
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => manifestJson && void copyValue('manifest', manifestJson)}
+              disabled={!manifestJson}
+            >
+              {copiedItem === 'manifest' ? (
+                <IconCheck className="mr-1.5 h-3.5 w-3.5 text-emerald-300" />
+              ) : (
+                <IconCopy className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              Copy Manifest JSON
+            </Button>
+          </div>
+          {requestUrl && (
+            <div className="space-y-1">
+              <p className="text-[11px] text-muted-foreground">Request URL</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 truncate rounded border border-white/10 bg-black/30 px-2 py-1.5 text-xs">
+                  {requestUrl}
+                </code>
+                <Button
+                  size="icon-sm"
+                  variant="outline"
+                  onClick={() => void copyValue('webhook', requestUrl)}
+                >
+                  {copiedItem === 'webhook' ? (
+                    <IconCheck className="h-3.5 w-3.5 text-emerald-300" />
+                  ) : (
+                    <IconCopy className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+          {!manifestQuery.data?.isPublicBaseUrl && (
+            <p className="text-xs font-medium text-amber-300">
+              This app URL is local. Set a public app URL in Settings -&gt; Runtime, then retry
+              setup.
+            </p>
+          )}
+          {manifestJson && (
+            <Textarea
+              readOnly
+              value={manifestJson}
+              className="min-h-40 font-mono text-[11px]"
+              aria-label="Slack app manifest JSON"
+            />
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-xs font-medium">
+            2. Install the app, then paste credentials from Slack App Settings
+          </p>
+          <div className="rounded border border-white/10 bg-black/20 px-2.5 py-2 text-[11px] text-muted-foreground">
+            <p>
+              Invite after install:{' '}
+              <code className="rounded bg-white/10 px-1 py-0.5">
+                {manifestQuery.data?.setupGuide?.inviteCommand ?? '/invite @your-bot-handle'}
+              </code>
+            </p>
+            <p>
+              Bot Token: {manifestQuery.data?.setupGuide?.botTokenPath ?? 'OAuth & Permissions'}
+            </p>
+            <p>
+              Signing Secret:{' '}
+              {manifestQuery.data?.setupGuide?.signingSecretPath ?? 'Basic Information'}
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="slack-bot-token">Bot Token</Label>
+              <Input
+                id="slack-bot-token"
+                type="password"
+                placeholder="xoxb-..."
+                value={botToken}
+                onChange={(event) => setBotToken((event.target as HTMLInputElement).value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="slack-signing-secret">Signing Secret</Label>
+              <Input
+                id="slack-signing-secret"
+                type="password"
+                placeholder="abc123..."
+                value={signingSecret}
+                onChange={(event) => setSigningSecret((event.target as HTMLInputElement).value)}
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Listen for</Label>
+            <Select
+              value={inboundPolicy}
+              onValueChange={(value) => setInboundPolicy(value as 'mentions' | 'all')}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="mentions">Mentions only (recommended)</SelectItem>
+                <SelectItem value="all">All messages in allowed channels</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            onClick={() => void completeSetup()}
+            disabled={isSaving || manifestQuery.data?.isPublicBaseUrl === false}
+          >
+            {isSaving ? (
+              <>
+                <IconLoader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                Verifying...
+              </>
+            ) : (
+              'Verify & Enable Slack'
+            )}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // DangerZoneCard
 // ---------------------------------------------------------------------------
 
@@ -774,7 +1118,7 @@ function DangerZoneCard({
   const deleteMutation = trpc.pluginInstances.delete.useMutation({
     onSuccess: () => {
       toast.success('Connection deleted')
-      router.push(`/plugins/${pluginType}`)
+      router.push(`/admin/plugins/${pluginType}`)
     },
   })
 
@@ -805,18 +1149,13 @@ function DangerZoneCard({
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
                   variant="destructive"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    deleteMutation.mutate({ pluginInstanceId })
-                  }}
-                  disabled={deleteMutation.isPending || deleteMutation.isSuccess}
+                  onClick={() => deleteMutation.mutate({ pluginInstanceId })}
+                  disabled={deleteMutation.isPending}
                 >
-                  {deleteMutation.isPending || deleteMutation.isSuccess
-                    ? 'Deleting...'
-                    : 'Delete Connection'}
+                  {deleteMutation.isPending ? 'Deleting...' : 'Delete Connection'}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>

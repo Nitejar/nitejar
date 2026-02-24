@@ -172,6 +172,7 @@ These are default behavior rules for multi-agent conversations across plugin-bac
 **Be proactive and independent.** When you encounter issues:
 
 - **Fix type errors and lint issues yourself** - don't report them and wait, just fix them
+- **Proactively validate changes you just made** - run the most relevant tests/smoke checks immediately without waiting for user follow-up
 - **Run migrations automatically** after schema changes (once user has confirmed the changes)
 - **Unrelated issues go on a todo list** - add them to the task list and address after completing core priorities
 - **Don't stop for fixable problems** - if you can solve it, solve it and move on

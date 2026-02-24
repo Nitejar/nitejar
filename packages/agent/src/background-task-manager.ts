@@ -359,7 +359,7 @@ export class BackgroundTaskManager {
       return
     }
 
-    const reattached = attachBackgroundTaskSession(this.spriteName, runtime.sessionId)
+    const reattached = await attachBackgroundTaskSession(this.spriteName, runtime.sessionId)
     this.attachObservers(runtime, reattached)
   }
 

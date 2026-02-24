@@ -24,6 +24,7 @@ import { evalsRouter } from './evals'
 import { skillsRouter } from './skills'
 import { sessionsRouter } from './sessions'
 import { mediaArtifactsRouter } from './media-artifacts'
+import { slackRouter } from './slack'
 
 export const appRouter = router({
   org: orgRouter,
@@ -51,6 +52,7 @@ export const appRouter = router({
   skills: skillsRouter,
   sessions: sessionsRouter,
   mediaArtifacts: mediaArtifactsRouter,
+  slack: slackRouter,
 })
 
 export type AppRouter = typeof appRouter

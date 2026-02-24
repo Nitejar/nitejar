@@ -8,12 +8,6 @@ import { SpriteSessionManager } from '../../src/session'
 async function main() {
   console.log('=== Testing Sprite Session ===\n')
 
-  // Check for required env var
-  if (!process.env.SPRITES_TOKEN) {
-    console.error('ERROR: SPRITES_TOKEN not set')
-    process.exit(1)
-  }
-
   const spriteName = 'nitejar-fa61a8b7-8dd7-4182-ab74-aeb4e940e095'
   const sessionKey = `test-session-${Date.now()}`
   const agentId = 'test-agent-001'

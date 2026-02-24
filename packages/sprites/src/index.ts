@@ -89,3 +89,13 @@ export {
   type SpawnBackgroundTaskOptions,
   type SpawnBackgroundTaskResult,
 } from './background-tasks'
+
+// Token settings
+export {
+  SPRITES_CAPABILITY_ID,
+  getSpritesTokenSettings,
+  getOptionalSpritesToken,
+  requireSpritesToken,
+  isSpritesExecutionAvailable,
+  type SpritesTokenSettings,
+} from './token-settings'

@@ -363,6 +363,7 @@ export interface AgentPluginInstanceTable {
   agent_id: string
   plugin_instance_id: string
   created_at: Generated<number>
+  policy_json: string | null
 }
 
 export type AgentPluginInstance = Selectable<AgentPluginInstanceTable>
@@ -1029,6 +1030,7 @@ export interface RuntimeControlTable {
   paused_at: number | null
   control_epoch: Generated<number>
   max_concurrent_dispatches: Generated<number>
+  app_base_url: string | null
   updated_at: Generated<number>
 }
 

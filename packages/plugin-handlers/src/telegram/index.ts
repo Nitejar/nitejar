@@ -193,6 +193,20 @@ export const telegramHandler: PluginHandler<TelegramConfig> = {
     // React with eyes emoji to show we're looking at it
     await setMessageReaction(config, context.chatId, context.messageId, '👀')
   },
+
+  async dismissReceipt(
+    pluginInstance: PluginInstanceRecord,
+    responseContext?: unknown
+  ): Promise<void> {
+    const config = parseConfig(pluginInstance)
+    if (!config?.botToken) return
+
+    const context = responseContext as TelegramResponseContext | undefined
+    if (!context?.chatId || !context?.messageId) return
+
+    // Clear the eyes reaction since no agent responded
+    await setMessageReaction(config, context.chatId, context.messageId, null)
+  },
 }
 
 // Re-export webhook utilities

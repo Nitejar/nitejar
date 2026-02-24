@@ -3,6 +3,7 @@ import type OpenAI from 'openai'
 import {
   buildRetrySeedPromptFromStoredMessages,
   formatConversationForPostProcessing,
+  shouldSkipFinalModePostProcessing,
 } from './runner'
 import {
   buildPostProcessingPrompt,
@@ -50,6 +51,31 @@ describe('formatConversationForPostProcessing', () => {
     const transcript = formatConversationForPostProcessing(messages, 'Pixel', 'Pat (@pat_user)')
     expect(transcript).toContain('[Pat (@pat_user)]: Fix the bug')
     expect(transcript).toContain('[Pixel]: Fixed it.')
+  })
+
+  it('uses per-line user speaker labels for grouped steering content', () => {
+    const messages: OpenAI.ChatCompletionMessageParam[] = [
+      {
+        role: 'user',
+        content: '[Josh] Please check the latest run\n[Ava] Also include why it failed',
+      },
+    ]
+
+    const transcript = formatConversationForPostProcessing(messages, 'Pixel', 'Requester')
+    expect(transcript).toContain('[Josh]: Please check the latest run')
+    expect(transcript).toContain('[Ava]: Also include why it failed')
+  })
+
+  it('derives user speaker label from From-context metadata', () => {
+    const messages: OpenAI.ChatCompletionMessageParam[] = [
+      {
+        role: 'user',
+        content: '[From: Pat @pat_user | Via: slack]\nCan you summarize this run?',
+      },
+    ]
+
+    const transcript = formatConversationForPostProcessing(messages, 'Pixel', 'Requester')
+    expect(transcript).toContain('[Pat @pat_user]: Can you summarize this run?')
   })
 
   it('skips system messages', () => {
@@ -156,9 +182,9 @@ describe('buildPostProcessingPrompt', () => {
     expect(prompt).toContain('You are a designer.')
   })
 
-  it('instructs not to repeat prior content', () => {
+  it('scopes the response to this run', () => {
     const prompt = buildPostProcessingPrompt(baseAgent)
-    expect(prompt).toContain('Do NOT repeat or rehash content from prior interactions')
+    expect(prompt).toContain("Cover only this run's work")
   })
 
   it('scopes to current run', () => {
@@ -167,17 +193,21 @@ describe('buildPostProcessingPrompt', () => {
     expect(prompt).not.toContain('your full conversation')
   })
 
-  it('includes anti-persona-flip instructions', () => {
+  it('includes direct-reply and persona instructions', () => {
     const prompt = buildPostProcessingPrompt(baseAgent)
-    expect(prompt).toContain('Do NOT adopt Requester')
+    expect(prompt).toContain('Reply directly to Requester')
+    expect(prompt).toContain('do not write as if you are Requester')
     expect(prompt).toContain('Write as yourself (Pixel)')
-    expect(prompt).toContain('[Requester] and [Pixel]')
+    expect(prompt).toContain('[Name (@handle)]')
+    expect(prompt).toContain('[Pixel]')
   })
 
   it('uses custom requester label in instructions', () => {
     const prompt = buildPostProcessingPrompt(baseAgent, { requesterLabel: 'Pat (@pat_user)' })
-    expect(prompt).toContain('[Pat (@pat_user)] and [Pixel]')
-    expect(prompt).toContain('Do NOT adopt Pat (@pat_user)')
+    expect(prompt).toContain('[Name (@handle)]')
+    expect(prompt).toContain('[Pixel]')
+    expect(prompt).toContain('Reply directly to Pat (@pat_user)')
+    expect(prompt).toContain('do not write as if you are Pat (@pat_user)')
   })
 
   it('includes hit-limit warning when specified', () => {
@@ -334,24 +364,12 @@ describe('getRequesterIdentity', () => {
 })
 
 describe('single-response skip logic', () => {
-  // These test the conditions that determine whether post-processing is skipped.
-  // The actual skip happens in runAgent, but we can unit-test the detection logic here.
-
-  function shouldSkipPostProcessing(
-    currentRunMessages: OpenAI.ChatCompletionMessageParam[],
-    hitLimit: boolean
-  ): boolean {
-    const assistantMessages = currentRunMessages.filter((m) => m.role === 'assistant')
-    const hasToolUse = currentRunMessages.some((m) => m.role === 'tool')
-    return assistantMessages.length === 1 && !hasToolUse && !hitLimit
-  }
-
   it('skips when single assistant message, no tools', () => {
     const messages: OpenAI.ChatCompletionMessageParam[] = [
       { role: 'user', content: 'What is thum.io?' },
       { role: 'assistant', content: 'It is a screenshot service.' },
     ]
-    expect(shouldSkipPostProcessing(messages, false)).toBe(true)
+    expect(shouldSkipFinalModePostProcessing(messages, false)).toBe(true)
   })
 
   it('does not skip when there are tool calls', () => {
@@ -371,7 +389,7 @@ describe('single-response skip logic', () => {
       { role: 'tool', tool_call_id: 'tc-1', content: 'done' },
       { role: 'assistant', content: 'Fixed it.' },
     ]
-    expect(shouldSkipPostProcessing(messages, false)).toBe(false)
+    expect(shouldSkipFinalModePostProcessing(messages, false)).toBe(false)
   })
 
   it('does not skip when hit limit', () => {
@@ -379,7 +397,7 @@ describe('single-response skip logic', () => {
       { role: 'user', content: 'Do everything' },
       { role: 'assistant', content: 'I did some stuff.' },
     ]
-    expect(shouldSkipPostProcessing(messages, true)).toBe(false)
+    expect(shouldSkipFinalModePostProcessing(messages, true)).toBe(false)
   })
 
   it('does not skip when multiple assistant messages', () => {
@@ -389,12 +407,12 @@ describe('single-response skip logic', () => {
       { role: 'user', content: 'More info' },
       { role: 'assistant', content: 'Second thought.' },
     ]
-    expect(shouldSkipPostProcessing(messages, false)).toBe(false)
+    expect(shouldSkipFinalModePostProcessing(messages, false)).toBe(false)
   })
 
   it('does not skip with zero assistant messages', () => {
     const messages: OpenAI.ChatCompletionMessageParam[] = [{ role: 'user', content: 'Hello?' }]
-    expect(shouldSkipPostProcessing(messages, false)).toBe(false)
+    expect(shouldSkipFinalModePostProcessing(messages, false)).toBe(false)
   })
 })
 

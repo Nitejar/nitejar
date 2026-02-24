@@ -22,7 +22,9 @@ export default async function AdminLayout({
   const session = await getServerSession()
   if (!session) {
     const cookieStore = await cookies()
-    const hasStaleSessionCookie = cookieStore.getAll().some((cookie) => hasSessionCookie(cookie.name))
+    const hasStaleSessionCookie = cookieStore
+      .getAll()
+      .some((cookie) => hasSessionCookie(cookie.name))
     if (hasStaleSessionCookie) {
       redirect('/api/auth/invalid-session')
     }
@@ -45,7 +47,8 @@ export default async function AdminLayout({
           <div className="relative min-h-screen">
             <AdminSidebar
               user={{
-                name: typeof userName === 'string' && userName.trim().length > 0 ? userName : 'Account',
+                name:
+                  typeof userName === 'string' && userName.trim().length > 0 ? userName : 'Account',
                 email: typeof userEmail === 'string' ? userEmail : '',
               }}
             />

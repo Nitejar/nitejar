@@ -1,6 +1,7 @@
 import {
   findAgentById,
   findPluginInstanceById,
+  getAgentPluginInstanceAssignment,
   listAgentAssignmentsForPluginInstances,
   listAgentIdsForPluginInstance,
   searchPluginInstances,
@@ -56,6 +57,29 @@ function parseAndRedactConfig(rawConfig: string | null, sensitiveFields: string[
     return redactConfigValue(parsed, new Set(sensitiveFields))
   } catch {
     return null
+  }
+}
+
+function normalizeAssignmentPolicy(
+  value:
+    | {
+        mode?: 'allow_all' | 'allow_list'
+        allowedActions?: string[]
+      }
+    | null
+    | undefined
+): { mode: 'allow_all' | 'allow_list'; allowedActions: string[] } | null | undefined {
+  if (value === undefined) return undefined
+  if (value === null) return null
+
+  const mode = value.mode === 'allow_list' ? 'allow_list' : 'allow_all'
+  const allowedActions = Array.isArray(value.allowedActions)
+    ? [...new Set(value.allowedActions.filter((entry) => typeof entry === 'string'))]
+    : []
+
+  return {
+    mode,
+    allowedActions,
   }
 }
 
@@ -155,16 +179,39 @@ export async function setPluginInstanceAgentAssignmentOp(
   const agent = await findAgentById(input.agentId)
   if (!agent) throw new Error('Agent not found')
 
+  const normalizedPolicy = normalizeAssignmentPolicy(input.policy)
   await setAgentPluginInstanceAssignment({
     pluginInstanceId: input.pluginInstanceId,
     agentId: input.agentId,
     enabled: input.enabled,
+    ...(normalizedPolicy !== undefined
+      ? { policyJson: normalizedPolicy === null ? null : JSON.stringify(normalizedPolicy) }
+      : {}),
   })
+
+  const assignment = await getAgentPluginInstanceAssignment({
+    pluginInstanceId: input.pluginInstanceId,
+    agentId: input.agentId,
+  })
+
+  let policy: { mode: 'allow_all' | 'allow_list'; allowedActions: string[] } | null = null
+  if (assignment?.policy_json) {
+    try {
+      const parsed = JSON.parse(assignment.policy_json) as {
+        mode?: 'allow_all' | 'allow_list'
+        allowedActions?: string[]
+      }
+      policy = normalizeAssignmentPolicy(parsed) ?? null
+    } catch {
+      policy = null
+    }
+  }
 
   return {
     ok: true,
     pluginInstanceId: input.pluginInstanceId,
     agentId: input.agentId,
     enabled: input.enabled,
+    policy,
   }
 }

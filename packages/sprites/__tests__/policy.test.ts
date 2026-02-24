@@ -41,7 +41,7 @@ describe('policy helpers', () => {
 
   it('gets and sets sprite policy', async () => {
     const sprite = createMockSprite([{ domain: '*', action: 'allow' }])
-    getSpriteMock.mockReturnValue(sprite as never)
+    getSpriteMock.mockResolvedValue(sprite as never)
 
     const policy = await getSpriteNetworkPolicy('sprite-1')
     expect(policy.rules).toHaveLength(1)
@@ -54,7 +54,7 @@ describe('policy helpers', () => {
 
   it('refreshes existing non-empty policy when no preset is requested', async () => {
     const sprite = createMockSprite([{ domain: '*.github.com', action: 'allow' }])
-    getSpriteMock.mockReturnValue(sprite as never)
+    getSpriteMock.mockResolvedValue(sprite as never)
 
     const result = await refreshSpriteNetworkPolicy('sprite-1')
 
@@ -66,7 +66,7 @@ describe('policy helpers', () => {
 
   it('applies fallback preset when current policy is empty', async () => {
     const sprite = createMockSprite([])
-    getSpriteMock.mockReturnValue(sprite as never)
+    getSpriteMock.mockResolvedValue(sprite as never)
 
     const result = await refreshSpriteNetworkPolicy('sprite-1')
 
@@ -77,7 +77,7 @@ describe('policy helpers', () => {
 
   it('applies explicit preset when requested', async () => {
     const sprite = createMockSprite([])
-    getSpriteMock.mockReturnValue(sprite as never)
+    getSpriteMock.mockResolvedValue(sprite as never)
 
     const result = await refreshSpriteNetworkPolicy('sprite-1', { preset: 'github-only' })
 
@@ -89,7 +89,7 @@ describe('policy helpers', () => {
 
   it('syncs policy to sprite when sprite exists', async () => {
     const sprite = createMockSprite([])
-    getSpriteMock.mockReturnValue(sprite as never)
+    getSpriteMock.mockResolvedValue(sprite as never)
 
     const result = await syncAgentNetworkPolicy('sprite-1', {
       rules: [{ domain: '*', action: 'deny' }],

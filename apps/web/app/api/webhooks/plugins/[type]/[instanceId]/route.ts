@@ -47,8 +47,26 @@ interface RouteParams {
 
 /** Commands that trigger a session reset */
 const RESET_COMMANDS = ['clear']
-/** Intentionally disabled while we harden actor envelope + origin-exclusion routing. */
-const ENABLE_AGENT_MENTION_HANDOFFS = false
+
+function isDiscordDeferredAckBody(body: unknown): boolean {
+  if (!body || typeof body !== 'object') return false
+  return (body as { type?: unknown }).type === 5
+}
+
+function isSlackMentionHandoffEnabled(
+  pluginInstance: { type: string; config: string | null } | null
+): boolean {
+  if (!pluginInstance || pluginInstance.type !== 'slack' || !pluginInstance.config) {
+    return false
+  }
+
+  try {
+    const parsed = JSON.parse(pluginInstance.config) as { agentMentionHandoffs?: unknown }
+    return parsed.agentMentionHandoffs === true
+  } catch {
+    return false
+  }
+}
 
 /**
  * Fisher-Yates shuffle (in-place, returns same array).
@@ -227,18 +245,21 @@ async function processWorkItemForAgent(
 
     // Resolve plugin instance once so we can emit progress updates during the run.
     const pluginInstance = await getPluginInstanceWithConfig(pluginInstanceId)
+    const enableMentionHandoffs = isSlackMentionHandoffEnabled(pluginInstance)
     const handler = pluginInstance ? pluginHandlerRegistry.get(pluginInstance.type) : null
     let lastDeliveredAssistantMessage: string | null = null
     let progressDeliveryQueue = Promise.resolve()
 
     const sendAssistantUpdate = async (
       rawContent: string | null | undefined,
-      opts?: { hitLimit?: boolean }
+      opts?: { hitLimit?: boolean; phase?: 'progress' | 'final' }
     ): Promise<void> => {
       const content = normalizeAssistantResponse(rawContent)
       if (!content) return
       let prefixed = prefixContent(content)
-      if (prefixed === lastDeliveredAssistantMessage) return
+      // Suppress only the final handoff duplicate case (progress already sent
+      // the same text); do not suppress repeated streaming updates by content.
+      if (opts?.phase === 'final' && prefixed === lastDeliveredAssistantMessage) return
       if (!pluginInstance || !handler?.postResponse) return
 
       // Hook 8: response.pre_deliver — can transform or block delivery
@@ -305,7 +326,7 @@ async function processWorkItemForAgent(
           ? (event) => {
               if (event.type === 'message' && event.role === 'assistant') {
                 progressDeliveryQueue = progressDeliveryQueue
-                  .then(() => sendAssistantUpdate(event.content))
+                  .then(() => sendAssistantUpdate(event.content, { phase: 'progress' }))
                   .catch((sendError) => {
                     console.warn('[webhook] Failed to send assistant progress update:', sendError)
                   })
@@ -324,20 +345,21 @@ async function processWorkItemForAgent(
     await updateWorkItem(workItemId, { status: 'DONE' })
 
     // Send final response if it wasn't already delivered as a progress update.
-    await sendAssistantUpdate(result.finalResponse, { hitLimit: result.hitLimit })
+    await sendAssistantUpdate(result.finalResponse, {
+      hitLimit: result.hitLimit,
+      phase: 'final',
+    })
 
-    // @Mention dispatch: if the agent mentioned other agents, trigger them.
-    // Skip agents already dispatched for this work item — they'll see the @mention
-    // in session context when they run via normal sequential dispatch.
+    // @Mention dispatch (Slack-only, per-instance opt-in): if the agent mentioned
+    // other agents with explicit transfer intent, trigger them.
     const chainDepth = options?.chainDepth ?? 0
     const MAX_CHAIN_DEPTH = 3
     if (
-      ENABLE_AGENT_MENTION_HANDOFFS &&
+      enableMentionHandoffs &&
       result.finalResponse &&
       chainDepth < MAX_CHAIN_DEPTH &&
       options?.allAgents
     ) {
-      const alreadyDispatchedIds = new Set(options.allAgents.map((a) => a.id))
       const knownHandles = options.allAgents.filter((a) => a.id !== agent.id).map((a) => a.handle)
       const mentionedHandles = extractMentions(result.finalResponse, knownHandles)
 
@@ -345,18 +367,16 @@ async function processWorkItemForAgent(
         try {
           const mentionedAgent = await findAgentByHandle(handle)
           if (!mentionedAgent) continue
+          if (mentionedAgent.id === agent.id) {
+            console.log(`[webhook] @mention skip (self-mention): ${agent.handle}→@${handle}`)
+            continue
+          }
 
           const transferIntent = detectOwnershipTransferIntent(result.finalResponse, handle)
           if (!transferIntent.explicit) {
             console.log(
               `[webhook] @mention skip (no explicit transfer intent): ${agent.handle}→@${handle}`
             )
-            continue
-          }
-
-          // Skip if this agent is already dispatched for this work item
-          if (alreadyDispatchedIds.has(mentionedAgent.id)) {
-            console.log(`[webhook] @mention skip (already dispatched): ${agent.handle}→@${handle}`)
             continue
           }
 
@@ -543,7 +563,7 @@ async function dispatchToAgents(
       coalescedText: options?.coalescedText,
       agentCount,
       teamContext,
-      allAgents: targetAgents,
+      allAgents: agents,
     }
 
     if (i === 0) {
@@ -584,7 +604,9 @@ export async function POST(request: Request, context: RouteParams) {
   const { type, instanceId } = await context.params
 
   // Ensure runtime workers are active (startup should already do this via instrumentation).
-  await ensureRuntimeWorkers()
+  void ensureRuntimeWorkers().catch((error) => {
+    console.warn('[webhook] Failed to ensure runtime workers:', error)
+  })
 
   // Wire hooks 1-2 (work_item.pre_create / post_create) via callbacks
   // to avoid circular deps between plugin-handlers and plugin-runtime
@@ -608,55 +630,108 @@ export async function POST(request: Request, context: RouteParams) {
 
   const result = await routeWebhook(type, instanceId, request, webhookHooks)
 
-  // If a work item was created, process it asynchronously
+  // If a work item was created, process it.
   if (result.workItemId) {
-    await publishRoutineEnvelopeFromWorkItem(result.workItemId).catch((error) => {
-      console.warn('[webhook] Failed to publish routine envelope from webhook work item', {
-        workItemId: result.workItemId,
-        error: error instanceof Error ? error.message : String(error),
-      })
-    })
-
-    // Check if this is a command that should be handled specially
-    if (result.command) {
-      // Handle command (fire and forget)
-      handleCommand(
-        result.command,
-        result.workItemId,
-        result.pluginInstanceId!,
-        result.responseContext
-      )
-        .then(async (handled) => {
-          if (!handled) {
-            // Unknown command, process as normal message — dispatch to all agents
-            const agents = await getAgentsForPluginInstance(result.pluginInstanceId!)
-            const originAgentId = resolveOriginAgentId(result.actor, agents)
-            return dispatchToAgents(
-              agents,
-              result.workItemId!,
-              result.pluginInstanceId!,
-              result.responseContext,
-              { originAgentId }
-            )
-          }
+    const processCreatedWorkItem = async () => {
+      await publishRoutineEnvelopeFromWorkItem(result.workItemId!).catch((error) => {
+        console.warn('[webhook] Failed to publish routine envelope from webhook work item', {
+          workItemId: result.workItemId,
+          error: error instanceof Error ? error.message : String(error),
         })
-        .catch((err) => console.error('[webhook] Command handling error:', err))
-    } else if (result.sessionKey) {
-      // Regular message with a session key — route through per-agent queues
-      const pluginInstanceData = await getPluginInstanceWithConfig(result.pluginInstanceId!)
-      const queueConfig = extractQueueConfig(pluginInstanceData?.config ?? null)
-      const agents = await getAgentsForPluginInstance(result.pluginInstanceId!)
-      const originAgentId = resolveOriginAgentId(result.actor, agents)
-      const targetAgents = filterOriginAgent(agents, originAgentId)
+      })
 
-      if (agents.length === 0) {
-        console.error('[webhook] No agents assigned to plugin instance', result.pluginInstanceId)
-        await updateWorkItem(result.workItemId, { status: 'FAILED' })
-      } else if (targetAgents.length === 0) {
-        console.log('[webhook] Queue enqueue skipped: origin-agent exclusion removed all targets')
-        await updateWorkItem(result.workItemId, { status: 'DONE' })
+      // Check if this is a command that should be handled specially
+      if (result.command) {
+        // Handle command (fire and forget)
+        handleCommand(
+          result.command,
+          result.workItemId!,
+          result.pluginInstanceId!,
+          result.responseContext
+        )
+          .then(async (handled) => {
+            if (!handled) {
+              // Unknown command, process as normal message — dispatch to all agents
+              const agents = await getAgentsForPluginInstance(result.pluginInstanceId!)
+              const originAgentId = resolveOriginAgentId(result.actor, agents)
+              return dispatchToAgents(
+                agents,
+                result.workItemId!,
+                result.pluginInstanceId!,
+                result.responseContext,
+                { originAgentId }
+              )
+            }
+          })
+          .catch((err) => console.error('[webhook] Command handling error:', err))
+      } else if (result.sessionKey) {
+        // Regular message with a session key — route through per-agent queues
+        const pluginInstanceData = await getPluginInstanceWithConfig(result.pluginInstanceId!)
+        const queueConfig = extractQueueConfig(pluginInstanceData?.config ?? null)
+        const agents = await getAgentsForPluginInstance(result.pluginInstanceId!)
+        const originAgentId = resolveOriginAgentId(result.actor, agents)
+        const targetAgents = filterOriginAgent(agents, originAgentId)
+
+        if (agents.length === 0) {
+          console.error('[webhook] No agents assigned to plugin instance', result.pluginInstanceId)
+          await updateWorkItem(result.workItemId!, { status: 'FAILED' })
+        } else if (targetAgents.length === 0) {
+          console.log('[webhook] Queue enqueue skipped: origin-agent exclusion removed all targets')
+          await updateWorkItem(result.workItemId!, { status: 'DONE' })
+        } else {
+          // Acknowledge receipt once (before dispatching to any agents)
+          if (pluginInstanceData) {
+            const handler = pluginHandlerRegistry.get(pluginInstanceData.type)
+            if (handler?.acknowledgeReceipt) {
+              handler
+                .acknowledgeReceipt(pluginInstanceData, result.responseContext)
+                .catch((err) => console.warn('[webhook] Failed to acknowledge receipt:', err))
+            }
+          }
+
+          // Shuffle for fair lane assignment order; durable workers handle serialization per lane.
+          const shuffled = shuffleArray([...targetAgents])
+          const arrivedAt = Math.floor(Date.now() / 1000)
+          for (const [index, agent] of shuffled.entries()) {
+            // Resolve per-agent queue config: agent config > plugin instance config > defaults
+            const agentCfg = parseAgentConfig(agent.config)
+            const agentQueue = agentCfg.queue ?? {}
+            const resolvedMode = agentQueue.mode ?? queueConfig.mode
+            const resolvedDebounceMs = agentQueue.debounceMs ?? queueConfig.debounceMs
+            const staggeredDebounceMs = resolvedDebounceMs + index * QUEUE_AGENT_STAGGER_MS
+            const resolvedMaxQueued = agentQueue.maxQueued ?? queueConfig.maxQueued
+
+            const queueKey = `${result.sessionKey}:${agent.id}`
+            await createQueueMessage({
+              queue_key: queueKey,
+              work_item_id: result.workItemId!,
+              plugin_instance_id: result.pluginInstanceId!,
+              response_context: result.responseContext
+                ? JSON.stringify(result.responseContext)
+                : null,
+              text: result.messageText ?? '',
+              sender_name: result.senderName ?? 'Unknown',
+              arrived_at: arrivedAt,
+              status: 'pending',
+              dispatch_id: null,
+              drop_reason: null,
+            })
+
+            await upsertQueueLaneOnMessage({
+              queueKey,
+              sessionKey: result.sessionKey,
+              agentId: agent.id,
+              pluginInstanceId: result.pluginInstanceId!,
+              arrivedAt,
+              debounceMs: staggeredDebounceMs,
+              maxQueued: resolvedMaxQueued,
+              mode: resolvedMode,
+            })
+          }
+        }
       } else {
-        // Acknowledge receipt once (before dispatching to any agents)
+        // No session key (shouldn't happen for Telegram, but handle gracefully)
+        const pluginInstanceData = await getPluginInstanceWithConfig(result.pluginInstanceId!)
         if (pluginInstanceData) {
           const handler = pluginHandlerRegistry.get(pluginInstanceData.type)
           if (handler?.acknowledgeReceipt) {
@@ -666,70 +741,29 @@ export async function POST(request: Request, context: RouteParams) {
           }
         }
 
-        // Shuffle for fair lane assignment order; durable workers handle serialization per lane.
-        const shuffled = shuffleArray([...targetAgents])
-        const arrivedAt = Math.floor(Date.now() / 1000)
-        for (const [index, agent] of shuffled.entries()) {
-          // Resolve per-agent queue config: agent config > plugin instance config > defaults
-          const agentCfg = parseAgentConfig(agent.config)
-          const agentQueue = agentCfg.queue ?? {}
-          const resolvedMode = agentQueue.mode ?? queueConfig.mode
-          const resolvedDebounceMs = agentQueue.debounceMs ?? queueConfig.debounceMs
-          const staggeredDebounceMs = resolvedDebounceMs + index * QUEUE_AGENT_STAGGER_MS
-          const resolvedMaxQueued = agentQueue.maxQueued ?? queueConfig.maxQueued
-
-          const queueKey = `${result.sessionKey}:${agent.id}`
-          await createQueueMessage({
-            queue_key: queueKey,
-            work_item_id: result.workItemId,
-            plugin_instance_id: result.pluginInstanceId!,
-            response_context: result.responseContext
-              ? JSON.stringify(result.responseContext)
-              : null,
-            text: result.messageText ?? '',
-            sender_name: result.senderName ?? 'Unknown',
-            arrived_at: arrivedAt,
-            status: 'pending',
-            dispatch_id: null,
-            drop_reason: null,
-          })
-
-          await upsertQueueLaneOnMessage({
-            queueKey,
-            sessionKey: result.sessionKey,
-            agentId: agent.id,
-            pluginInstanceId: result.pluginInstanceId!,
-            arrivedAt,
-            debounceMs: staggeredDebounceMs,
-            maxQueued: resolvedMaxQueued,
-            mode: resolvedMode,
-          })
-        }
+        // Dispatch to all agents on this plugin instance
+        const agents = await getAgentsForPluginInstance(result.pluginInstanceId!)
+        const originAgentId = resolveOriginAgentId(result.actor, agents)
+        dispatchToAgents(
+          agents,
+          result.workItemId!,
+          result.pluginInstanceId!,
+          result.responseContext,
+          {
+            originAgentId,
+          }
+        ).catch((err) => console.error('[webhook] Background processing error:', err))
       }
+    }
+
+    const shouldDetachForFastAck = type === 'discord' && isDiscordDeferredAckBody(result.body)
+    if (shouldDetachForFastAck) {
+      // Discord interactions must be ACKed quickly (<3s), so continue in the background.
+      void processCreatedWorkItem().catch((error) => {
+        console.error('[webhook] Post-route background processing error:', error)
+      })
     } else {
-      // No session key (shouldn't happen for Telegram, but handle gracefully)
-      const pluginInstanceData = await getPluginInstanceWithConfig(result.pluginInstanceId!)
-      if (pluginInstanceData) {
-        const handler = pluginHandlerRegistry.get(pluginInstanceData.type)
-        if (handler?.acknowledgeReceipt) {
-          handler
-            .acknowledgeReceipt(pluginInstanceData, result.responseContext)
-            .catch((err) => console.warn('[webhook] Failed to acknowledge receipt:', err))
-        }
-      }
-
-      // Dispatch to all agents on this plugin instance
-      const agents = await getAgentsForPluginInstance(result.pluginInstanceId!)
-      const originAgentId = resolveOriginAgentId(result.actor, agents)
-      dispatchToAgents(
-        agents,
-        result.workItemId,
-        result.pluginInstanceId!,
-        result.responseContext,
-        {
-          originAgentId,
-        }
-      ).catch((err) => console.error('[webhook] Background processing error:', err))
+      await processCreatedWorkItem()
     }
   }
 
