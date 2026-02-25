@@ -38,7 +38,7 @@ const scenarios = [
   {
     emoji: '📣',
     text: 'Post changelog updates to Discord and Twitter',
-    href: 'https://discord.gg/9Dh4QaQ4',
+    href: 'https://discord.gg/hhSUQs8b',
   },
   { emoji: '🔄', text: 'Sync CRM contacts with email lists nightly' },
   { emoji: '⏰', text: 'Remind the team about stale PRs older than 3 days' },
