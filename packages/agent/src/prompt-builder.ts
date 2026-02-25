@@ -120,6 +120,10 @@ export async function buildSystemPrompt(
         'Respond directly to the other agent.'
     )
   }
+  const slackAppMentionHint = buildSlackAppMentionHint(workItem, payload, agent.handle)
+  if (slackAppMentionHint) {
+    sections.push(slackAppMentionHint)
+  }
 
   // Section 2: Soul document (injected as-is)
   const soul = config.soul || DEFAULT_SOUL_TEMPLATE
@@ -447,6 +451,38 @@ function safeParsePayload(payload: string | null): WorkItemPayload | null {
   } catch {
     return null
   }
+}
+
+function buildSlackBotLabel(payload: WorkItemPayload): string {
+  const botHandle = normalizeOptionalText(payload.slackBotHandle)
+  const botDisplayName = normalizeOptionalText(payload.slackBotDisplayName)
+  const botUserId = normalizeOptionalText(payload.slackBotUserId)
+  if (botHandle) return `@${sanitize(botHandle)}`
+  if (botDisplayName) return sanitize(botDisplayName)
+  if (botUserId) return `#${sanitize(botUserId)}`
+  return 'the Slack app bot handle'
+}
+
+export function buildSlackAppMentionHint(
+  workItem: WorkItem,
+  parsedPayload?: WorkItemPayload | null,
+  targetAgentHandle?: string | null
+): string | null {
+  const payload = parsedPayload ?? safeParsePayload(workItem.payload)
+  if (!payload) return null
+  if (payload.source !== 'slack' || payload.slackBotMentioned !== true) return null
+
+  const botLabel = buildSlackBotLabel(payload)
+  const targetHandle = normalizeOptionalText(targetAgentHandle ?? null)
+  const targetLabel = targetHandle
+    ? `@${sanitize(targetHandle)}`
+    : 'the current target agent handle'
+
+  return (
+    `Slack ingress context: ${botLabel} is the Slack app mention handle for this plugin instance. ` +
+    `It may differ from ${targetLabel}. ` +
+    'Treat app-handle mention as transport ingress context, not teammate-routing evidence by itself.'
+  )
 }
 
 function normalizeOptionalText(value: unknown): string | null {

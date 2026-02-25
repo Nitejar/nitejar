@@ -56,10 +56,17 @@ function makeSignedRequest(secret: string, payload: unknown): Request {
 }
 
 function extractPayloadBody(result: Awaited<ReturnType<typeof parseSlackWebhook>>): string | null {
+  const payload = extractPayload(result)
+  if (!payload) return null
+  return typeof payload.body === 'string' ? payload.body : null
+}
+
+function extractPayload(
+  result: Awaited<ReturnType<typeof parseSlackWebhook>>
+): Record<string, unknown> | null {
   const rawPayload = result.workItem?.payload
   if (typeof rawPayload !== 'string') return null
-  const parsed = JSON.parse(rawPayload) as { body?: unknown }
-  return typeof parsed.body === 'string' ? parsed.body : null
+  return JSON.parse(rawPayload) as Record<string, unknown>
 }
 
 beforeEach(() => {
@@ -67,10 +74,19 @@ beforeEach(() => {
   getUserInfoMock.mockReset()
   getChannelInfoMock.mockReset()
 
-  getUserInfoMock.mockResolvedValue({
-    id: 'U123',
-    name: 'alice',
-    profile: { display_name: 'Alice' },
+  getUserInfoMock.mockImplementation((userId: string) => {
+    if (userId === 'U999') {
+      return Promise.resolve({
+        id: 'U999',
+        name: 'slopbot',
+        profile: { display_name: 'Slopbot' },
+      })
+    }
+    return Promise.resolve({
+      id: 'U123',
+      name: 'alice',
+      profile: { display_name: 'Alice' },
+    })
   })
   getChannelInfoMock.mockResolvedValue({
     id: 'C111',
@@ -209,7 +225,44 @@ describe('parseSlackWebhook', () => {
     const context = result.responseContext as { teamId?: string; eventType?: string }
     expect(context.teamId).toBeUndefined()
     expect(context.eventType).toBe('app_mention')
-    expect(extractPayloadBody(result)).toBe('hi there')
+    expect((result.responseContext as { slackBotMentioned?: boolean })?.slackBotMentioned).toBe(
+      true
+    )
+    expect(extractPayloadBody(result)).toBe('@Slopbot hi there')
+    const payloadBody = extractPayload(result)
+    expect(payloadBody?.slackBotMentioned).toBe(true)
+    expect(payloadBody?.slackBotDisplayName).toBe('Slopbot')
+    expect(payloadBody?.slackBotHandle).toBe('slopbot')
+    expect(payloadBody?.slackBotUserId).toBe('U999')
+  })
+
+  it('keeps mention-prefixed body text while still parsing slash commands', async () => {
+    const eventTs = `${Math.floor(Date.now() / 1000)}.000105`
+    const payload = {
+      type: 'event_callback',
+      event_id: 'EvCommand',
+      event: {
+        type: 'app_mention',
+        user: 'U123',
+        text: '<@U999> /clear please',
+        ts: eventTs,
+        channel: 'C111',
+      },
+    }
+
+    const result = await parseSlackWebhook(
+      makeSignedRequest('secret', payload),
+      makePluginInstance({
+        botToken: 'xoxb-1',
+        signingSecret: 'secret',
+        botUserId: 'U999',
+        inboundPolicy: 'mentions',
+      })
+    )
+
+    expect(result.shouldProcess).toBe(true)
+    expect(extractPayloadBody(result)).toBe('@Slopbot /clear please')
+    expect(result.command).toBe('clear')
   })
 
   it('accepts direct messages when policy is mentions', async () => {
@@ -297,7 +350,7 @@ describe('parseSlackWebhook', () => {
       `slack:v1:msg:unknown:C111:${eventTs}`,
       'slack:event:EvDup',
     ])
-    expect(extractPayloadBody(result)).toBe('hello duplicate')
+    expect(extractPayloadBody(result)).toBe('@Slopbot hello duplicate')
   })
 
   it('skips messages from disallowed channels', async () => {

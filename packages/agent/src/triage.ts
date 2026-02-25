@@ -1,5 +1,5 @@
 import type { Agent, WorkItem } from '@nitejar/database'
-import { buildUserMessage, buildIssuePreamble } from './prompt-builder'
+import { buildUserMessage, buildIssuePreamble, buildSlackAppMentionHint } from './prompt-builder'
 import { agentWarn } from './agent-logger'
 import { logTriage } from './triage-log'
 import { runRoutingArbiter } from './routing-arbiter'
@@ -164,6 +164,11 @@ export async function triageWorkItem(
       ? issuePreamble.content + '\n\n---\n\n'
       : ''
   const contextHint = workItem.session_key ? `\n[session: ${workItem.session_key}]` : ''
+  const ingressContext = buildSlackAppMentionHint(
+    workItem,
+    undefined,
+    effectiveTriageContext?.agentHandle ?? agent.handle
+  )
 
   const routing = await runRoutingArbiter({
     mode: 'triage',
@@ -175,6 +180,7 @@ export async function triageWorkItem(
     recentHistory: recentHistoryForArbiter,
     teamContext: effectiveTriageContext?.teamContext,
     activeWorkSnapshot: effectiveTriageContext?.activeWorkSnapshot,
+    ingressContext: ingressContext ?? undefined,
     rules: [
       'Mentions are intent signals, not hard routing locks.',
       'Distinguish directive mentions ("@you do X") from referential mentions ("@you did X").',

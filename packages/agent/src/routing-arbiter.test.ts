@@ -61,6 +61,7 @@ function baseInput(overrides: Partial<RunRoutingArbiterInput> = {}): RunRoutingA
     recentHistory: null,
     teamContext: undefined,
     activeWorkSnapshot: undefined,
+    ingressContext: undefined,
     rules: ['Always prioritize direct user asks.', 'Avoid duplicate responses.'],
     allowedRoutes: ['respond', 'pass', 'interrupt_now', 'do_not_interrupt', 'ignore'],
     defaultRoute: 'pass',
@@ -306,6 +307,16 @@ describe('buildSystemPrompt', () => {
     expect(withoutActive).not.toContain('<target_active_work>')
   })
 
+  it('includes ingress context only when provided', () => {
+    const withIngress = buildSystemPrompt(
+      baseInput({ ingressContext: 'Slack app mention: @nitejardev is transport-level.' })
+    )
+    const withoutIngress = buildSystemPrompt(baseInput({ ingressContext: undefined }))
+
+    expect(withIngress).toContain('<ingress_context>')
+    expect(withoutIngress).not.toContain('<ingress_context>')
+  })
+
   it('includes triage framing only in triage mode', () => {
     const triagePrompt = buildSystemPrompt(baseInput({ mode: 'triage' }))
     const steerPrompt = buildSystemPrompt(baseInput({ mode: 'steer' }))
@@ -318,12 +329,13 @@ describe('buildSystemPrompt', () => {
     )
   })
 
-  it('escapes xml in recentHistory, teamContext, and activeWorkSnapshot', () => {
+  it('escapes xml in recentHistory, teamContext, activeWorkSnapshot, and ingressContext', () => {
     const prompt = buildSystemPrompt(
       baseInput({
         recentHistory: '<recent_conversation>hi & bye</recent_conversation>',
         teamContext: '<team_and_dispatch_context>route < pass</team_and_dispatch_context>',
         activeWorkSnapshot: '<target_active_work>fix & verify</target_active_work>',
+        ingressContext: '<ingress_context>Slack & bot</ingress_context>',
       })
     )
 
@@ -334,6 +346,7 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain(
       '&lt;target_active_work&gt;fix &amp; verify&lt;/target_active_work&gt;'
     )
+    expect(prompt).toContain('&lt;ingress_context&gt;Slack &amp; bot&lt;/ingress_context&gt;')
   })
 })
 

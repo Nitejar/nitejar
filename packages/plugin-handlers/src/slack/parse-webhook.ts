@@ -169,6 +169,22 @@ function parseCommand(text: string): string | undefined {
   return match ? match[1] : undefined
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function hasSlackBotMention(
+  text: string,
+  event: SlackMessageEvent,
+  botUserId: string | undefined
+): boolean {
+  if (botUserId) {
+    const pattern = new RegExp(`<@${escapeRegExp(botUserId)}(?:\\|[^>]+)?>`, 'i')
+    return pattern.test(text)
+  }
+  return event.type === 'app_mention'
+}
+
 function stripLeadingSlackBotMention(text: string, botUserId: string | undefined): string {
   const original = text.trim()
   if (!original) return original
@@ -332,12 +348,14 @@ export async function parseSlackWebhook(
   }
 
   const threadTs = event.thread_ts ?? event.ts
-  const normalizedText = stripLeadingSlackBotMention(text, config.botUserId)
+  const commandInputText = stripLeadingSlackBotMention(text, config.botUserId)
+  const slackBotMentioned = hasSlackBotMention(text, event, config.botUserId)
   const slackClient = config.botToken ? createSlackClient({ botToken: config.botToken }) : null
-  const [senderIdentity, channelName, resolvedText] = await Promise.all([
+  const [senderIdentity, channelName, botIdentity, resolvedText] = await Promise.all([
     resolveSlackSenderIdentity(slackClient, event.user),
     resolveSlackChannelName(slackClient, event.channel),
-    resolveUserMentions(slackClient, normalizedText),
+    resolveSlackSenderIdentity(slackClient, config.botUserId),
+    resolveUserMentions(slackClient, text),
   ])
   const senderUsername = senderIdentity.username ?? event.user ?? null
   const senderDisplayName = senderIdentity.displayName ?? senderIdentity.username ?? 'Slack member'
@@ -352,10 +370,11 @@ export async function parseSlackWebhook(
     ...(event.channel_type ? { channelType: event.channel_type } : {}),
     ...(payload.team_id ? { teamId: payload.team_id } : {}),
     eventType: event.type,
+    ...(slackBotMentioned ? { slackBotMentioned: true } : {}),
     ...(actionToken ? { actionToken } : {}),
   }
 
-  const command = parseCommand(normalizedText)
+  const command = parseCommand(commandInputText)
   const teamId =
     typeof payload.team_id === 'string' && payload.team_id.trim().length > 0
       ? payload.team_id.trim()
@@ -391,6 +410,14 @@ export async function parseSlackWebhook(
         channelType: event.channel_type,
         teamId: payload.team_id,
         eventType: event.type,
+        ...(slackBotMentioned
+          ? {
+              slackBotMentioned: true,
+              ...(config.botUserId ? { slackBotUserId: config.botUserId } : {}),
+              ...(botIdentity.displayName ? { slackBotDisplayName: botIdentity.displayName } : {}),
+              ...(botIdentity.username ? { slackBotHandle: botIdentity.username } : {}),
+            }
+          : {}),
         ...(actionToken ? { actionToken } : {}),
       }),
       status: 'NEW',

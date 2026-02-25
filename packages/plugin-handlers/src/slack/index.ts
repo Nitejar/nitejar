@@ -359,6 +359,7 @@ export const slackHandler: PluginHandler<SlackConfig> = {
 
     const context = responseContext as SlackResponseContext | undefined
     if (!context?.channel || !context.messageTs) return
+    if (config.inboundPolicy === 'all' && context.slackBotMentioned !== true) return
 
     const client = createSlackClient({ botToken: config.botToken })
     await client.addReaction(context.channel, context.messageTs, 'eyes').catch(() => {})

@@ -692,7 +692,13 @@ function GitHubSettingsCard({ pluginInstanceId }: { pluginInstanceId: string }) 
 function SlackSetupCard({ pluginInstanceId }: { pluginInstanceId: string }) {
   const utils = trpc.useUtils()
   const instanceQuery = trpc.pluginInstances.get.useQuery({ pluginInstanceId })
-  const updateMutation = trpc.pluginInstances.update.useMutation({
+  const updateCredentialsMutation = trpc.pluginInstances.update.useMutation({
+    onSuccess: () => void utils.pluginInstances.get.invalidate({ pluginInstanceId }),
+  })
+  const updatePolicyMutation = trpc.pluginInstances.update.useMutation({
+    onSuccess: () => void utils.pluginInstances.get.invalidate({ pluginInstanceId }),
+  })
+  const updateSetupMutation = trpc.pluginInstances.update.useMutation({
     onSuccess: () => void utils.pluginInstances.get.invalidate({ pluginInstanceId }),
   })
   const testMutation = trpc.pluginInstances.testConnection.useMutation()
@@ -712,8 +718,14 @@ function SlackSetupCard({ pluginInstanceId }: { pluginInstanceId: string }) {
   const [signingSecret, setSigningSecret] = useState('')
   const [inboundPolicy, setInboundPolicy] = useState<'mentions' | 'all'>('mentions')
   const [copiedItem, setCopiedItem] = useState<'manifest' | 'webhook' | null>(null)
-  const isSaving =
-    updateMutation.isPending ||
+  const isCredentialsSaving =
+    updateCredentialsMutation.isPending ||
+    testMutation.isPending ||
+    testDirectMutation.isPending ||
+    instanceQuery.isLoading
+  const isPolicySaving = updatePolicyMutation.isPending || instanceQuery.isLoading
+  const isSetupSaving =
+    updateSetupMutation.isPending ||
     testMutation.isPending ||
     testDirectMutation.isPending ||
     enableMutation.isPending ||
@@ -726,72 +738,183 @@ function SlackSetupCard({ pluginInstanceId }: { pluginInstanceId: string }) {
     }
   }, [config?.inboundPolicy])
 
+  const persistedInboundPolicy: 'mentions' | 'all' =
+    config?.inboundPolicy === 'all' ? 'all' : 'mentions'
+  const trimmedBotToken = botToken.trim()
+  const trimmedSigningSecret = signingSecret.trim()
+  const credentialsReady = trimmedBotToken.length > 0 && trimmedSigningSecret.length > 0
+  const policyChanged = inboundPolicy !== persistedInboundPolicy
+
+  const getBaseConfig = (): Record<string, unknown> => {
+    const baseConfig: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(config ?? {})) {
+      if (key === 'botToken' || key === 'signingSecret' || key === 'manifestPending') continue
+      baseConfig[key] = value
+    }
+    return baseConfig
+  }
+
+  async function saveCredentials() {
+    if (!credentialsReady) {
+      toast.error('Paste both Bot Token and Signing Secret to update credentials.')
+      return
+    }
+
+    const baseConfig = getBaseConfig()
+    const directTest = await testDirectMutation.mutateAsync({
+      type: 'slack',
+      config: {
+        ...baseConfig,
+        inboundPolicy: persistedInboundPolicy,
+        botToken: trimmedBotToken,
+        signingSecret: trimmedSigningSecret,
+      },
+    })
+    if (!directTest.ok) {
+      toast.error(`Connection test failed: ${directTest.error ?? 'Unknown error'}`)
+      return
+    }
+
+    try {
+      await updateCredentialsMutation.mutateAsync({
+        pluginInstanceId,
+        config: {
+          botToken: trimmedBotToken,
+          signingSecret: trimmedSigningSecret,
+        },
+      })
+
+      const verify = await testMutation.mutateAsync({ pluginInstanceId })
+      if (!verify.ok) {
+        toast.error(`Connection test failed: ${verify.error ?? 'Unknown error'}`)
+        return
+      }
+
+      setBotToken('')
+      setSigningSecret('')
+      toast.success('Slack credentials saved.')
+      await utils.pluginInstances.get.invalidate({ pluginInstanceId })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to save Slack credentials')
+    }
+  }
+
+  async function saveInboundPolicy() {
+    if (!policyChanged) return
+
+    try {
+      await updatePolicyMutation.mutateAsync({
+        pluginInstanceId,
+        config: { inboundPolicy },
+      })
+      toast.success('Slack message intake setting saved.')
+      await utils.pluginInstances.get.invalidate({ pluginInstanceId })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to save Slack message intake')
+    }
+  }
+
   if (!manifestPending) {
     return (
-      <Card className="border-white/10 bg-white/[0.02]">
-        <CardHeader>
-          <CardTitle className="text-base">Slack Credentials</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="rounded border border-white/10 bg-black/20 px-2.5 py-2 text-[11px] text-muted-foreground">
-            <p>Paste a new Bot Token and Signing Secret to rotate credentials.</p>
-            <p>Bot Token: OAuth &amp; Permissions -&gt; Bot User OAuth Token</p>
-            <p>Signing Secret: Basic Information -&gt; App Credentials -&gt; Signing Secret</p>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="slack-bot-token">Bot Token</Label>
-              <Input
-                id="slack-bot-token"
-                type="password"
-                placeholder="xoxb-..."
-                value={botToken}
-                onChange={(event) => setBotToken((event.target as HTMLInputElement).value)}
-              />
+      <div className="space-y-4">
+        <Card className="border-white/10 bg-white/[0.02]">
+          <CardHeader>
+            <CardTitle className="text-base">Slack Credentials</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded border border-white/10 bg-black/20 px-2.5 py-2 text-[11px] text-muted-foreground">
+              <p>Paste a new Bot Token and Signing Secret to rotate credentials.</p>
+              <p>Bot Token: OAuth &amp; Permissions -&gt; Bot User OAuth Token</p>
+              <p>Signing Secret: Basic Information -&gt; App Credentials -&gt; Signing Secret</p>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="slack-signing-secret">Signing Secret</Label>
-              <Input
-                id="slack-signing-secret"
-                type="password"
-                placeholder="abc123..."
-                value={signingSecret}
-                onChange={(event) => setSigningSecret((event.target as HTMLInputElement).value)}
-              />
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="slack-bot-token">Bot Token</Label>
+                <Input
+                  id="slack-bot-token"
+                  type="password"
+                  placeholder="xoxb-..."
+                  value={botToken}
+                  onChange={(event) => setBotToken((event.target as HTMLInputElement).value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="slack-signing-secret">Signing Secret</Label>
+                <Input
+                  id="slack-signing-secret"
+                  type="password"
+                  placeholder="abc123..."
+                  value={signingSecret}
+                  onChange={(event) => setSigningSecret((event.target as HTMLInputElement).value)}
+                />
+              </div>
             </div>
-          </div>
 
-          <div className="space-y-1.5">
-            <Label>Listen for</Label>
-            <Select
-              value={inboundPolicy}
-              onValueChange={(value) => setInboundPolicy(value as 'mentions' | 'all')}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="mentions">Mentions only (recommended)</SelectItem>
-                <SelectItem value="all">All messages in allowed channels</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => void saveCredentials()}
+                disabled={isCredentialsSaving || !credentialsReady}
+              >
+                {isCredentialsSaving ? (
+                  <>
+                    <IconLoader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  'Save Credentials'
+                )}
+              </Button>
+              <p className="text-[11px] text-muted-foreground">
+                Updates token + signing secret only.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
 
-          <div className="flex items-center gap-2">
-            <Button size="sm" onClick={() => void completeSetup()} disabled={isSaving}>
-              {isSaving ? (
-                <>
-                  <IconLoader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                'Save Settings'
-              )}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+        <Card className="border-white/10 bg-white/[0.02]">
+          <CardHeader>
+            <CardTitle className="text-base">Message Intake</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>Listen for</Label>
+              <Select
+                value={inboundPolicy}
+                onValueChange={(value) => setInboundPolicy(value as 'mentions' | 'all')}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mentions">Mentions only (recommended)</SelectItem>
+                  <SelectItem value="all">All messages in allowed channels</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void saveInboundPolicy()}
+                disabled={isPolicySaving || !policyChanged}
+              >
+                {isPolicySaving ? (
+                  <>
+                    <IconLoader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  'Save Intake Setting'
+                )}
+              </Button>
+              <p className="text-[11px] text-muted-foreground">Updates inbound policy only.</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     )
   }
 
@@ -802,73 +925,6 @@ function SlackSetupCard({ pluginInstanceId }: { pluginInstanceId: string }) {
   }
 
   async function completeSetup() {
-    const trimmedBotToken = botToken.trim()
-    const trimmedSigningSecret = signingSecret.trim()
-    const hasNewCredentials = trimmedBotToken.length > 0 || trimmedSigningSecret.length > 0
-
-    const baseConfig: Record<string, unknown> = {}
-    for (const [key, value] of Object.entries(config ?? {})) {
-      if (key === 'botToken' || key === 'signingSecret' || key === 'manifestPending') continue
-      baseConfig[key] = value
-    }
-
-    if (!manifestPending) {
-      if (hasNewCredentials && (!trimmedBotToken || !trimmedSigningSecret)) {
-        toast.error('Paste both Bot Token and Signing Secret to update credentials.')
-        return
-      }
-
-      if (hasNewCredentials) {
-        const directTest = await testDirectMutation.mutateAsync({
-          type: 'slack',
-          config: {
-            ...baseConfig,
-            inboundPolicy,
-            botToken: trimmedBotToken,
-            signingSecret: trimmedSigningSecret,
-          },
-        })
-        if (!directTest.ok) {
-          toast.error(`Connection test failed: ${directTest.error ?? 'Unknown error'}`)
-          return
-        }
-      }
-
-      const updateConfig: Record<string, unknown> = {
-        ...baseConfig,
-        inboundPolicy,
-      }
-      if (hasNewCredentials) {
-        updateConfig.botToken = trimmedBotToken
-        updateConfig.signingSecret = trimmedSigningSecret
-      }
-
-      try {
-        await updateMutation.mutateAsync({
-          pluginInstanceId,
-          config: updateConfig,
-        })
-
-        if (hasNewCredentials) {
-          const verify = await testMutation.mutateAsync({ pluginInstanceId })
-          if (!verify.ok) {
-            toast.error(`Connection test failed: ${verify.error ?? 'Unknown error'}`)
-            return
-          }
-        }
-
-        setBotToken('')
-        setSigningSecret('')
-        toast.success(
-          hasNewCredentials ? 'Slack credentials and settings saved.' : 'Slack settings saved.'
-        )
-        await utils.pluginInstances.get.invalidate({ pluginInstanceId })
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : 'Failed to save Slack settings')
-      }
-      return
-    }
-
     if (manifestQuery.data && !manifestQuery.data.isPublicBaseUrl) {
       toast.error(
         'Slack webhook URL is local. Set a public app URL in Settings -> Runtime, then retry setup.'
@@ -881,7 +937,8 @@ function SlackSetupCard({ pluginInstanceId }: { pluginInstanceId: string }) {
       return
     }
 
-    const readyConfig = {
+    const baseConfig = getBaseConfig()
+    const readyConfig: Record<string, unknown> = {
       ...baseConfig,
       inboundPolicy,
       botToken: trimmedBotToken,
@@ -890,14 +947,14 @@ function SlackSetupCard({ pluginInstanceId }: { pluginInstanceId: string }) {
     }
 
     try {
-      await updateMutation.mutateAsync({
+      await updateSetupMutation.mutateAsync({
         pluginInstanceId,
         config: readyConfig,
       })
 
       const testResult = await testMutation.mutateAsync({ pluginInstanceId })
       if (!testResult.ok) {
-        await updateMutation
+        await updateSetupMutation
           .mutateAsync({
             pluginInstanceId,
             config: {
@@ -1071,9 +1128,9 @@ function SlackSetupCard({ pluginInstanceId }: { pluginInstanceId: string }) {
           <Button
             size="sm"
             onClick={() => void completeSetup()}
-            disabled={isSaving || manifestQuery.data?.isPublicBaseUrl === false}
+            disabled={isSetupSaving || manifestQuery.data?.isPublicBaseUrl === false}
           >
-            {isSaving ? (
+            {isSetupSaving ? (
               <>
                 <IconLoader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                 Verifying...

@@ -295,4 +295,46 @@ describe('slackHandler.acknowledgeReceipt', () => {
 
     expect(addReactionMock).toHaveBeenCalledWith('C123', '1700.1', 'eyes')
   })
+
+  it('adds eyes reaction for bot-mention ingress when inbound policy is all', async () => {
+    addReactionMock.mockResolvedValue(undefined)
+
+    await slackHandler.acknowledgeReceipt?.(
+      makePluginInstance({
+        botToken: 'xoxb-1',
+        signingSecret: 'secret',
+        inboundPolicy: 'all',
+      }),
+      {
+        channel: 'C123',
+        messageTs: '1700.1',
+        threadTs: '1700.1',
+        eventType: 'app_mention',
+        slackBotMentioned: true,
+      }
+    )
+
+    expect(addReactionMock).toHaveBeenCalledWith('C123', '1700.1', 'eyes')
+  })
+
+  it('skips eyes reaction for non-mention ingress when inbound policy is all', async () => {
+    addReactionMock.mockResolvedValue(undefined)
+
+    await slackHandler.acknowledgeReceipt?.(
+      makePluginInstance({
+        botToken: 'xoxb-1',
+        signingSecret: 'secret',
+        inboundPolicy: 'all',
+      }),
+      {
+        channel: 'C123',
+        messageTs: '1700.2',
+        threadTs: '1700.2',
+        eventType: 'message',
+        slackBotMentioned: false,
+      }
+    )
+
+    expect(addReactionMock).not.toHaveBeenCalled()
+  })
 })

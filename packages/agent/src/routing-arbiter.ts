@@ -28,6 +28,7 @@ export interface RunRoutingArbiterInput {
   recentHistory?: string | null
   teamContext?: string
   activeWorkSnapshot?: string
+  ingressContext?: string
   rules: string[]
   allowedRoutes: RoutingRoute[]
   defaultRoute: RoutingRoute
@@ -230,6 +231,14 @@ function buildSystemPrompt(input: RunRoutingArbiterInput): string {
       '<target_active_work>',
       escapeXmlText(input.activeWorkSnapshot),
       '</target_active_work>'
+    )
+  }
+  if (input.ingressContext) {
+    sections.push(
+      '',
+      '<ingress_context>',
+      escapeXmlText(input.ingressContext),
+      '</ingress_context>'
     )
   }
   if (input.teamContext) {

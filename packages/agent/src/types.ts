@@ -236,6 +236,14 @@ export interface WorkItemPayload {
   threadTs?: string
   /** Slack message timestamp */
   messageTs?: string
+  /** True when inbound Slack message addressed the configured app/bot handle */
+  slackBotMentioned?: boolean
+  /** Slack bot user ID (U...) for the app mention target */
+  slackBotUserId?: string
+  /** Resolved Slack bot display name for the app mention target */
+  slackBotDisplayName?: string
+  /** Resolved Slack bot handle/username for the app mention target */
+  slackBotHandle?: string
   /** Allow additional fields */
   [key: string]: unknown
 }

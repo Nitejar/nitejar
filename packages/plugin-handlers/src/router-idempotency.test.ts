@@ -169,4 +169,32 @@ describe('routeWebhook idempotency', () => {
     const detail = JSON.parse(skippedEvent!.detail_json as string) as Record<string, unknown>
     expect(detail.reasonCode).toBe('inbound_policy_filtered')
   })
+
+  it('keeps queue message text equal to payload body for Slack bot mentions', async () => {
+    mockParseWebhook.mockResolvedValue({
+      shouldProcess: true,
+      workItem: {
+        session_key: 'slack:C1:1700000.300',
+        source: 'slack',
+        source_ref: 'slack:C1:1700000.300',
+        title: 'Bot mention',
+        payload: JSON.stringify({
+          body: '@nitejardev pixel are you there?',
+          source: 'slack',
+          slackBotMentioned: true,
+          slackBotHandle: 'nitejardev',
+        }),
+        status: 'NEW',
+      },
+    })
+
+    const result = await routeWebhook(
+      'slack',
+      'plugin-instance-1',
+      new Request('http://example.com', { method: 'POST', body: '{}' })
+    )
+
+    expect(result.status).toBe(201)
+    expect(result.messageText).toBe('@nitejardev pixel are you there?')
+  })
 })

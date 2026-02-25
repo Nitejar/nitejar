@@ -503,6 +503,50 @@ describe('triageWorkItem', () => {
     expect(mockedWithProviderRetry).toHaveBeenCalledOnce()
   })
 
+  it('injects Slack app mention context into arbiter system prompt', async () => {
+    const createCompletion = vi.fn().mockResolvedValue({
+      choices: [
+        {
+          message: {
+            content: '{"readonly": true, "respond": true, "reason": "ok", "resources": []}',
+          },
+        },
+      ],
+      usage: { prompt_tokens: 5, completion_tokens: 10 },
+      model: 'test-model',
+    })
+    mockedGetClient.mockResolvedValue({
+      chat: {
+        completions: {
+          create: createCompletion,
+        },
+      },
+    } as never)
+    mockedWithProviderRetry.mockImplementation((call) => call() as never)
+
+    const slackWorkItem: WorkItem = {
+      ...workItem,
+      source: 'slack',
+      payload: JSON.stringify({
+        body: '@nitejardev pixel are you there?',
+        source: 'slack',
+        slackBotMentioned: true,
+        slackBotHandle: 'nitejardev',
+      }),
+    }
+
+    await triageWorkItem(agent, slackWorkItem, '@nitejardev pixel are you there?')
+
+    const triageRequest = createCompletion.mock.calls[0]?.[0] as {
+      messages: Array<{ role: string; content: string }>
+    }
+    const systemPrompt = triageRequest.messages[0]?.content ?? ''
+    expect(systemPrompt).toContain('<ingress_context>')
+    expect(systemPrompt).toContain('Slack ingress context:')
+    expect(systemPrompt).toContain('@nitejardev')
+    expect(systemPrompt).toContain('</ingress_context>')
+  })
+
   it('uses coalescedText when provided instead of buildUserMessage', async () => {
     const createCompletion = vi.fn().mockResolvedValue({
       choices: [

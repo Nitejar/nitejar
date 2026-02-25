@@ -38,6 +38,8 @@ export interface SlackResponseContext {
   channelType?: string
   teamId?: string
   eventType?: string
+  /** True when inbound message included the configured Slack app/bot mention. */
+  slackBotMentioned?: boolean
   /**
    * Optional token from Slack interaction context (not persisted secrets).
    * Used for APIs like assistant.search.context when Slack provides it.

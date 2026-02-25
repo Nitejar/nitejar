@@ -177,6 +177,23 @@ describe('buildUserMessage', () => {
     expect(message).toContain('reply_to_message_id: 42')
     expect(message).toContain('reply_to_message_text: Ready to merge this?')
   })
+
+  it('does not include Slack bot-handle note in user message when metadata marks a bot mention', () => {
+    const workItem: WorkItem = {
+      ...baseWorkItem,
+      payload: JSON.stringify({
+        body: '@Slopbot please check this',
+        source: 'slack',
+        slackBotMentioned: true,
+        slackBotDisplayName: 'Slopbot',
+        slackBotHandle: 'slopbot',
+        slackBotUserId: 'U999',
+      }),
+    }
+
+    const message = buildUserMessage(workItem)
+    expect(message).not.toContain('Slack mention note:')
+  })
 })
 
 describe('buildSystemPrompt', () => {
@@ -215,6 +232,24 @@ describe('buildSystemPrompt', () => {
     })
     expect(prompt).toContain('GitHub workflow rules: test content')
     expect(prompt).toContain('Repo access: test/repo')
+  })
+
+  it('includes Slack app mention context in system prompt when metadata is present', async () => {
+    const slackWorkItem: WorkItem = {
+      ...baseWorkItem,
+      source: 'slack',
+      payload: JSON.stringify({
+        body: '@slopbot are you there?',
+        source: 'slack',
+        slackBotMentioned: true,
+        slackBotHandle: 'slopbot',
+      }),
+    }
+
+    const prompt = await buildSystemPrompt(baseAgent, slackWorkItem)
+    expect(prompt).toContain('Slack ingress context:')
+    expect(prompt).toContain('@slopbot')
+    expect(prompt).toContain('@agent')
   })
 
   it('omits provider sections when no context providers are supplied', async () => {
