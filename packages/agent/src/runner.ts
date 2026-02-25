@@ -46,6 +46,7 @@ import {
 import {
   buildSystemPrompt,
   buildUserMessage,
+  buildMessageContextPrefix,
   buildPostProcessingPrompt,
   getModelConfig,
   getRequesterLabel,
@@ -703,8 +704,17 @@ async function runInferenceLoop(
       resolvedDbSkills,
     }))
 
-  // Build initial user message (coalescedText overrides when multiple messages were queued)
-  let userMessage = coalescedText ? sanitize(coalescedText) : buildUserMessage(workItem)
+  // Build initial user message.
+  // When coalescedText is provided (queue/dispatch path), it replaces the body text but
+  // we still prepend sender/thread context from the work item so the agent knows who sent it.
+  let userMessage: string
+  if (coalescedText) {
+    const contextPrefix = buildMessageContextPrefix(workItem)
+    const body = sanitize(coalescedText)
+    userMessage = contextPrefix.length > 0 ? [...contextPrefix, body].join('\n') : body
+  } else {
+    userMessage = buildUserMessage(workItem)
+  }
 
   // Normalize display-name relay messages (e.g. "[🫠 Slopper] 5") to canonical handle
   // format (e.g. "[@nitejar-dev]: 5") so the current inbound matches session history.
@@ -2770,7 +2780,9 @@ async function buildTriageContext(
 
         let exchange: string | null = null
         if (msg.role === 'user') {
-          exchange = `User: ${middleTruncate(text, exchangeMaxChars)}`
+          // Extract sender label from [From: Name @handle | ...] metadata if present
+          const senderLabel = extractSenderLabelFromText(text)
+          exchange = `${senderLabel}: ${middleTruncate(text, exchangeMaxChars)}`
         } else if (msg.role === 'assistant') {
           const prefix = msg.agentId !== agent.id ? `[@${msg.agentHandle}]` : 'You'
           exchange = `${prefix}: ${middleTruncate(text, exchangeMaxChars)}`
@@ -2924,6 +2936,20 @@ function parseMessageTextForTriage(content: string | null): string | null {
   } catch {
     return content
   }
+}
+
+/**
+ * Extract a sender label from a user message that may start with [From: Name @handle | ...].
+ * Returns the sender identity (e.g. "josh (@josh)") or "User" as fallback.
+ */
+export function extractSenderLabelFromText(text: string): string {
+  const match = text.match(/^\[From:\s*([^\]|]+?)(?:\s*\|[^\]]*)?]/)
+  if (!match?.[1]) return 'User'
+
+  const fromValue = match[1].trim()
+  if (!fromValue) return 'User'
+
+  return fromValue
 }
 
 /**

@@ -579,6 +579,101 @@ describe('triageWorkItem', () => {
     expect(userPrompt).toContain('[session: sess-1]')
   })
 
+  it('injects sender context prefix when coalescedText is provided and work item has sender identity', async () => {
+    const createCompletion = vi.fn().mockResolvedValue({
+      choices: [
+        {
+          message: {
+            content: '{"readonly": true, "respond": true, "reason": "ok", "resources": []}',
+          },
+        },
+      ],
+      usage: { prompt_tokens: 5, completion_tokens: 10 },
+      model: 'test-model',
+    })
+    mockedGetClient.mockResolvedValue({
+      chat: {
+        completions: {
+          create: createCompletion,
+        },
+      },
+    } as never)
+    mockedWithProviderRetry.mockImplementation((call) => call() as never)
+
+    const workItemWithSender: WorkItem = {
+      ...workItem,
+      payload: JSON.stringify({
+        body: 'original body',
+        senderName: 'Josh',
+        senderUsername: 'josh',
+        chatName: 'test-group',
+        chatType: 'group',
+        source: 'telegram',
+      }),
+    }
+
+    await triageWorkItem(agent, workItemWithSender, 'coalesced inbound message')
+
+    expect(mockedBuildUserMessage).not.toHaveBeenCalled()
+    const triageRequest = createCompletion.mock.calls[0]?.[0] as {
+      messages: Array<{ role: string; content: string }>
+    }
+    const userPrompt = triageRequest.messages[1]?.content ?? ''
+    // Sender context must be present even though coalescedText was used
+    expect(userPrompt).toContain('From: Josh @josh')
+    expect(userPrompt).toContain('Via: telegram')
+    expect(userPrompt).toContain('Channel: test-group')
+    // The coalescedText body must still be present
+    expect(userPrompt).toContain('coalesced inbound message')
+  })
+
+  it('injects sender context from actor envelope when coalescedText is provided', async () => {
+    const createCompletion = vi.fn().mockResolvedValue({
+      choices: [
+        {
+          message: {
+            content: '{"readonly": true, "respond": true, "reason": "ok", "resources": []}',
+          },
+        },
+      ],
+      usage: { prompt_tokens: 5, completion_tokens: 10 },
+      model: 'test-model',
+    })
+    mockedGetClient.mockResolvedValue({
+      chat: {
+        completions: {
+          create: createCompletion,
+        },
+      },
+    } as never)
+    mockedWithProviderRetry.mockImplementation((call) => call() as never)
+
+    const workItemWithActor: WorkItem = {
+      ...workItem,
+      payload: JSON.stringify({
+        body: 'original body',
+        source: 'telegram',
+        actor: {
+          kind: 'human',
+          displayName: 'Josh',
+          handle: 'josh',
+          source: 'telegram',
+        },
+      }),
+    }
+
+    await triageWorkItem(agent, workItemWithActor, 'coalesced text here')
+
+    const triageRequest = createCompletion.mock.calls[0]?.[0] as {
+      messages: Array<{ role: string; content: string }>
+    }
+    const userPrompt = triageRequest.messages[1]?.content ?? ''
+    // Actor envelope identity must appear even with coalescedText
+    expect(userPrompt).toContain('From: Josh @josh')
+    expect(userPrompt).toContain('Via: telegram')
+    expect(userPrompt).toContain('coalesced text here')
+  })
+
   it('falls back to buildUserMessage when coalescedText is undefined', async () => {
     const createCompletion = vi.fn().mockResolvedValue({
       choices: [
@@ -708,9 +803,9 @@ describe('triageWorkItem', () => {
     }
     const systemPrompt = triageRequest.messages[0]?.content ?? ''
     expect(systemPrompt).toContain(
-      'You are a runtime routing arbiter for Override Name (Override Title).'
+      'decide whether Override Name (Override Title) (handle: @override-handle) should handle the incoming message'
     )
-    expect(systemPrompt).toContain('Target agent handle: @override-handle.')
+    expect(systemPrompt).toContain('classifying for @override-handle ONLY')
   })
 
   it('passes active work snapshot through to arbiter context', async () => {
@@ -789,13 +884,11 @@ describe('triageWorkItem', () => {
     const systemPrompt = triageRequest.messages[0]?.content ?? ''
 
     expect(systemPrompt).toContain(
-      'You are a runtime routing arbiter for Slopper (Senior Engineer).'
+      'decide whether Slopper (Senior Engineer) (handle: @nitejar-dev) should handle the incoming message'
     )
+    expect(systemPrompt).toContain('You are not writing a user-visible reply.')
     expect(systemPrompt).toContain(
-      'You are not writing a user-visible reply. You only classify routing for this target agent.'
-    )
-    expect(systemPrompt).toContain(
-      'Decision question: should the target agent respond to THIS incoming message immediately, or wait/pass for now?'
+      'Decision question: should @nitejar-dev handle this incoming message, or pass?'
     )
     expect(systemPrompt).toContain(
       'Multiple agents can respond at once and may produce duplicate answers.'

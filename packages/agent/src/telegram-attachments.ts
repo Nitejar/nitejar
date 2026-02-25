@@ -13,6 +13,8 @@ import { sanitize, wrapBoundary } from './prompt-sanitize'
 
 export const MAX_TELEGRAM_IMAGES_PER_MESSAGE = 2
 export const MAX_TELEGRAM_IMAGE_BYTES = 2 * 1024 * 1024
+export const MAX_SLACK_IMAGES_PER_MESSAGE = 4
+export const MAX_SLACK_IMAGE_BYTES = 4 * 1024 * 1024
 export const TEXT_INLINE_THRESHOLD = 50 * 1024 // 50KB
 export const MAX_TEXT_INLINE_ATTACHMENTS = 3
 
@@ -167,6 +169,57 @@ export function collectDiscordImageUrls(payload: WorkItemPayload | null): string
     .filter((url): url is string => Boolean(url))
 }
 
+const SLACK_IMAGE_MIME_PREFIXES = ['image/']
+
+export function collectSlackImageAttachments(
+  payload: WorkItemPayload | null
+): WorkItemAttachment[] {
+  if (!payload?.attachments || !Array.isArray(payload.attachments)) return []
+  return payload.attachments
+    .filter(
+      (a: WorkItemAttachment) =>
+        a.type === 'photo' &&
+        typeof a.fileUrl === 'string' &&
+        a.fileUrl.length > 0 &&
+        (!a.mimeType || SLACK_IMAGE_MIME_PREFIXES.some((p) => a.mimeType!.startsWith(p)))
+    )
+    .slice(0, MAX_SLACK_IMAGES_PER_MESSAGE)
+}
+
+async function downloadSlackFileAsDataUrl(
+  fileUrl: string,
+  botToken: string,
+  maxBytes: number
+): Promise<string> {
+  const response = await fetch(fileUrl, {
+    headers: { Authorization: `Bearer ${botToken}` },
+  })
+  if (!response.ok) {
+    throw new Error(`Slack file download failed: ${response.status} ${response.statusText}`)
+  }
+  const buffer = Buffer.from(await response.arrayBuffer())
+  if (buffer.length > maxBytes) {
+    throw new Error(`Slack file too large (${buffer.length} bytes, max ${maxBytes})`)
+  }
+  const contentType = response.headers.get('content-type') ?? 'image/jpeg'
+  const base64 = buffer.toString('base64')
+  return `data:${contentType};base64,${base64}`
+}
+
+function parseSlackConfig(
+  config: string | Record<string, unknown> | null
+): { botToken?: string } | null {
+  if (!config) return null
+  if (typeof config === 'string') {
+    try {
+      return JSON.parse(config) as { botToken?: string }
+    } catch {
+      return null
+    }
+  }
+  return config as { botToken?: string }
+}
+
 /**
  * Collect pre-downloaded image data URLs (e.g. from GitHub attachments).
  */
@@ -193,9 +246,11 @@ export async function buildUserMessageForModel(
   // Collect pre-downloaded images (GitHub path — already base64 data URLs)
   const preDownloadedUrls = collectPreDownloadedImageDataUrls(payload)
 
-  // Collect Telegram file IDs (only for Telegram sources)
+  // Collect source-specific attachment references
   const imageFileIds = workItem.source === 'telegram' ? collectTelegramImageFileIds(payload) : []
   const discordImageUrls = workItem.source === 'discord' ? collectDiscordImageUrls(payload) : []
+  const slackImageAttachments =
+    workItem.source === 'slack' ? collectSlackImageAttachments(payload) : []
   const textInlineAttachments =
     workItem.source === 'telegram'
       ? collectTextInlineAttachments(payload).slice(0, MAX_TEXT_INLINE_ATTACHMENTS)
@@ -205,6 +260,7 @@ export async function buildUserMessageForModel(
     preDownloadedUrls.length === 0 &&
     imageFileIds.length === 0 &&
     discordImageUrls.length === 0 &&
+    slackImageAttachments.length === 0 &&
     textInlineAttachments.length === 0
   ) {
     return { role: 'user', content: textMessage }
@@ -233,6 +289,34 @@ export async function buildUserMessageForModel(
               agentWarn('Failed to resolve Telegram image attachment for model input', {
                 workItemId: workItem.id,
                 fileId,
+                error: error instanceof Error ? error.message : String(error),
+              })
+            }
+          }
+        }
+      }
+    }
+
+    // Download Slack images if applicable
+    if (slackImageAttachments.length > 0) {
+      const pluginInstance = await getPluginInstanceWithConfig(workItem.plugin_instance_id)
+      if (pluginInstance?.type === 'slack') {
+        const slackConfig = parseSlackConfig(
+          pluginInstance.config as string | Record<string, unknown> | null
+        )
+        if (slackConfig?.botToken) {
+          for (const attachment of slackImageAttachments) {
+            try {
+              const dataUrl = await downloadSlackFileAsDataUrl(
+                attachment.fileUrl!,
+                slackConfig.botToken,
+                MAX_SLACK_IMAGE_BYTES
+              )
+              imageUrls.push(dataUrl)
+            } catch (error) {
+              agentWarn('Failed to resolve Slack image attachment for model input', {
+                workItemId: workItem.id,
+                fileUrl: attachment.fileUrl,
                 error: error instanceof Error ? error.message : String(error),
               })
             }

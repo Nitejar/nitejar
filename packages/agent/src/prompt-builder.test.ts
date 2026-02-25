@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { buildSystemPrompt, buildUserMessage } from './prompt-builder'
+import { buildSystemPrompt, buildUserMessage, buildMessageContextPrefix } from './prompt-builder'
 import type { Agent, WorkItem } from '@nitejar/database'
 import * as Database from '@nitejar/database'
 import * as Sprites from '@nitejar/sprites'
@@ -178,6 +178,48 @@ describe('buildUserMessage', () => {
     expect(message).toContain('reply_to_message_text: Ready to merge this?')
   })
 
+  it('uses actor envelope for sender context when senderName/senderUsername are absent', () => {
+    const workItem: WorkItem = {
+      ...baseWorkItem,
+      payload: JSON.stringify({
+        body: 'Hello!',
+        source: 'telegram',
+        actor: {
+          kind: 'human',
+          displayName: 'Josh',
+          handle: 'josh',
+          source: 'telegram',
+        },
+      }),
+    }
+
+    const message = buildUserMessage(workItem)
+    expect(message).toContain('From: Josh @josh')
+    expect(message).toContain('Via: telegram')
+  })
+
+  it('prefers actor envelope over legacy senderName/senderUsername', () => {
+    const workItem: WorkItem = {
+      ...baseWorkItem,
+      payload: JSON.stringify({
+        body: 'Hello!',
+        senderName: 'OldName',
+        senderUsername: 'old_user',
+        source: 'telegram',
+        actor: {
+          kind: 'human',
+          displayName: 'NewName',
+          handle: 'new_user',
+          source: 'telegram',
+        },
+      }),
+    }
+
+    const message = buildUserMessage(workItem)
+    expect(message).toContain('From: NewName @new_user')
+    expect(message).not.toContain('OldName')
+  })
+
   it('does not include Slack bot-handle note in user message when metadata marks a bot mention', () => {
     const workItem: WorkItem = {
       ...baseWorkItem,
@@ -193,6 +235,174 @@ describe('buildUserMessage', () => {
 
     const message = buildUserMessage(workItem)
     expect(message).not.toContain('Slack mention note:')
+  })
+})
+
+describe('buildMessageContextPrefix', () => {
+  it('returns sender identity from actor envelope', () => {
+    const workItem: WorkItem = {
+      ...baseWorkItem,
+      payload: JSON.stringify({
+        body: 'Hello!',
+        source: 'telegram',
+        actor: {
+          kind: 'human',
+          displayName: 'Josh',
+          handle: 'josh',
+          source: 'telegram',
+        },
+      }),
+    }
+
+    const prefix = buildMessageContextPrefix(workItem)
+    expect(prefix.some((line) => line.includes('From: Josh @josh'))).toBe(true)
+    expect(prefix.some((line) => line.includes('Via: telegram'))).toBe(true)
+  })
+
+  it('returns sender identity from legacy senderName/senderUsername', () => {
+    const workItem: WorkItem = {
+      ...baseWorkItem,
+      payload: JSON.stringify({
+        body: 'Hey',
+        senderName: 'Alice',
+        senderUsername: 'alice',
+        source: 'telegram',
+      }),
+    }
+
+    const prefix = buildMessageContextPrefix(workItem)
+    expect(prefix.some((line) => line.includes('From: Alice @alice'))).toBe(true)
+  })
+
+  it('returns empty array when no identity is available', () => {
+    const workItem: WorkItem = {
+      ...baseWorkItem,
+      payload: JSON.stringify({ body: 'bare message' }),
+    }
+
+    const prefix = buildMessageContextPrefix(workItem)
+    // Should have no sender line
+    expect(prefix.some((line) => line.includes('From:'))).toBe(false)
+  })
+
+  it('includes channel name for non-private chats', () => {
+    const workItem: WorkItem = {
+      ...baseWorkItem,
+      payload: JSON.stringify({
+        body: 'Hello',
+        senderName: 'Bob',
+        chatName: 'general',
+        chatType: 'group',
+        source: 'telegram',
+      }),
+    }
+
+    const prefix = buildMessageContextPrefix(workItem)
+    expect(prefix.some((line) => line.includes('Channel: general'))).toBe(true)
+  })
+
+  it('omits channel name for private chats', () => {
+    const workItem: WorkItem = {
+      ...baseWorkItem,
+      payload: JSON.stringify({
+        body: 'Hello',
+        senderName: 'Bob',
+        chatName: 'Bob',
+        chatType: 'private',
+        source: 'telegram',
+      }),
+    }
+
+    const prefix = buildMessageContextPrefix(workItem)
+    expect(prefix.some((line) => line.includes('Channel:'))).toBe(false)
+  })
+
+  it('annotates agent DM messages', () => {
+    const workItem: WorkItem = {
+      ...baseWorkItem,
+      payload: JSON.stringify({
+        body: 'Hey',
+        source_type: 'agent_dm',
+        from_handle: 'pixel',
+      }),
+    }
+
+    const prefix = buildMessageContextPrefix(workItem)
+    expect(prefix.some((line) => line.includes('Private message from @pixel'))).toBe(true)
+  })
+
+  it('includes Slack mention token when externalId is present for Slack source', () => {
+    const workItem: WorkItem = {
+      ...baseWorkItem,
+      payload: JSON.stringify({
+        body: 'Hello!',
+        source: 'slack',
+        actor: {
+          kind: 'human',
+          displayName: 'Josh',
+          handle: 'josh',
+          externalId: 'U12345ABC',
+          source: 'slack',
+        },
+      }),
+    }
+
+    const prefix = buildMessageContextPrefix(workItem)
+    const senderLine = prefix.find((line) => line.includes('From:'))
+    expect(senderLine).toBeDefined()
+    expect(senderLine).toContain('Slack mention: <@U12345ABC>')
+  })
+
+  it('includes Slack mention token from legacy senderId field', () => {
+    const workItem: WorkItem = {
+      ...baseWorkItem,
+      payload: JSON.stringify({
+        body: 'Hey',
+        senderName: 'Alice',
+        senderUsername: 'alice',
+        senderId: 'U99999',
+        source: 'slack',
+      }),
+    }
+
+    const prefix = buildMessageContextPrefix(workItem)
+    const senderLine = prefix.find((line) => line.includes('From:'))
+    expect(senderLine).toBeDefined()
+    expect(senderLine).toContain('Slack mention: <@U99999>')
+  })
+
+  it('uses generic User ID for non-Slack sources with externalId', () => {
+    const workItem: WorkItem = {
+      ...baseWorkItem,
+      payload: JSON.stringify({
+        body: 'Hey',
+        senderName: 'Bob',
+        senderId: '12345',
+        source: 'telegram',
+      }),
+    }
+
+    const prefix = buildMessageContextPrefix(workItem)
+    const senderLine = prefix.find((line) => line.includes('From:'))
+    expect(senderLine).toBeDefined()
+    expect(senderLine).toContain('User ID: 12345')
+    expect(senderLine).not.toContain('Slack mention')
+  })
+
+  it('omits User ID when externalId is not present', () => {
+    const workItem: WorkItem = {
+      ...baseWorkItem,
+      payload: JSON.stringify({
+        body: 'Hey',
+        senderName: 'Bob',
+        source: 'telegram',
+      }),
+    }
+
+    const prefix = buildMessageContextPrefix(workItem)
+    const senderLine = prefix.find((line) => line.includes('From:'))
+    expect(senderLine).toBeDefined()
+    expect(senderLine).not.toContain('User ID:')
   })
 })
 

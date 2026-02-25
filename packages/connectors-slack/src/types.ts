@@ -77,6 +77,20 @@ export interface SlackResponseExportResult {
   payload: Record<string, unknown>
 }
 
+export interface SlackFile {
+  id?: string
+  name?: string
+  title?: string
+  mimetype?: string
+  filetype?: string
+  url_private?: string
+  url_private_download?: string
+  size?: number
+  original_w?: number
+  original_h?: number
+  mode?: string
+}
+
 export interface SlackMessageEvent {
   type: 'message' | 'app_mention'
   user?: string
@@ -87,6 +101,7 @@ export interface SlackMessageEvent {
   channel: string
   channel_type?: string
   subtype?: string
+  files?: SlackFile[]
 }
 
 export interface SlackEventEnvelope {

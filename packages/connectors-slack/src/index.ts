@@ -31,6 +31,7 @@ export type {
   SlackResponseExportResult,
   SlackUser,
   SlackUserPage,
+  SlackFile,
   SlackMessageEvent,
   SlackEventEnvelope,
   SlackUrlVerificationPayload,

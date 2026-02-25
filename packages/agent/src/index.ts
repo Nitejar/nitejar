@@ -118,6 +118,7 @@ export { generateEmbedding, generateEmbeddings, isEmbeddingsAvailable } from './
 export {
   buildSystemPrompt,
   buildUserMessage,
+  buildMessageContextPrefix,
   getRequesterIdentity,
   getRequesterLabel,
   getModelConfig,

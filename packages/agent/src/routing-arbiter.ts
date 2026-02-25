@@ -200,20 +200,21 @@ function coerceRouteFromParsed(
 function buildSystemPrompt(input: RunRoutingArbiterInput): string {
   const role = input.targetTitle ? ` (${input.targetTitle})` : ''
   const optionalExclusiveSchema = input.mode === 'triage' ? ', "exclusive"?: boolean' : ''
+  const targetRef = input.targetHandle ? `@${input.targetHandle}` : input.targetName
   const triageDecisionFraming =
     input.mode === 'triage'
       ? [
-          'Decision question: should the target agent respond to THIS incoming message immediately, or wait/pass for now?',
+          `Decision question: should ${targetRef} handle this incoming message, or pass?`,
           'Multiple agents can respond at once and may produce duplicate answers.',
           'To prevent multiple agent replies for this work item turn, use exclusive access:',
-          '- Set route="pass" when another agent should take this turn.',
-          '- Set route="respond" and "exclusive": true only when this target agent should be the sole responder for this turn.',
+          `- Set route="pass" when a different agent (not ${targetRef}) should take this turn.`,
+          `- Set route="respond" and "exclusive": true only when ${targetRef} should be the sole responder for this turn.`,
         ]
       : []
   const sections: string[] = [
-    `You are a runtime routing arbiter for ${input.targetName}${role}.`,
-    input.targetHandle ? `Target agent handle: @${input.targetHandle}.` : '',
-    'You are not writing a user-visible reply. You only classify routing for this target agent.',
+    `You are a runtime routing arbiter. Your job: decide whether ${input.targetName}${role} (handle: ${targetRef}) should handle the incoming message.`,
+    `You are classifying for ${targetRef} ONLY — not for any other agent mentioned in the message.`,
+    'You are not writing a user-visible reply.',
     ...triageDecisionFraming,
     '',
     'Return EXACTLY one JSON object. No markdown. No prose. No code fences.',
@@ -222,7 +223,7 @@ function buildSystemPrompt(input: RunRoutingArbiterInput): string {
     'Rules:',
     `- "reason" must be non-empty and specific (<= ${input.reasonMaxChars} chars).`,
     '- "resources" should include only clearly referenced IDs/paths; otherwise [].',
-    '- Classify for the target agent only. Do not roleplay as the target agent.',
+    `- Classify for ${targetRef} only. Do not roleplay as ${targetRef}.`,
     ...input.rules.map((line) => `- ${line}`),
     `- If uncertain, choose route="${input.defaultRoute}" with reason="${input.uncertaintyReason}".`,
   ]

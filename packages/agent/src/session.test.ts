@@ -165,7 +165,7 @@ describe('toOpenAIMessage', () => {
     expect(result).toEqual({ role: 'assistant', content: 'my response' })
   })
 
-  it('wraps final response in final-mode jobs', () => {
+  it('keeps final response as clean assistant message in final-mode jobs', () => {
     const msg = makeSessionMessage({
       role: 'assistant',
       content: JSON.stringify({ text: 'Here is a summary', is_final_response: true }),
@@ -174,11 +174,11 @@ describe('toOpenAIMessage', () => {
     const result = toOpenAIMessage(msg, 'agent-1')
     expect(result).toEqual({
       role: 'assistant',
-      content: '[Your response to the user]: Here is a summary',
+      content: 'Here is a summary',
     })
   })
 
-  it('wraps intermediate text as internal reasoning in final-mode jobs', () => {
+  it('converts intermediate reasoning to user-role agent_scratchpad in final-mode jobs', () => {
     const msg = makeSessionMessage({
       role: 'assistant',
       content: JSON.stringify({ text: 'Let me search for that...' }),
@@ -186,8 +186,8 @@ describe('toOpenAIMessage', () => {
     })
     const result = toOpenAIMessage(msg, 'agent-1')
     expect(result).toEqual({
-      role: 'assistant',
-      content: '[Your internal reasoning — not visible to user]: Let me search for that...',
+      role: 'user',
+      content: '<agent_scratchpad>\nLet me search for that...\n</agent_scratchpad>',
     })
   })
 

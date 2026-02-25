@@ -2,6 +2,7 @@ import type { PluginInstanceRecord } from '@nitejar/database'
 import { createSlackClient, verifySlackRequest, type SlackClient } from '@nitejar/connectors-slack'
 import type {
   SlackEventEnvelope,
+  SlackFile,
   SlackMessageEvent,
   SlackUrlVerificationPayload,
 } from '@nitejar/connectors-slack'
@@ -164,6 +165,45 @@ function isEventEnvelope(payload: unknown): payload is SlackEventEnvelope {
   return isMessageEvent(record.event)
 }
 
+const SLACK_IMAGE_TYPES = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'])
+
+function isSlackImageFile(file: SlackFile): boolean {
+  if (file.mimetype?.startsWith('image/')) return true
+  if (file.filetype && SLACK_IMAGE_TYPES.has(file.filetype.toLowerCase())) return true
+  return false
+}
+
+interface SlackAttachment {
+  type: 'photo' | 'document'
+  fileId?: string
+  fileName?: string
+  mimeType?: string
+  fileUrl?: string
+  width?: number
+  height?: number
+  fileSize?: number
+}
+
+function extractSlackAttachments(event: SlackMessageEvent): SlackAttachment[] {
+  if (!event.files || !Array.isArray(event.files)) return []
+  const attachments: SlackAttachment[] = []
+  for (const file of event.files) {
+    if (!file.url_private) continue
+    const isImage = isSlackImageFile(file)
+    attachments.push({
+      type: isImage ? 'photo' : 'document',
+      fileId: file.id,
+      fileName: file.name ?? file.title,
+      mimeType: file.mimetype,
+      fileUrl: file.url_private,
+      ...(file.original_w != null ? { width: file.original_w } : {}),
+      ...(file.original_h != null ? { height: file.original_h } : {}),
+      ...(file.size != null ? { fileSize: file.size } : {}),
+    })
+  }
+  return attachments
+}
+
 function parseCommand(text: string): string | undefined {
   const match = text.match(/^\/(\w+)/)
   return match ? match[1] : undefined
@@ -309,7 +349,8 @@ export async function parseSlackWebhook(
 
   const event = payload.event
   const text = (typeof event.text === 'string' ? event.text : '').trim()
-  if (!text) {
+  const slackAttachments = extractSlackAttachments(event)
+  if (!text && slackAttachments.length === 0) {
     return {
       shouldProcess: false,
       ingressEventId: payload.event_id,
@@ -388,7 +429,7 @@ export async function parseSlackWebhook(
       session_key: `slack:${event.channel}:${threadTs}`,
       source: 'slack',
       source_ref: `slack:${event.channel}:${event.ts}`,
-      title: truncate(resolvedText, 120),
+      title: truncate(resolvedText || `[${slackAttachments.length} file(s)]`, 120),
       payload: JSON.stringify({
         body: resolvedText,
         source: 'slack',
@@ -420,6 +461,7 @@ export async function parseSlackWebhook(
             }
           : {}),
         ...(actionToken ? { actionToken } : {}),
+        ...(slackAttachments.length > 0 ? { attachments: slackAttachments } : {}),
       }),
       status: 'NEW',
     },

@@ -1,5 +1,10 @@
 import type { Agent, WorkItem } from '@nitejar/database'
-import { buildUserMessage, buildIssuePreamble, buildSlackAppMentionHint } from './prompt-builder'
+import {
+  buildUserMessage,
+  buildMessageContextPrefix,
+  buildIssuePreamble,
+  buildSlackAppMentionHint,
+} from './prompt-builder'
 import { agentWarn } from './agent-logger'
 import { logTriage } from './triage-log'
 import { runRoutingArbiter } from './routing-arbiter'
@@ -150,8 +155,16 @@ export async function triageWorkItem(
   coalescedText?: string,
   triageContext?: TriageContext
 ): Promise<TriageResult> {
-  // Use full user message (with sender context, reply context, etc.) instead of bare title
-  const userContent = coalescedText || buildUserMessage(workItem)
+  // Use full user message (with sender context, reply context, etc.) instead of bare title.
+  // When coalescedText is provided, prepend sender/thread context from the work item.
+  let userContent: string
+  if (coalescedText) {
+    const contextPrefix = buildMessageContextPrefix(workItem)
+    userContent =
+      contextPrefix.length > 0 ? [...contextPrefix, coalescedText].join('\n') : coalescedText
+  } else {
+    userContent = buildUserMessage(workItem)
+  }
   const effectiveTriageContext = dedupeRecentHistory(triageContext, userContent)
   const recentHistoryForArbiter = mergeArbiterTranscriptContext(
     effectiveTriageContext?.recentHistory,

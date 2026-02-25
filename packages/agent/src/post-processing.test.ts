@@ -4,6 +4,7 @@ import {
   buildRetrySeedPromptFromStoredMessages,
   formatConversationForPostProcessing,
   shouldSkipFinalModePostProcessing,
+  extractSenderLabelFromText,
 } from './runner'
 import {
   buildPostProcessingPrompt,
@@ -208,6 +209,13 @@ describe('buildPostProcessingPrompt', () => {
     expect(prompt).toContain('[Pixel]')
     expect(prompt).toContain('Reply directly to Pat (@pat_user)')
     expect(prompt).toContain('do not write as if you are Pat (@pat_user)')
+  })
+
+  it('includes content preservation rules', () => {
+    const prompt = buildPostProcessingPrompt(baseAgent)
+    expect(prompt).toContain('Content preservation')
+    expect(prompt).toContain('Do not reduce it to a meta-summary')
+    expect(prompt).toContain('include too much rather than too little')
   })
 
   it('includes hit-limit warning when specified', () => {
@@ -548,5 +556,31 @@ describe('prompt boundary sanitization in post-processing', () => {
     // The adversarial requester label should be sanitized
     expect(transcript).not.toContain('\n[Agent]')
     expect(transcript).toContain('Hello')
+  })
+})
+
+describe('extractSenderLabelFromText', () => {
+  it('extracts name and handle from From metadata', () => {
+    expect(extractSenderLabelFromText('[From: Josh @josh | Via: telegram]\nHello')).toBe(
+      'Josh @josh'
+    )
+  })
+
+  it('extracts name-only From metadata', () => {
+    expect(extractSenderLabelFromText('[From: Alice | Channel: general | Via: slack]\nHi')).toBe(
+      'Alice'
+    )
+  })
+
+  it('returns User when no From metadata present', () => {
+    expect(extractSenderLabelFromText('Just a plain message')).toBe('User')
+  })
+
+  it('returns User for empty string', () => {
+    expect(extractSenderLabelFromText('')).toBe('User')
+  })
+
+  it('handles From metadata without Via suffix', () => {
+    expect(extractSenderLabelFromText('[From: Bob @bob]\nMessage')).toBe('Bob @bob')
   })
 })

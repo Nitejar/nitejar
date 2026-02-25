@@ -362,7 +362,12 @@ function buildContextTextForRetrieval(workItem: WorkItem): string {
  * Build the user message from a work item
  * Includes metadata about the sender/source when available
  */
-export function buildUserMessage(workItem: WorkItem): string {
+/**
+ * Build context metadata prefix lines for a user message (sender identity,
+ * thread context, reply context). Separated from the body so the runner can
+ * apply it even when coalescedText overrides the body.
+ */
+export function buildMessageContextPrefix(workItem: WorkItem): string[] {
   const payload = safeParsePayload(workItem.payload)
   const parts: string[] = []
 
@@ -371,18 +376,31 @@ export function buildUserMessage(workItem: WorkItem): string {
     parts.push(`[Private message from @${sanitize(payload.from_handle)}]`)
   }
 
-  // Add sender context if available
-  if (payload?.senderName || payload?.senderUsername) {
+  // Add sender context if available — use canonical identity resolution
+  // (actor envelope first, then legacy senderName/senderUsername fallback)
+  const identity = getRequesterIdentityFromPayload(payload)
+  if (identity && (identity.displayName || identity.handle)) {
     const senderParts: string[] = []
-    if (payload.senderName) senderParts.push(sanitize(payload.senderName))
-    if (payload.senderUsername) senderParts.push(`@${sanitize(payload.senderUsername)}`)
+    if (identity.displayName) senderParts.push(sanitize(identity.displayName))
+    if (identity.handle) senderParts.push(`@${sanitize(identity.handle)}`)
 
     const contextParts: string[] = [`From: ${senderParts.join(' ')}`]
-    if (payload.chatName && payload.chatType !== 'private') {
+    // Include platform user ID so the agent can mention the sender natively.
+    // For Slack, format as a ready-to-use mention token so the model can copy it directly.
+    if (identity.externalId) {
+      const source = identity.source ?? payload?.source
+      if (source === 'slack') {
+        contextParts.push(`Slack mention: <@${sanitize(identity.externalId)}>`)
+      } else {
+        contextParts.push(`User ID: ${sanitize(identity.externalId)}`)
+      }
+    }
+    if (payload?.chatName && payload.chatType !== 'private') {
       contextParts.push(`Channel: ${sanitize(payload.chatName)}`)
     }
-    if (payload.source) {
-      contextParts.push(`Via: ${payload.source}`)
+    const source = identity.source ?? payload?.source
+    if (source) {
+      contextParts.push(`Via: ${source}`)
     }
 
     parts.push(`[${contextParts.join(' | ')}]`)
@@ -415,6 +433,17 @@ export function buildUserMessage(workItem: WorkItem): string {
       parts.push(`[Reply Context | ${replyParts.join(' | ')}]`)
     }
   }
+
+  return parts
+}
+
+/**
+ * Build the user message from a work item.
+ * Includes metadata about the sender/source when available.
+ */
+export function buildUserMessage(workItem: WorkItem): string {
+  const payload = safeParsePayload(workItem.payload)
+  const parts = buildMessageContextPrefix(workItem)
 
   // Add the actual message content
   if (payload?.body) {
@@ -642,11 +671,14 @@ export function buildPostProcessingPrompt(
       `Rules:`,
       `- Write as yourself (${agent.name}). You are the agent who did the work.`,
       `- Reply directly to ${requester}; this message is sent back in the same conversation.`,
-      `- Summarize what you accomplished, found, or built. Focus on outcomes.`,
       `- Keep your own voice and perspective; do not write as if you are ${requester}.`,
-      `- Keep it concise and outcome-first instead of step-by-step process narration.`,
       `- Cover only this run's work.`,
       `- Output clean markdown suitable for posting publicly.`,
+      ``,
+      `Content preservation:`,
+      `- When the transcript contains content directed at ${requester} (explanations, recipes, recommendations, code, creative writing, lists, instructions, analysis), reproduce that content in your response. Do not reduce it to a meta-summary like "I provided X" — include the actual substance.`,
+      `- For tool-heavy work (code changes, file edits, research, debugging), summarize outcomes and key findings instead of narrating each step.`,
+      `- When in doubt, include too much rather than too little. A response that drops requested content is worse than one that's slightly verbose.`,
     ].join('\n'),
   ]
 

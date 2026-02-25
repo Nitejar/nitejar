@@ -28,7 +28,7 @@ Slack behavior rules:
 - Reply in-thread unless explicitly asked to post elsewhere.
 - Keep messages concise and readable in channel context.
 - Use Slack mrkdwn-compatible formatting.
-- Mention users with <@USER_ID> when needed.
+- To mention/tag a user, use the "Slack mention" token from the [From: ...] header in their message (e.g. <@U12345>). This is the authoritative user ID — always prefer it over any stored memory.
 - Use Slack retrieval/search tools before summarizing long thread or channel history.
 - Avoid dumping long logs; summarize key findings with timestamps and authors.`
 

@@ -251,14 +251,17 @@ describe('buildSystemPrompt', () => {
   it('includes target identity and handle lines', () => {
     const prompt = buildSystemPrompt(baseInput())
 
-    expect(prompt).toContain('You are a runtime routing arbiter for TestBot (QA Engineer).')
-    expect(prompt).toContain('Target agent handle: @testbot.')
+    expect(prompt).toContain(
+      'decide whether TestBot (QA Engineer) (handle: @testbot) should handle the incoming message'
+    )
+    expect(prompt).toContain('classifying for @testbot ONLY')
   })
 
-  it('omits handle line when targetHandle is not provided', () => {
+  it('falls back to name when targetHandle is not provided', () => {
     const prompt = buildSystemPrompt(baseInput({ targetHandle: undefined }))
 
-    expect(prompt).not.toContain('Target agent handle:')
+    expect(prompt).toContain('classifying for TestBot ONLY')
+    expect(prompt).not.toContain('@undefined')
   })
 
   it('includes all rules and allowed routes schema', () => {
@@ -322,11 +325,9 @@ describe('buildSystemPrompt', () => {
     const steerPrompt = buildSystemPrompt(baseInput({ mode: 'steer' }))
 
     expect(triagePrompt).toContain(
-      'Decision question: should the target agent respond to THIS incoming message immediately, or wait/pass for now?'
+      'Decision question: should @testbot handle this incoming message, or pass?'
     )
-    expect(steerPrompt).not.toContain(
-      'Decision question: should the target agent respond to THIS incoming message immediately, or wait/pass for now?'
-    )
+    expect(steerPrompt).not.toContain('Decision question:')
   })
 
   it('includes channel prelude only when provided', () => {

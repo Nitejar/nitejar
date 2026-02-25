@@ -186,18 +186,20 @@ export function toOpenAIMessage(
 
       if (!text && !toolCalls) return null
 
+      // For final-mode jobs, intermediate text-only messages (reasoning that was
+      // never posted) get injected as a user-role system annotation. This prevents
+      // the model from treating them as its own output pattern and parroting the
+      // format. The final posted response stays as a clean assistant message.
+      if (text && msg.jobHasFinalResponse && !toolCalls && parsed.is_final_response !== true) {
+        return {
+          role: 'user',
+          content: `<agent_scratchpad>\n${sanitize(text)}\n</agent_scratchpad>`,
+        }
+      }
+
       const message: OpenAI.ChatCompletionAssistantMessageParam = { role: 'assistant' }
       if (text) {
-        const sanitizedText = sanitize(text)
-        // For final-mode jobs: distinguish private reasoning from the posted response
-        if (parsed.is_final_response === true) {
-          message.content = `[Your response to the user]: ${sanitizedText}`
-        } else if (msg.jobHasFinalResponse && !toolCalls) {
-          // Text-only intermediate message in a final-mode job — internal reasoning
-          message.content = `[Your internal reasoning — not visible to user]: ${sanitizedText}`
-        } else {
-          message.content = sanitizedText
-        }
+        message.content = sanitize(text)
       }
       if (toolCalls) {
         message.tool_calls = toolCalls as OpenAI.ChatCompletionMessageToolCall[]
