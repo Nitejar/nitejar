@@ -54,7 +54,7 @@ describe('markLastAssistantAsFinalResponse', () => {
       .execute()
 
     expect(rows).toHaveLength(1)
-    const content = JSON.parse(rows[0]!.content!)
+    const content = JSON.parse(rows[0]!.content!) as Record<string, unknown>
     expect(content.text).toBe('Hi there!')
     expect(content.is_final_response).toBe(true)
   })
@@ -97,8 +97,8 @@ describe('markLastAssistantAsFinalResponse', () => {
       .execute()
 
     expect(rows).toHaveLength(2)
-    const first = JSON.parse(rows[0]!.content!)
-    const second = JSON.parse(rows[1]!.content!)
+    const first = JSON.parse(rows[0]!.content!) as Record<string, unknown>
+    const second = JSON.parse(rows[1]!.content!) as Record<string, unknown>
     expect(first.is_final_response).toBeUndefined()
     expect(second.is_final_response).toBe(true)
   })
@@ -154,7 +154,7 @@ describe('markLastAssistantAsFinalResponse', () => {
       .where('role', '=', 'assistant')
       .execute()
 
-    const content = JSON.parse(rows[0]!.content!)
+    const content = JSON.parse(rows[0]!.content!) as Record<string, unknown>
     expect(content.text).toBe('Here is the result')
     expect(content.tool_calls).toHaveLength(1)
     expect(content.is_final_response).toBe(true)
