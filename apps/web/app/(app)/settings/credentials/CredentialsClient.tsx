@@ -1,10 +1,7 @@
 'use client'
 
-import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { trpc } from '@/lib/trpc'
-import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { CredentialTable, type CredentialTableRow } from './CredentialTable'
 import {
@@ -14,9 +11,6 @@ import {
 } from './CredentialForm'
 
 export function CredentialsClient() {
-  const searchParams = useSearchParams()
-  const fromParam = searchParams.get('from')
-
   const utils = trpc.useUtils()
   const credentialsQuery = trpc.credentials.list.useQuery()
   const agentsQuery = trpc.org.listAgents.useQuery()
@@ -97,18 +91,6 @@ export function CredentialsClient() {
 
   return (
     <div className="space-y-4">
-      {fromParam && (
-        <Card className="border-white/10 bg-white/[0.02]">
-          <CardContent className="py-3 text-xs text-muted-foreground">
-            Opened from plugin setup. After saving, you can return to{' '}
-            <Link href={fromParam} className="text-primary hover:underline">
-              your plugin flow
-            </Link>
-            .
-          </CardContent>
-        </Card>
-      )}
-
       <CredentialTable
         credentials={credentials}
         selectedCredentialId={selectedCredentialId}

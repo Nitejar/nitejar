@@ -8,7 +8,7 @@ description: How Nitejar's packages, runtime, and data flow fit together.
 Nitejar is a monorepo with a Next.js web application at its center and several supporting packages. Messages arrive from external channels, get routed to agents, run through an inference loop with tool access, and produce responses that are delivered back to the source. Every step is recorded.
 
 ```
-Channels (Telegram, GitHub, Webhooks)
+Channels (Telegram, GitHub, Slack, Discord, Webhooks)
         │
         ▼
 ┌─────────────────────────────────┐
@@ -102,7 +102,7 @@ The host-side plugin lifecycle manager. Handles:
 Plugin handler registry and built-in integration implementations:
 
 - **Integration registry** — Maps plugin types to their handlers.
-- **Built-in handlers** — Telegram and GitHub handlers wrapped as plugins.
+- **Built-in handlers** — Telegram, GitHub, Slack, and Discord handlers wrapped as plugins.
 - **Webhook routing** — Routes inbound webhooks to the correct handler by type.
 
 ### `packages/sprites`

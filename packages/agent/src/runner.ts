@@ -10,6 +10,7 @@ import {
   failJob,
   cancelJob,
   appendMessage,
+  markLastAssistantAsFinalResponse,
   insertExternalApiCall,
   checkLimits,
   getPluginInstancesForAgent,
@@ -24,6 +25,8 @@ import {
 import {
   ensureSprite,
   getSpriteName,
+  getSpritesTokenSettings,
+  isSpritesExecutionAvailable,
   SpriteSessionManager,
   type ISpriteSession,
 } from '@nitejar/sprites'
@@ -33,6 +36,7 @@ import type { ToolHandler } from './tools/types'
 // Import channel providers so they self-register.
 import './integrations/github'
 import './integrations/telegram'
+import './integrations/slack'
 import {
   scanDirectoryContext,
   formatContextInjection,
@@ -207,12 +211,13 @@ export async function runAgent(
   }
   const agentConfig = parseAgentConfig(agent.config)
 
-  // Ensure agent has a sprite (optional - if no SPRITES_TOKEN, tools will be disabled)
+  // Ensure agent has a sprite when Sprites tool execution is available.
   let homeSpriteName: string | null = null
   let agentWithSprite = agent
   let sessionManager: SpriteSessionManager | null = null
+  const spriteSettings = await getSpritesTokenSettings()
 
-  if (process.env.SPRITES_TOKEN) {
+  if (isSpritesExecutionAvailable(spriteSettings)) {
     agentWithSprite = await ensureSprite(agent, {
       ...(agentConfig.networkPolicy
         ? { networkPolicy: toSpriteNetworkPolicy(agentConfig.networkPolicy) }
@@ -224,8 +229,15 @@ export async function runAgent(
     // Ensure home sandbox row exists and touch it
     await ensureHomeSandboxForAgent(agentWithSprite)
     await touchSandboxByName(agentWithSprite.id, 'home')
+    agentLog('Sprites tool execution enabled', {
+      tokenSource: spriteSettings.source,
+    })
   } else {
-    agentWarn('SPRITES_TOKEN not set - running without tool execution')
+    if (!spriteSettings.enabled) {
+      agentWarn('Tool execution disabled in Settings > Capabilities.')
+    } else {
+      agentWarn('Sprites token not configured. Add it in Settings > Capabilities > Tool Execution.')
+    }
   }
 
   // Active sandbox tracking: starts on "home", updated when agent switches sandboxes
@@ -438,15 +450,19 @@ export async function runAgent(
 
       // If the agent produced a single text response with no tool use, the raw
       // response is already clean prose — skip the post-processing LLM call.
-      const assistantMessages = currentRunMessages.filter((m) => m.role === 'assistant')
-      const hasToolUse = currentRunMessages.some((m) => m.role === 'tool')
-      const singleCleanResponse = assistantMessages.length === 1 && !hasToolUse && !hitLimit
+      const singleCleanResponse = shouldSkipFinalModePostProcessing(currentRunMessages, hitLimit)
 
       if (singleCleanResponse) {
         agentLog('Skipping post-processing — single assistant message, no tool use')
-        finalResponse = rawFinalResponse
-        await updateJob(job.id, { final_response: finalResponse })
-        await appendMessage(job.id, 'assistant', { text: finalResponse, is_final_response: true })
+        const persisted = await persistFinalModeResponseIfNeeded({
+          responseMode,
+          jobId: job.id,
+          rawFinalResponse,
+          currentRunMessages,
+          hitLimit,
+          skipPostProcessing: true,
+        })
+        finalResponse = persisted.finalResponse
         // Record a span so the trace shows post-processing was evaluated but skipped
         const skipSpan = spanCtx
           ? await startSpan(spanCtx, 'post_process', 'inference', jobSpan?.id ?? null)
@@ -471,14 +487,16 @@ export async function runAgent(
             hitLimit,
             requesterLabel,
           })
-          finalResponse = ppResult.response
-
-          // Store on job and append as special message
-          await updateJob(job.id, { final_response: finalResponse })
-          await appendMessage(job.id, 'assistant', {
-            text: finalResponse,
-            is_final_response: true,
+          const persisted = await persistFinalModeResponseIfNeeded({
+            responseMode,
+            jobId: job.id,
+            rawFinalResponse,
+            processedFinalResponse: ppResult.response,
+            currentRunMessages,
+            hitLimit,
+            skipPostProcessing: false,
           })
+          finalResponse = persisted.finalResponse ?? ppResult.response
 
           // Track inference cost
           if (ppResult.usage) {
@@ -905,8 +923,24 @@ async function runInferenceLoop(
       hasSessionManager: !!sessionManager,
     })
     if (!activeSpriteName) {
-      agentLog('No activeSpriteName, returning null context')
-      return null
+      agentLog('No activeSpriteName, returning integration-only tool context')
+      const parsedPayload = safeParsePayload(workItem.payload)
+      return {
+        spriteName: 'integration-only',
+        cwd: trackedCwd,
+        session: undefined,
+        agentId: agent.id,
+        jobId: job.id,
+        sessionKey: workItem.session_key,
+        discoveredSkills,
+        resolvedDbSkills,
+        pluginInstanceId: workItem.plugin_instance_id ?? undefined,
+        responseContext: extractResponseContext(workItem),
+        attachments: parsedPayload?.attachments,
+        editToolMode,
+        backgroundTaskManager: backgroundTaskManager ?? undefined,
+        activeSandboxName,
+      }
     }
 
     // Lazily create session on first tool call
@@ -1085,24 +1119,31 @@ async function runInferenceLoop(
   let costWarned = false
   let turnLimitWarned = false
   let paused = false
+  const repeatedToolErrorCounts = new Map<string, number>()
 
   const STEERED_MARKER = '__RUN_STEERED__'
-  const injectSteeringMessages = async (): Promise<void> => {
+  const STEER_PRIORITY_SYSTEM_NOTE =
+    'A newer user message arrived while you were working. Treat the newest user message as the highest-priority instruction and adapt immediately.'
+  const formatSteeringUserText = (steeringMsgs: SteeringMessage[]): string =>
+    steeringMsgs
+      .map((m) => `[${sanitizeLabel(m.senderName, 'User')}] ${sanitize(m.text)}`)
+      .join('\n')
+  const injectSteeringMessages = async (
+    source: 'mid_run' | 'end_of_run' = 'mid_run'
+  ): Promise<void> => {
     if (!onSteered) return
 
     const steeringMsgs = await onSteered()
     if (steeringMsgs.length === 0) return
 
-    const steerText =
-      steeringMsgs.length === 1
-        ? sanitize(steeringMsgs[0]!.text)
-        : steeringMsgs
-            .map((m) => `[${sanitizeLabel(m.senderName, 'User')}] ${sanitize(m.text)}`)
-            .join('\n')
-
+    const steerText = formatSteeringUserText(steeringMsgs)
+    messages.push({ role: 'system', content: STEER_PRIORITY_SYSTEM_NOTE })
+    await appendMessage(job.id, 'system', {
+      text: `[Steer ${source}] ${STEER_PRIORITY_SYSTEM_NOTE}`,
+    })
     messages.push({ role: 'user', content: steerText })
     await appendMessage(job.id, 'user', { text: steerText })
-    agentLog('Injected steering messages', { count: steeringMsgs.length })
+    agentLog('Injected steering messages', { count: steeringMsgs.length, source })
   }
 
   const waitForRunControl = async (): Promise<void> => {
@@ -1242,7 +1283,7 @@ async function runInferenceLoop(
     } catch (controlError) {
       const controlMsg = controlError instanceof Error ? controlError.message : String(controlError)
       if (controlMsg.includes(STEERED_MARKER)) {
-        await injectSteeringMessages()
+        await injectSteeringMessages('mid_run')
         continue
       }
       throw controlError
@@ -1712,10 +1753,14 @@ async function runInferenceLoop(
             totalToolCalls: assistantMessage.tool_calls.length,
           })
 
-          // Execute tool (or return error if no sprite)
+          // Execute tool (or return error if sprite-backed tool execution is unavailable)
           let result = toolContext
             ? await executeTool(toolName, toolInput, toolContext, integrationHandlers)
-            : { success: false, error: 'Tool execution disabled - no SPRITES_TOKEN configured' }
+            : {
+                success: false,
+                error:
+                  'Tool execution disabled. Configure Sprites in Settings > Capabilities > Tool Execution.',
+              }
 
           // Track CWD from bash tool results
           if (result._meta?.cwd) {
@@ -1838,11 +1883,31 @@ async function runInferenceLoop(
             durationMs: Date.now() - toolStart,
             success: result.success,
           })
+          const normalizedToolError = typeof result.error === 'string' ? result.error.trim() : ''
+          const toolErrorKey =
+            normalizedToolError.length > 0 ? `${toolName}::${normalizedToolError}` : null
+          const repeatedToolErrorCount =
+            !result.success && toolErrorKey
+              ? (repeatedToolErrorCounts.get(toolErrorKey) ?? 0) + 1
+              : 0
+          if (!result.success && toolErrorKey) {
+            repeatedToolErrorCounts.set(toolErrorKey, repeatedToolErrorCount)
+            if (repeatedToolErrorCount === 4) {
+              agentWarn('Repeated tool error detected', {
+                jobId: job.id,
+                toolName,
+                repeatCount: repeatedToolErrorCount,
+                error: normalizedToolError || 'unknown_error',
+                toolExecSpanId: toolExecSpan?.id ?? null,
+              })
+            }
+          }
           const toolSpanAttributes = {
             success: result.success,
             edit_tool_mode: toolContext?.editToolMode ?? editToolMode,
             active_sandbox: activeSandboxName,
             active_sprite: activeSpriteName ?? undefined,
+            ...(repeatedToolErrorCount > 0 ? { repeat_count: repeatedToolErrorCount } : {}),
             ...(result._meta?.editOperation ? { edit_operation: result._meta.editOperation } : {}),
             ...(result._meta?.hashMismatch ? { hash_mismatch: true } : {}),
             ...(result._meta?.sandboxSwitch
@@ -1974,7 +2039,7 @@ async function runInferenceLoop(
         }
 
         // Consume the steering messages and inject as a user turn
-        await injectSteeringMessages()
+        await injectSteeringMessages('mid_run')
       }
 
       await endSpan(toolBatchSpan)
@@ -2062,12 +2127,11 @@ async function runInferenceLoop(
         count: lastLookMsgs.length,
       })
 
-      const lastLookText =
-        lastLookMsgs.length === 1
-          ? sanitize(lastLookMsgs[0]!.text)
-          : lastLookMsgs
-              .map((m) => `[${sanitizeLabel(m.senderName, 'User')}] ${sanitize(m.text)}`)
-              .join('\n')
+      const lastLookText = formatSteeringUserText(lastLookMsgs)
+      messages.push({ role: 'system', content: STEER_PRIORITY_SYSTEM_NOTE })
+      await appendMessage(job.id, 'system', {
+        text: `[Steer end_of_run] ${STEER_PRIORITY_SYSTEM_NOTE}`,
+      })
       messages.push({ role: 'user', content: lastLookText })
       await appendMessage(job.id, 'user', { text: lastLookText })
 
@@ -2122,13 +2186,58 @@ async function runInferenceLoop(
   return { finalResponse, hitLimit, messages, currentRunStartIndex }
 }
 
+type TranscriptUserLine = {
+  label: string
+  text: string
+}
+
+const USER_SPEAKER_LINE_REGEX = /^\[([^\]\n]{1,120})\]\s*(.+)$/
+const USER_FROM_CONTEXT_REGEX = /\[From:\s*([^\]|]+)(?:\s*\|[^\]]*)?\]/i
+
+function parseTranscriptUserLines(content: string, fallbackLabel: string): TranscriptUserLine[] {
+  const lines = content
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+
+  if (lines.length > 0) {
+    const parsed = lines.map((line) => {
+      const match = line.match(USER_SPEAKER_LINE_REGEX)
+      if (!match) return null
+
+      const rawLabel = match[1]?.trim()
+      const rawText = match[2]?.trim()
+      if (!rawLabel || !rawText) return null
+      if (rawLabel.includes(':')) return null
+
+      return {
+        label: sanitizeLabel(rawLabel, fallbackLabel),
+        text: sanitize(rawText),
+      } satisfies TranscriptUserLine
+    })
+
+    if (parsed.every((entry) => entry !== null)) {
+      return parsed as TranscriptUserLine[]
+    }
+  }
+
+  const fromMatch = content.match(USER_FROM_CONTEXT_REGEX)
+  if (fromMatch) {
+    const speaker = sanitizeLabel(fromMatch[1]!.trim(), fallbackLabel)
+    const withoutFromLine = content.replace(/\[From:[^\]]+\]\s*\n?/i, '').trim()
+    const cleanedText = withoutFromLine.length > 0 ? withoutFromLine : content
+    return [{ label: speaker, text: sanitize(cleanedText) }]
+  }
+
+  return [{ label: fallbackLabel, text: sanitize(content) }]
+}
+
 /**
  * Format the conversation messages array for the post-processing input.
  * Produces a human-readable transcript the model can synthesize from.
  *
- * Labels use [Requester] and [agentName] (not [User]/[You]) to prevent the
- * post-processing model from confusing transcript speakers with the current
- * conversation roles and adopting the requester's voice.
+ * User labels prefer per-message participant names (for example in group channels)
+ * and fall back to a requester label when no sender identity is embedded.
  */
 export function formatConversationForPostProcessing(
   messages: OpenAI.ChatCompletionMessageParam[],
@@ -2149,9 +2258,14 @@ export function formatConversationForPostProcessing(
     }
 
     if (msg.role === 'user') {
-      const content =
-        typeof msg.content === 'string' ? sanitize(msg.content) : '[multimodal content]'
-      lines.push(`[${safeRequester}]: ${content}`)
+      if (typeof msg.content === 'string') {
+        const userLines = parseTranscriptUserLines(msg.content, safeRequester)
+        for (const line of userLines) {
+          lines.push(`[${line.label}]: ${line.text}`)
+        }
+      } else {
+        lines.push(`[${safeRequester}]: [multimodal content]`)
+      }
     }
 
     if (msg.role === 'assistant') {
@@ -2186,6 +2300,81 @@ export interface RetrySeedPromptResult {
   promptMessages: OpenAI.ChatCompletionMessageParam[]
   droppedIncompleteTrailingTurn: boolean
   skippedInitialDuplicateUser: boolean
+}
+
+export function shouldSkipFinalModePostProcessing(
+  currentRunMessages: OpenAI.ChatCompletionMessageParam[],
+  hitLimit: boolean
+): boolean {
+  const assistantMessages = currentRunMessages.filter((message) => message.role === 'assistant')
+  const hasToolUse = currentRunMessages.some((message) => message.role === 'tool')
+  return assistantMessages.length === 1 && !hasToolUse && !hitLimit
+}
+
+export interface FinalModePersistenceDeps {
+  updateJob: (jobId: string, updates: { final_response: string | null }) => Promise<unknown>
+  markLastAssistantAsFinalResponse: (jobId: string) => Promise<void>
+  appendMessage: (jobId: string, role: string, content: unknown) => Promise<unknown>
+}
+
+export interface PersistFinalModeResponseParams {
+  responseMode?: ResponseMode
+  jobId: string
+  rawFinalResponse: string | null
+  processedFinalResponse?: string
+  currentRunMessages: OpenAI.ChatCompletionMessageParam[]
+  hitLimit: boolean
+  skipPostProcessing?: boolean
+  deps?: Partial<FinalModePersistenceDeps>
+}
+
+export interface PersistFinalModeResponseResult {
+  finalResponse: string | null
+  handled: boolean
+  skippedPostProcessing: boolean
+}
+
+export async function persistFinalModeResponseIfNeeded(
+  params: PersistFinalModeResponseParams
+): Promise<PersistFinalModeResponseResult> {
+  const responseMode = params.responseMode ?? 'streaming'
+  if (responseMode !== 'final' || !params.rawFinalResponse) {
+    return {
+      finalResponse: params.rawFinalResponse,
+      handled: false,
+      skippedPostProcessing: false,
+    }
+  }
+
+  const skipPostProcessing =
+    params.skipPostProcessing ??
+    shouldSkipFinalModePostProcessing(params.currentRunMessages, params.hitLimit)
+  const finalResponse = skipPostProcessing
+    ? params.rawFinalResponse
+    : (params.processedFinalResponse ?? params.rawFinalResponse)
+
+  const deps: FinalModePersistenceDeps = {
+    updateJob: params.deps?.updateJob ?? updateJob,
+    markLastAssistantAsFinalResponse:
+      params.deps?.markLastAssistantAsFinalResponse ?? markLastAssistantAsFinalResponse,
+    appendMessage: params.deps?.appendMessage ?? appendMessage,
+  }
+
+  await deps.updateJob(params.jobId, { final_response: finalResponse })
+  if (skipPostProcessing) {
+    await deps.markLastAssistantAsFinalResponse(params.jobId)
+  } else {
+    await deps.appendMessage(params.jobId, 'assistant', {
+      text: finalResponse,
+      is_final_response: true,
+    })
+  }
+
+  return {
+    finalResponse,
+    handled: true,
+    skippedPostProcessing: skipPostProcessing,
+  }
 }
 
 export function buildRetrySeedPromptFromStoredMessages(

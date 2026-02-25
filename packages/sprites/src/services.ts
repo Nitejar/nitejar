@@ -165,7 +165,7 @@ export async function createSpriteService(
  * List all managed services on a sprite.
  */
 export async function listSpriteServices(spriteName: string): Promise<ServiceWithState[]> {
-  const sprite = getSprite(spriteName)
+  const sprite = await getSprite(spriteName)
   return sprite.listServices()
 }
 
@@ -173,7 +173,7 @@ export async function listSpriteServices(spriteName: string): Promise<ServiceWit
  * Delete a managed service from a sprite.
  */
 export async function deleteSpriteService(spriteName: string, serviceName: string): Promise<void> {
-  const sprite = getSprite(spriteName)
+  const sprite = await getSprite(spriteName)
   await sprite.deleteService(serviceName)
 }
 
@@ -185,7 +185,7 @@ export async function startSpriteService(
   serviceName: string,
   duration?: string
 ): Promise<ServiceStartResult> {
-  const sprite = getSprite(spriteName)
+  const sprite = await getSprite(spriteName)
   const stream = await sprite.startService(serviceName, duration)
   return consumeServiceLogStream(stream)
 }
@@ -198,7 +198,7 @@ export async function stopSpriteService(
   serviceName: string,
   timeout?: string
 ): Promise<ServiceStartResult> {
-  const sprite = getSprite(spriteName)
+  const sprite = await getSprite(spriteName)
   const stream = await sprite.stopService(serviceName, timeout)
   return consumeServiceLogStream(stream)
 }

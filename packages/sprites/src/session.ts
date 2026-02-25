@@ -1,5 +1,6 @@
 import { type Sprite, type SpriteCommand, type Session } from '@fly/sprites'
 import { getSprite } from './client'
+import { getOptionalSpritesToken, requireSpritesToken } from './token-settings'
 import {
   createSpriteSession,
   findActiveSessionsForConversation,
@@ -386,7 +387,7 @@ class SpriteSessionImpl implements ISpriteSession {
   }
 
   private async killRemoteSession(): Promise<void> {
-    const token = process.env.SPRITES_TOKEN
+    const token = await getOptionalSpritesToken()
     if (!token) return
 
     try {
@@ -748,13 +749,6 @@ class SpriteSessionImpl implements ISpriteSession {
  * Cleanup happens when the conversation is compacted or reset.
  */
 export class SpriteSessionManager {
-  constructor() {
-    const token = process.env.SPRITES_TOKEN
-    if (!token) {
-      throw new Error('SPRITES_TOKEN environment variable is required')
-    }
-  }
-
   /**
    * Get or create a session for a conversation
    * Sessions are lazily created on first command execution
@@ -807,7 +801,7 @@ export class SpriteSessionManager {
     const cwd = options?.cwd ?? '/home/sprite'
     const tty = options?.tty ?? false
 
-    const sprite = getSprite(spriteName)
+    const sprite = await getSprite(spriteName)
 
     // Create a detachable bash session and wait for session info.
     // Session creation can fail transiently; retry before giving up.
@@ -965,7 +959,7 @@ export class SpriteSessionManager {
     options?: SessionOptions
   ): Promise<ISpriteSession | null> {
     try {
-      const sprite = getSprite(record.sprite_name)
+      const sprite = await getSprite(record.sprite_name)
       const sessions = await sprite.listSessions()
 
       // Compare as strings since session_id is stored as text
@@ -997,7 +991,7 @@ export class SpriteSessionManager {
    * Close a session for a conversation (called during compaction/reset)
    */
   async closeSessionForConversation(sessionKey: string, agentId: string): Promise<void> {
-    const token = process.env.SPRITES_TOKEN
+    const token = await getOptionalSpritesToken()
 
     const records = await findActiveSessionsForConversation(sessionKey, agentId)
     for (const record of records) {
@@ -1031,7 +1025,7 @@ export class SpriteSessionManager {
     maxAgeSeconds = 3600,
     deleteOlderThan = 86400
   ): Promise<{ closedStale: number; deleted: number }> {
-    const token = process.env.SPRITES_TOKEN
+    const token = await getOptionalSpritesToken()
     if (!token) {
       return { closedStale: 0, deleted: 0 }
     }
@@ -1088,9 +1082,10 @@ export async function closeSpriteSessionForConversation(
   agentId: string
 ): Promise<void> {
   try {
+    await requireSpritesToken()
     const manager = getSpriteSessionManager()
     await manager.closeSessionForConversation(sessionKey, agentId)
   } catch {
-    // SPRITES_TOKEN might not be set - that's okay
+    // Tool execution may be disabled or unconfigured. Swallow for best-effort cleanup.
   }
 }

@@ -6,10 +6,7 @@ export const runtime = 'nodejs'
 
 const fontCache = new Map<string, ArrayBuffer>()
 
-async function loadGoogleFont(
-  family: string,
-  weight: 400 | 600,
-): Promise<ArrayBuffer> {
+async function loadGoogleFont(family: string, weight: 400 | 600): Promise<ArrayBuffer> {
   const cacheKey = `${family}-${weight}`
   const cached = fontCache.get(cacheKey)
   if (cached) return cached
@@ -26,7 +23,7 @@ async function loadGoogleFont(
     }).then((res) => res.text())
 
     const fontUrlMatches = Array.from(
-      css.matchAll(/src:\s*url\((https:[^)]+)\)\s*format\('([^']+)'\)/gi),
+      css.matchAll(/src:\s*url\((https:[^)]+)\)\s*format\('([^']+)'\)/gi)
     )
 
     // next/og in this project rejects woff2, so prefer truetype/opentype/woff.
@@ -52,16 +49,14 @@ async function loadGoogleFont(
     return fontData
   } catch (error) {
     throw new Error(
-      `Failed to load Google font ${family} ${weight}: ${error instanceof Error ? error.message : String(error)}`,
+      `Failed to load Google font ${family} ${weight}: ${error instanceof Error ? error.message : String(error)}`
     )
   }
 }
 
 function getWordsLogo(): string {
   try {
-    const buf = readFileSync(
-      join(process.cwd(), 'public', 'logos', 'nitejar-words.png'),
-    )
+    const buf = readFileSync(join(process.cwd(), 'public', 'logos', 'nitejar-words.png'))
     return `data:image/png;base64,${buf.toString('base64')}`
   } catch {
     return ''
@@ -93,41 +88,38 @@ export async function GET(request: Request) {
   const docsTitle = clampText(titleParam ?? 'Nitejar Docs', 80)
   const docsDescription = clampText(
     descriptionParam ?? 'Documentation for the self-hosted AI agent fleet.',
-    140,
+    140
   )
 
-  const [interRegularData, interSemiboldData, dmSerifRegularData] = await Promise.all(
-    [
-      loadGoogleFont('Inter', 400),
-      loadGoogleFont('Inter', 600),
-      loadGoogleFont('DM Serif Display', 400),
-    ],
-  )
+  const [interRegularData, interSemiboldData, dmSerifRegularData] = await Promise.all([
+    loadGoogleFont('Inter', 400),
+    loadGoogleFont('Inter', 600),
+    loadGoogleFont('DM Serif Display', 400),
+  ])
 
   const wordsLogo = getWordsLogo()
   const wordmarkLogo = getWordmarkLogo()
 
-  const fonts: { name: string; data: ArrayBuffer; weight: 400 | 600; style: 'normal' }[] =
-    [
-      {
-        name: 'Inter',
-        data: interRegularData,
-        weight: 400,
-        style: 'normal',
-      },
-      {
-        name: 'Inter',
-        data: interSemiboldData,
-        weight: 600,
-        style: 'normal',
-      },
-      {
-        name: 'DM Serif Display',
-        data: dmSerifRegularData,
-        weight: 400,
-        style: 'normal',
-      },
-    ]
+  const fonts: { name: string; data: ArrayBuffer; weight: 400 | 600; style: 'normal' }[] = [
+    {
+      name: 'Inter',
+      data: interRegularData,
+      weight: 400,
+      style: 'normal',
+    },
+    {
+      name: 'Inter',
+      data: interSemiboldData,
+      weight: 600,
+      style: 'normal',
+    },
+    {
+      name: 'DM Serif Display',
+      data: dmSerifRegularData,
+      weight: 400,
+      style: 'normal',
+    },
+  ]
 
   return new ImageResponse(
     isDocs ? (
@@ -295,6 +287,6 @@ export async function GET(request: Request) {
       width: 1200,
       height: 630,
       fonts,
-    },
+    }
   )
 }

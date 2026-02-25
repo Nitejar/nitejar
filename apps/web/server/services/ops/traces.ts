@@ -9,6 +9,7 @@ import {
   getJobSpanSummary,
   listBackgroundTasksByJobPaged,
   listExternalApiCallsByJobPaged,
+  listInferenceCallsByJobPaged,
   listInferenceCallsByJobWithPayloadsPaged,
   listMessagesByJobPaged,
   listSpansByJobPaged,
@@ -67,6 +68,7 @@ export async function getRunTraceOp(input: GetRunTraceInput) {
     input.externalCallLimit,
     500
   )
+  const includeInferencePayloads = input.includeInferencePayloads === true
 
   const [spans, messages, inferenceCalls, backgroundTasks, externalCalls] = await Promise.all([
     input.includeSpans
@@ -82,10 +84,15 @@ export async function getRunTraceOp(input: GetRunTraceInput) {
         })
       : Promise.resolve(undefined),
     input.includeInferenceCalls
-      ? listInferenceCallsByJobWithPayloadsPaged(run.id, {
-          offset: inferenceCallOffset,
-          limit: inferenceCallLimit,
-        })
+      ? includeInferencePayloads
+        ? listInferenceCallsByJobWithPayloadsPaged(run.id, {
+            offset: inferenceCallOffset,
+            limit: inferenceCallLimit,
+          })
+        : listInferenceCallsByJobPaged(run.id, {
+            offset: inferenceCallOffset,
+            limit: inferenceCallLimit,
+          })
       : Promise.resolve(undefined),
     input.includeBackgroundTasks
       ? listBackgroundTasksByJobPaged(run.id, {
@@ -103,6 +110,7 @@ export async function getRunTraceOp(input: GetRunTraceInput) {
 
   const includeFullContent = input.includeFullMessageContent !== false
   const maxContentBytes = input.maxContentBytes
+  const inferencePayloadMaxBytes = input.inferencePayloadMaxBytes
   const normalizedMessages = messages?.map((message) => {
     const content = message.content ?? ''
     const contentBytes = Buffer.byteLength(content, 'utf8')
@@ -145,6 +153,104 @@ export async function getRunTraceOp(input: GetRunTraceInput) {
     }
   })
 
+  const normalizedInferenceCalls = inferenceCalls?.map((entry) => {
+    const baseMeta = {
+      omitted: !includeInferencePayloads,
+      truncated: false,
+      contentBytes: null as number | null,
+      returnedBytes: includeInferencePayloads ? 0 : null,
+    }
+
+    if (!includeInferencePayloads || !('request_payload_json' in entry)) {
+      return {
+        ...entry,
+        request_payload_json: null,
+        request_payload_metadata_json:
+          'request_payload_metadata_json' in entry
+            ? ((entry.request_payload_metadata_json as string | null) ?? null)
+            : null,
+        response_payload_json: null,
+        response_payload_metadata_json:
+          'response_payload_metadata_json' in entry
+            ? ((entry.response_payload_metadata_json as string | null) ?? null)
+            : null,
+        request_payload_byte_size: null,
+        response_payload_byte_size: null,
+        requestPayloadMeta: baseMeta,
+        responsePayloadMeta: baseMeta,
+      }
+    }
+    const withPayload = entry as typeof entry & {
+      request_payload_json: string | null
+      request_payload_metadata_json: string | null
+      request_payload_byte_size: number | null
+      response_payload_json: string | null
+      response_payload_metadata_json: string | null
+      response_payload_byte_size: number | null
+    }
+
+    const normalizePayload = (payload: string | null, byteSize: number | null) => {
+      const content = payload ?? ''
+      const contentBytes =
+        typeof byteSize === 'number' ? byteSize : Buffer.byteLength(content, 'utf8')
+      if (!payload) {
+        return {
+          value: null,
+          meta: {
+            omitted: false,
+            truncated: false,
+            contentBytes,
+            returnedBytes: 0,
+          },
+        }
+      }
+
+      if (typeof inferencePayloadMaxBytes === 'number') {
+        const truncated = truncateUtf8(payload, inferencePayloadMaxBytes)
+        return {
+          value: truncated.text,
+          meta: {
+            omitted: false,
+            truncated: truncated.truncated,
+            contentBytes,
+            returnedBytes: Buffer.byteLength(truncated.text, 'utf8'),
+          },
+        }
+      }
+
+      return {
+        value: payload,
+        meta: {
+          omitted: false,
+          truncated: false,
+          contentBytes,
+          returnedBytes: Buffer.byteLength(payload, 'utf8'),
+        },
+      }
+    }
+
+    const requestPayload = normalizePayload(
+      withPayload.request_payload_json,
+      withPayload.request_payload_byte_size
+    )
+    const responsePayload = normalizePayload(
+      withPayload.response_payload_json,
+      withPayload.response_payload_byte_size
+    )
+
+    return {
+      ...entry,
+      request_payload_json: requestPayload.value,
+      request_payload_metadata_json: withPayload.request_payload_metadata_json ?? null,
+      request_payload_byte_size: withPayload.request_payload_byte_size ?? null,
+      response_payload_json: responsePayload.value,
+      response_payload_metadata_json: withPayload.response_payload_metadata_json ?? null,
+      response_payload_byte_size: withPayload.response_payload_byte_size ?? null,
+      requestPayloadMeta: requestPayload.meta,
+      responsePayloadMeta: responsePayload.meta,
+    }
+  })
+
   return {
     run,
     cost: costs[0] ?? null,
@@ -171,13 +277,13 @@ export async function getRunTraceOp(input: GetRunTraceInput) {
           }),
         }
       : {}),
-    ...(inferenceCalls
+    ...(normalizedInferenceCalls
       ? {
-          inferenceCalls,
+          inferenceCalls: normalizedInferenceCalls,
           inferenceCallsPage: buildPageInfo({
             offset: inferenceCallOffset,
             limit: inferenceCallLimit,
-            returned: inferenceCalls.length,
+            returned: normalizedInferenceCalls.length,
             total: inferenceCallTotal,
           }),
         }

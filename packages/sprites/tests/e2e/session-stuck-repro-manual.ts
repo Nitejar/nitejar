@@ -29,10 +29,6 @@ function resolveSpriteName(): string {
 }
 
 async function main() {
-  if (!process.env.SPRITES_TOKEN) {
-    throw new Error('SPRITES_TOKEN not set')
-  }
-
   const spriteName = resolveSpriteName()
   const manager = new SpriteSessionManager()
 

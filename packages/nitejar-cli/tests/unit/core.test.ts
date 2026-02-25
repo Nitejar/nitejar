@@ -226,8 +226,12 @@ describe('manifest fetch behavior', () => {
       fetchImpl,
     })
 
-    expect(calls).toEqual(['https://github.com/nitejar/nitejar/releases/download/v1.2.3/manifest.json'])
-    expect(result.manifestUrl).toBe('https://github.com/nitejar/nitejar/releases/download/v1.2.3/manifest.json')
+    expect(calls).toEqual([
+      'https://github.com/nitejar/nitejar/releases/download/v1.2.3/manifest.json',
+    ])
+    expect(result.manifestUrl).toBe(
+      'https://github.com/nitejar/nitejar/releases/download/v1.2.3/manifest.json'
+    )
     expect(result.manifest.version).toBe('v1.2.3')
   })
 

@@ -1,0 +1,176 @@
+---
+title: Slack Setup
+description: Connect Slack to Nitejar using a manifest-based app registration flow.
+---
+
+This guide walks through connecting a Slack workspace to Nitejar. By the end, your bot will receive channel messages and DMs, route them to an agent, and post responses back in the originating thread.
+
+The Slack plugin is a `messaging` type plugin with `final` response mode -- it sends one message per run after the agent finishes working.
+
+## 1. Create a Slack app from the manifest
+
+Nitejar generates a Slack app manifest for you. No manual scope or event configuration needed.
+
+1. Open the dashboard at `/`.
+2. Go to **Plugins** in the sidebar.
+3. Find the **Slack** plugin and click **New Instance**.
+4. Give it a name (this becomes the Slack app display name, up to 35 characters).
+5. Optionally choose your **Listen for** mode (can be changed later).
+6. Click **Create Slack App**.
+
+Nitejar creates a pending connection and opens Slack's app configuration page with a prefilled manifest. From there:
+
+- Create the app from the manifest.
+- Install it to your workspace.
+- Invite the bot to channels where it should listen: `/invite @your-bot-handle`.
+
+<Callout type="info" title="What the manifest includes">
+  The generated manifest configures bot scopes for reading messages, channels, users, and reactions,
+  plus writing messages and reactions. It subscribes to `app_mention`, `message.channels`,
+  `message.groups`, `message.im`, and `message.mpim` events. You do not need to configure any of
+  this manually.
+</Callout>
+
+## 2. Add credentials and verify
+
+After installing the Slack app, go back to your Nitejar plugin instance detail page (you are redirected there automatically). Complete the setup:
+
+1. Copy the **Bot User OAuth Token** from Slack (under OAuth & Permissions). It starts with `xoxb-`.
+2. Copy the **Signing Secret** from Slack (under Basic Information > App Credentials).
+3. Paste both into the Nitejar setup card.
+4. Assign an **agent** to handle incoming messages.
+5. Save.
+
+Nitejar validates the token on save and automatically detects the bot user ID. If validation fails, double-check that you copied the token and secret exactly (no leading/trailing whitespace).
+
+<Callout type="warn" title="Important">
+  Your bot token and signing secret are secrets. Nitejar encrypts them at rest in the database, but
+  the values in your clipboard are your responsibility. Do not commit them to version control or
+  share them in public channels.
+</Callout>
+
+## 3. Webhook URL and base URL resolution
+
+Slack delivers events to your Nitejar instance via webhooks. The webhook URL follows this pattern:
+
+```
+{BASE_URL}/api/webhooks/plugins/slack/{INSTANCE_ID}
+```
+
+The manifest embeds this URL automatically. `BASE_URL` resolves in this order:
+
+1. **Settings > Runtime > Public app URL** (the `app_base_url` field in runtime settings)
+2. `APP_URL` environment variable
+3. `APP_BASE_URL` environment variable
+4. `NEXTAUTH_URL` environment variable
+5. `NEXT_PUBLIC_APP_URL` environment variable
+6. `http://localhost:3000` (fallback)
+
+If the resolved URL is not public (localhost, private IP ranges), Nitejar warns you during setup. You need a public HTTPS URL for Slack to reach your instance.
+
+**Local development:** Use a tunnel like ngrok to expose your local server:
+
+```bash
+ngrok http 3000
+```
+
+Then set `APP_BASE_URL` in your `.env` to the ngrok URL, or configure it in **Settings > Runtime > Public app URL**.
+
+## 4. Test it
+
+1. Open Slack and find a channel where the bot has been invited.
+2. Mention the bot: `@your-bot-handle what's up?`
+3. The bot adds an eyes reaction to acknowledge receipt, then replies in the same thread once the agent finishes.
+4. Open **Admin > Activity** to see the work item. Click it to inspect the full run: webhook payload, inference calls, tool executions, token counts, and the delivered response.
+
+If the bot does not respond, see [Troubleshooting](#8-troubleshooting) below.
+
+<Callout type="info" title="Where to verify">
+  Go to Admin > Plugins and click your Slack instance. The instance detail page shows recent
+  inbound and outbound events. This is the first place to check when something is not working.
+</Callout>
+
+## 5. Configuration options
+
+### Listen mode (inbound policy)
+
+| Mode                                 | Behavior                                                                                                      |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| **Mentions only** (default)          | Responds to `@mentions`, direct messages, and `app_mention` events. Ignores unmentioned messages in channels. |
+| **All messages in allowed channels** | Responds to every message in channels where the bot is present (or in `allowedChannels` if set).              |
+
+Mentions-only is the default because Slack workspaces are noisy. It keeps your fleet focused on messages directed at the bot.
+
+### Allowed channels
+
+By default, the bot listens in every channel it has been invited to. To restrict it, add channel IDs to the `allowedChannels` list in your plugin instance config. Messages from channels not on the list are silently ignored.
+
+To find a channel ID, right-click the channel name in Slack and choose "Copy link." The ID is the last path segment.
+
+## 6. Agent Slack tools
+
+When an agent runs on a Slack-triggered work item, it gets access to seven Slack-specific tools:
+
+| Tool                             | What it does                                                                                          |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `slack_get_thread`               | Read messages from the current (or any) Slack thread. Supports pagination and time filtering.         |
+| `slack_get_channel_history`      | Read recent messages from a channel.                                                                  |
+| `slack_get_channel_info`         | Get channel metadata: name, topic, purpose, type, member count.                                       |
+| `slack_list_channels`            | List channels the bot can access.                                                                     |
+| `slack_search_channel_messages`  | Keyword search within a channel's message history.                                                    |
+| `slack_search_workspace_context` | Search workspace context via Slack's assistant search API (requires action token from Slack context). |
+| `slack_export_response`          | Export structured response data for a Slack trigger.                                                  |
+
+Most tools default to the current channel and thread when called without explicit IDs.
+
+### Restricting agent tools
+
+Each agent-plugin assignment has a **policy** with two modes:
+
+- **`allow_all`** (default) -- The agent can use all 7 Slack tools.
+- **`allow_list`** -- The agent can only use the tools you explicitly allow. Everything else is blocked.
+
+When you assign an agent to a Slack plugin instance (in the admin UI or via the API), you can attach a policy. For example, to give an agent read-only access to the current thread and channel info, set the policy to `allow_list` with `read_thread` and `read_channel_info`.
+
+Different agents on the same Slack instance can have different restrictions.
+
+## 7. Built-in commands
+
+The bot recognizes `/clear`, which resets the conversation session for the current thread. This is useful when the agent's context fills up or you want a fresh start. The bot confirms the reset in the thread.
+
+## 8. Troubleshooting
+
+**Bot does not respond at all**
+
+- Verify the bot token and signing secret are correct. Go to Admin > Plugins > your instance and check for config validation errors.
+- Make sure the bot has been invited to the channel (`/invite @your-bot-handle`).
+- Check that the webhook URL is reachable. The instance detail page shows the configured request URL. If it points to localhost, Slack cannot reach it.
+- Check Admin > Activity for work items. If work items appear but responses fail, the issue is on the delivery side. Click the work item to see error details.
+
+**Bot does not respond to messages (only to mentions)**
+
+- This is the default behavior. The bot uses mentions-only mode unless you switch to "All messages in allowed channels" in the plugin config.
+
+**Invalid signature errors**
+
+- Confirm the signing secret is copied exactly from Slack (Basic Information > App Credentials). No extra whitespace.
+- Confirm the event subscription request URL in Slack matches the webhook URL shown on the Nitejar instance detail page.
+- If you changed environment variables or runtime settings, the URL in the Slack app config may be stale. Update it in Slack under Event Subscriptions > Request URL.
+
+**Repeated or duplicate events**
+
+- Slack retries unacknowledged events. Nitejar deduplicates by team, channel, and message timestamp, plus Slack event ID. Retries should not create duplicate work items.
+
+**Rate limit errors**
+
+- Slack has rate limits on bot API calls. If the agent makes many tool calls in a single run, it may hit limits. The plugin handles rate-limit errors gracefully, but high-volume workloads may need throttling.
+
+## Session keys
+
+The plugin organizes conversations using session keys:
+
+```
+slack:{channelId}:{threadTs}
+```
+
+Each unique channel-and-thread combination maps to an independent conversation history. The agent sees only messages from the same session when building context. New threads in the same channel start fresh sessions.

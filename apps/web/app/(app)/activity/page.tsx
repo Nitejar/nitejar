@@ -353,11 +353,6 @@ function EventCard({ event }: { event: WorkItemEvent }) {
   const githubUrl = sourceKey === 'github' ? githubUrlFromSourceRef(event.sourceRef) : null
   const visibleRuns = event.runs.slice(0, MAX_VISIBLE_AVATARS)
   const overflowCount = event.runs.length - MAX_VISIBLE_AVATARS
-  const queueTotal =
-    event.queuePendingCount +
-    event.queueIncludedCount +
-    event.queueDroppedCount +
-    event.queueCancelledCount
 
   const integrationHref = event.pluginInstanceId
     ? `/plugins/instances/${event.pluginInstanceId}`
@@ -439,14 +434,6 @@ function EventCard({ event }: { event: WorkItemEvent }) {
         {allRuns.length > 1 && (
           <span className="relative shrink-0 text-[0.55rem] tabular-nums text-white/30">
             {allRuns.length} runs
-          </span>
-        )}
-
-        {queueTotal > 0 && (
-          <span className="relative hidden shrink-0 rounded bg-white/[0.05] px-1.5 py-0.5 text-[0.55rem] text-white/45 md:inline-flex">
-            q:{event.queueIncludedCount} in · {event.queueDroppedCount} drop ·{' '}
-            {event.queuePendingCount} pending
-            {event.queueCancelledCount > 0 ? ` · ${event.queueCancelledCount} cancel` : ''}
           </span>
         )}
 

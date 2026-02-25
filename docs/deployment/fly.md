@@ -18,11 +18,12 @@ fly volumes create nitejar_data --size 1 --region ord
 
 # Set secrets
 fly secrets set ENCRYPTION_KEY="$(openssl rand -hex 32)"
-fly secrets set SPRITES_TOKEN="your-sprites-token"
 
 # Deploy
 fly deploy
 ```
+
+After deploy, open **Settings > Capabilities > Tool Execution** in the app and save your Sprites API key.
 
 ## fly.toml
 

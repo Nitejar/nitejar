@@ -44,10 +44,6 @@ function parseArgs(): { spriteName: string; requireRecovery: boolean } {
 }
 
 async function main() {
-  if (!process.env.SPRITES_TOKEN) {
-    throw new Error('SPRITES_TOKEN not set')
-  }
-
   const { spriteName, requireRecovery } = parseArgs()
   const manager = new SpriteSessionManager()
 

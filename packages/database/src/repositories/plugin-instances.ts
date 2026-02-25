@@ -62,6 +62,13 @@ export interface PluginInstanceWithAgents extends PluginInstanceRecord {
   agents: { id: string; name: string }[]
 }
 
+export interface AgentPluginInstanceAssignmentRecord {
+  agent_id: string
+  plugin_instance_id: string
+  created_at: number
+  policy_json: string | null
+}
+
 export async function findPluginInstanceById(id: string): Promise<PluginInstanceRecord | null> {
   const db = getDb()
   const result = await db
@@ -255,6 +262,7 @@ export async function setAgentPluginInstanceAssignment(params: {
   pluginInstanceId: string
   agentId: string
   enabled: boolean
+  policyJson?: string | null
 }): Promise<void> {
   const db = getDb()
   const timestamp = now()
@@ -274,13 +282,35 @@ export async function setAgentPluginInstanceAssignment(params: {
       plugin_instance_id: params.pluginInstanceId,
       agent_id: params.agentId,
       created_at: timestamp,
+      ...(params.policyJson !== undefined ? { policy_json: params.policyJson } : {}),
     })
-    .onConflict((oc) =>
-      oc.columns(['plugin_instance_id', 'agent_id']).doUpdateSet({
+    .onConflict((oc) => {
+      const patch: Record<string, unknown> = {
         created_at: timestamp,
-      })
-    )
+      }
+      if (params.policyJson !== undefined) {
+        patch.policy_json = params.policyJson
+      }
+
+      return oc.columns(['plugin_instance_id', 'agent_id']).doUpdateSet(patch)
+    })
     .execute()
+}
+
+export async function getAgentPluginInstanceAssignment(params: {
+  pluginInstanceId: string
+  agentId: string
+}): Promise<AgentPluginInstanceAssignmentRecord | null> {
+  const db = getDb()
+
+  const row = await db
+    .selectFrom('agent_plugin_instances')
+    .selectAll()
+    .where('plugin_instance_id', '=', params.pluginInstanceId)
+    .where('agent_id', '=', params.agentId)
+    .executeTakeFirst()
+
+  return row ?? null
 }
 
 export async function getPluginInstancesForAgent(

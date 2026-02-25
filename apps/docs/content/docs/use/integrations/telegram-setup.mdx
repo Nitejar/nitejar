@@ -45,7 +45,7 @@ Telegram delivers messages to your Nitejar instance via webhooks. The webhook UR
 {APP_BASE_URL}/api/webhooks/plugins/telegram/{INSTANCE_ID}
 ```
 
-**Production:** If `APP_BASE_URL` is set in your environment, Nitejar auto-registers the webhook with Telegram when you save the plugin instance. Nothing else to do.
+**Production:** Set your public URL in **Settings > Runtime > Public app URL** in the admin UI, or set `APP_BASE_URL` in your environment. Nitejar auto-registers the webhook with Telegram when you save the plugin instance. The runtime setting takes priority over environment variables. See the [configuration docs](/docs/start-here/configuration#public-app-url) for the full resolution order.
 
 **Local development:** Telegram needs a public URL to reach your machine. Use ngrok:
 
@@ -58,6 +58,8 @@ Then set `APP_BASE_URL` in your `.env` to the ngrok URL:
 ```bash
 APP_BASE_URL=https://your-subdomain.ngrok-free.app
 ```
+
+Or set it in **Settings > Runtime > Public app URL** in the admin UI.
 
 Nitejar uses this to construct the webhook URL and registers it with Telegram automatically. If you use a paid ngrok plan with a stable domain, set it once and forget it.
 

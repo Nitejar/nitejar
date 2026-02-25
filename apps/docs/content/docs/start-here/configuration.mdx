@@ -55,22 +55,21 @@ Most variables are optional.
 
 ## Environment variables
 
-| Variable                | Required         | Default                               | Description                                                                                                                                       |
-| ----------------------- | ---------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NODE_ENV`              | No               | `development`                         | `development`, `production`, or `test`. Controls logging verbosity and security warnings.                                                         |
-| `APP_BASE_URL`          | No               | CLI: inferred from selected port      | Public URL where Nitejar is reachable. Used to construct webhook callback URLs. Must be a real URL in production.                                 |
-| `DATABASE_URL`          | No               | CLI: `~/.nitejar/data/nitejar.db`     | SQLite file path or Postgres connection string. Leave unset for source/dev defaults under `packages/database/data/`.                              |
-| `ENCRYPTION_KEY`        | Yes (production) | None                                  | 64-character hex string for AES-256-GCM encryption. Protects API keys, tokens, and secrets stored in the database. See [Encryption](#encryption). |
-| `BETTER_AUTH_SECRET`    | Yes (production) | CLI: auto-generated on first boot     | Stable auth signing secret. Must remain stable across restarts for valid sessions.                                                                |
-| `OPENROUTER_API_KEY`    | No               | None                                  | OpenRouter API key. The default model routes through OpenRouter, but the free tier requires no key. Set this if you use paid models.              |
-| `OPENAI_API_KEY`        | No               | None                                  | OpenAI API key. Used as a fallback if no OpenRouter key is set. Also required for embeddings if you don't have an OpenRouter key.                 |
-| `SPRITES_TOKEN`         | No               | None                                  | Token from [sprites.dev](https://sprites.dev) for sandboxed agent execution. Without this, agents run without sandbox isolation.                  |
-| `GITHUB_WEBHOOK_SECRET` | No               | None                                  | Secret for verifying GitHub webhook signatures. Required for GitHub integration.                                                                  |
-| `AGENT_MODEL`           | No               | `arcee-ai/trinity-large-preview:free` | Default model for newly created agents. Existing agents keep their configured model.                                                              |
-| `POSTGRES_URL`          | No               | None                                  | Legacy Postgres connection string. Deprecated -- use `DATABASE_URL` instead. Will be removed.                                                     |
+| Variable                | Required         | Default                               | Description                                                                                                                                                                                |
+| ----------------------- | ---------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `NODE_ENV`              | No               | `development`                         | `development`, `production`, or `test`. Controls logging verbosity and security warnings.                                                                                                  |
+| `APP_BASE_URL`          | No               | CLI: inferred from selected port      | Public URL where Nitejar is reachable. Used to construct webhook callback URLs. Can be overridden by the runtime setting in **Settings > Runtime**. See [Public app URL](#public-app-url). |
+| `DATABASE_URL`          | No               | CLI: `~/.nitejar/data/nitejar.db`     | SQLite file path or Postgres connection string. Leave unset for source/dev defaults under `packages/database/data/`.                                                                       |
+| `ENCRYPTION_KEY`        | Yes (production) | None                                  | 64-character hex string for AES-256-GCM encryption. Protects API keys, tokens, and secrets stored in the database. See [Encryption](#encryption).                                          |
+| `BETTER_AUTH_SECRET`    | Yes (production) | CLI: auto-generated on first boot     | Stable auth signing secret. Must remain stable across restarts for valid sessions.                                                                                                         |
+| `OPENROUTER_API_KEY`    | No               | None                                  | OpenRouter API key. The default model routes through OpenRouter, but the free tier requires no key. Set this if you use paid models.                                                       |
+| `OPENAI_API_KEY`        | No               | None                                  | OpenAI API key. Used as a fallback if no OpenRouter key is set. Also required for embeddings if you don't have an OpenRouter key.                                                          |
+| `GITHUB_WEBHOOK_SECRET` | No               | None                                  | Secret for verifying GitHub webhook signatures. Required for GitHub integration.                                                                                                           |
+| `AGENT_MODEL`           | No               | `arcee-ai/trinity-large-preview:free` | Default model for newly created agents. Existing agents keep their configured model.                                                                                                       |
+| `POSTGRES_URL`          | No               | None                                  | Legacy Postgres connection string. Deprecated -- use `DATABASE_URL` instead. Will be removed.                                                                                              |
 
 <Callout type="info" title="Where to verify">
-After starting Nitejar, open **Admin > Settings > Gateway**. The gateway settings page shows which API key and base URL the runtime is actually using. If you set keys via the admin UI, those take priority over environment variables. The env file is the starting point; the database is the source of truth.
+After starting Nitejar, open **Admin > Settings > Gateway** for model provider keys and **Admin > Settings > Capabilities > Tool Execution** for the Sprites key. Admin UI settings are the source of truth.
 </Callout>
 
 ## Database
@@ -181,20 +180,35 @@ Keys set through the admin UI take priority over environment variables. The reso
 
 ## Network and webhooks
 
-### `APP_BASE_URL`
+### Public app URL
 
 This is the URL external services use to reach Nitejar. It must be correct for webhooks to work.
 
-- **Local development:** `http://localhost:3000` (the default). Fine for the generic webhook plugin and direct `curl` testing.
-- **With ngrok:** Set `APP_BASE_URL` to your ngrok URL (e.g. `https://your-subdomain.ngrok-free.app`).
-- **Production:** The public URL of your deployment. `https://nitejar.yourdomain.com` or whatever your reverse proxy exposes.
+Nitejar resolves the public URL using the first value it finds in this order:
+
+1. **Settings > Runtime > Public app URL** -- set in the admin UI, stored in the database. Takes highest precedence.
+2. `APP_URL` env var
+3. `APP_BASE_URL` env var
+4. `NEXTAUTH_URL` env var
+5. `NEXT_PUBLIC_APP_URL` env var
+6. `http://localhost:3000` (fallback)
+
+The runtime setting is the recommended approach for production. It persists across restarts and does not require redeploying or editing environment files. Set it at **Settings > Runtime** in the admin UI.
+
+Environment variables still work and are fine for local development or CI. If neither the runtime setting nor any env var is set, Nitejar falls back to `http://localhost:3000`.
+
+**Typical setups:**
+
+- **Local development:** Leave everything unset. `http://localhost:3000` is the default.
+- **With ngrok:** Set `APP_BASE_URL=https://your-subdomain.ngrok-free.app` in your `.env`, or set the runtime URL in the admin UI.
+- **Production:** Set the public URL in **Settings > Runtime**, or set `APP_BASE_URL` in your environment. The runtime setting takes priority if both are set.
 
 ### Webhook URLs
 
 Plugin instances receive webhooks at:
 
 ```
-{APP_BASE_URL}/api/webhooks/plugins/{plugin-type}/{instance-id}
+{BASE_URL}/api/webhooks/plugins/{plugin-type}/{instance-id}
 ```
 
 For example, a Telegram plugin instance with ID `abc123`:
@@ -218,6 +232,8 @@ Set `APP_BASE_URL` in your `.env` to your ngrok URL:
 ```bash
 APP_BASE_URL=https://your-subdomain.ngrok-free.app
 ```
+
+Or set the URL in **Settings > Runtime > Public app URL** in the admin UI. The runtime setting takes priority over environment variables.
 
 Nitejar uses this to construct webhook URLs and register them with external services. Without it, Telegram and GitHub have no way to deliver events to your laptop.
 

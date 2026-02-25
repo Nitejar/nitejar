@@ -1,5 +1,9 @@
 import Link from 'next/link'
-import { listWorkItems, getCostByWorkItems } from '@nitejar/database'
+import {
+  listWorkItems,
+  getCostByWorkItems,
+  listRecentWebhookIngressEvents,
+} from '@nitejar/database'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -35,6 +39,7 @@ const statusVariant = (status: string) => {
 
 export default async function WorkItemsPage() {
   const workItems = await listWorkItems(100)
+  const inboundReceipts = await listRecentWebhookIngressEvents(25)
   const costData = await getCostByWorkItems(workItems.map((w) => w.id))
   const costMap = new Map(costData.map((c) => [c.work_item_id, c]))
 
@@ -102,6 +107,59 @@ export default async function WorkItemsPage() {
                 })}
               </TableBody>
             </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {inboundReceipts.length > 0 && (
+        <Card className="bg-card/70">
+          <CardHeader>
+            <CardTitle>Inbound Webhook Receipts</CardTitle>
+            <CardDescription>
+              Accepted, duplicate, and skipped inbound webhook outcomes.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {inboundReceipts.map((event) => {
+              let reasonCode: string | null = null
+              let sourceRef: string | null = null
+              try {
+                const detail = event.detail_json
+                  ? (JSON.parse(event.detail_json) as Record<string, unknown>)
+                  : null
+                reasonCode = typeof detail?.reasonCode === 'string' ? detail.reasonCode : null
+                sourceRef = typeof detail?.sourceRef === 'string' ? detail.sourceRef : null
+              } catch {
+                reasonCode = null
+                sourceRef = null
+              }
+
+              return (
+                <div
+                  key={event.id}
+                  className="flex flex-wrap items-center gap-2 rounded border border-border/50 bg-background/40 px-2 py-1.5 text-xs"
+                >
+                  <Badge variant="outline">{event.status}</Badge>
+                  {event.work_item_id ? (
+                    <Link
+                      href={`/work-items/${event.work_item_id}`}
+                      className="font-medium hover:text-primary"
+                    >
+                      {event.work_item_id}
+                    </Link>
+                  ) : (
+                    <span className="text-muted-foreground">no work item</span>
+                  )}
+                  {reasonCode ? (
+                    <span className="text-muted-foreground">reason={reasonCode}</span>
+                  ) : null}
+                  {sourceRef ? <span className="text-muted-foreground">{sourceRef}</span> : null}
+                  <span className="ml-auto text-muted-foreground">
+                    {new Date(event.created_at * 1000).toLocaleString()}
+                  </span>
+                </div>
+              )
+            })}
           </CardContent>
         </Card>
       )}

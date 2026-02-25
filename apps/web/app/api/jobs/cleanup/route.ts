@@ -1,5 +1,9 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSpriteSessionManager } from '@nitejar/sprites'
+import {
+  getSpriteSessionManager,
+  getSpritesTokenSettings,
+  isSpritesExecutionAvailable,
+} from '@nitejar/sprites'
 import { findIdleSessions } from '@nitejar/database'
 import { compactSession } from '@nitejar/agent/session'
 import { DEFAULT_COMPACTION_SETTINGS } from '@nitejar/agent/config'
@@ -35,6 +39,8 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const spriteSettings = await getSpritesTokenSettings()
+
     // Step 1: Find and compact idle conversation sessions
     // This also cleans up their sprite sessions
     const idleSessions = await findIdleSessions(idleThresholdSeconds)
@@ -54,7 +60,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 2: Clean up orphaned/stale sprite sessions
-    if (process.env.SPRITES_TOKEN) {
+    if (isSpritesExecutionAvailable(spriteSettings)) {
       try {
         const sessionManager = getSpriteSessionManager()
         const spriteCleanup = await sessionManager.cleanupStaleSessions(

@@ -8,6 +8,21 @@ const optionalLimit = z.number().int().min(1).max(100).optional()
 const optionalOffset = z.number().int().nonnegative().optional()
 const optionalChunkSize = z.number().int().min(1).max(200_000).optional()
 const optionalContentBytes = z.number().int().min(64).max(500_000).optional()
+const slackActionKeySchema = z.enum([
+  'read_thread',
+  'read_channel_history',
+  'read_channel_info',
+  'list_channels',
+  'search_channel_messages',
+  'search_workspace_context',
+  'export_response',
+])
+const slackAssignmentPolicySchema = z
+  .object({
+    mode: z.enum(['allow_all', 'allow_list']).optional(),
+    allowedActions: z.array(slackActionKeySchema).optional(),
+  })
+  .strict()
 
 export const searchWorkItemsInputSchema = z
   .object({
@@ -79,6 +94,8 @@ export const getRunTraceInputSchema = z
     messageLimit: z.number().int().min(1).max(500).optional(),
     includeFullMessageContent: z.boolean().optional(),
     maxContentBytes: optionalContentBytes,
+    includeInferencePayloads: z.boolean().optional(),
+    inferencePayloadMaxBytes: optionalContentBytes,
     inferenceCallOffset: optionalOffset,
     inferenceCallLimit: z.number().int().min(1).max(500).optional(),
     backgroundTaskOffset: optionalOffset,
@@ -178,6 +195,7 @@ export const setPluginInstanceAgentAssignmentInputSchema = z
     pluginInstanceId: trimmedString,
     agentId: trimmedString,
     enabled: z.boolean(),
+    policy: slackAssignmentPolicySchema.nullable().optional(),
   })
   .strict()
 
@@ -280,6 +298,8 @@ export const mcpInputSchemas: McpInputSchemaMap = {
       messageLimit: { type: 'number' },
       includeFullMessageContent: { type: 'boolean' },
       maxContentBytes: { type: 'number' },
+      includeInferencePayloads: { type: 'boolean' },
+      inferencePayloadMaxBytes: { type: 'number' },
       inferenceCallOffset: { type: 'number' },
       inferenceCallLimit: { type: 'number' },
       backgroundTaskOffset: { type: 'number' },
@@ -395,6 +415,28 @@ export const mcpInputSchemas: McpInputSchemaMap = {
       pluginInstanceId: { type: 'string' },
       agentId: { type: 'string' },
       enabled: { type: 'boolean' },
+      policy: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          mode: { type: 'string', enum: ['allow_all', 'allow_list'] },
+          allowedActions: {
+            type: 'array',
+            items: {
+              type: 'string',
+              enum: [
+                'read_thread',
+                'read_channel_history',
+                'read_channel_info',
+                'list_channels',
+                'search_channel_messages',
+                'search_workspace_context',
+                'export_response',
+              ],
+            },
+          },
+        },
+      },
     },
   },
 }

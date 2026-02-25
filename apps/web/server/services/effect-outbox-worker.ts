@@ -11,6 +11,7 @@ import {
   upsertQueueLaneOnMessage,
   getDb,
 } from '@nitejar/database'
+import { logSchemaMismatchOnce } from './schema-mismatch'
 import { parseAgentConfig } from '@nitejar/agent/config'
 import {
   getPluginInstanceWithConfig,
@@ -365,6 +366,10 @@ export function ensureEffectOutboxWorker(): void {
       // Call through the swappable reference so HMR code changes take effect
       await state.processFn!()
     } catch (error) {
+      if (logSchemaMismatchOnce(error, 'EffectOutboxWorker')) {
+        stopEffectOutboxWorker()
+        return
+      }
       console.warn('[EffectOutboxWorker] Tick failed', error)
     } finally {
       state.running = false

@@ -1,8 +1,9 @@
 'use client'
 
+import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   IconActivity,
   IconBook2,
@@ -178,8 +179,14 @@ function SidebarNav({
         )}
       >
         <a href="/" className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
-            <span className="text-sm font-bold">S</span>
+          <div className="h-8 w-8 shrink-0 overflow-hidden rounded-lg">
+            <Image
+              src="/icon.png"
+              alt="Nitejar"
+              width={32}
+              height={32}
+              className="h-full w-full object-cover"
+            />
           </div>
           {!collapsed && (
             <div>
@@ -376,9 +383,20 @@ interface AdminSidebarProps {
 export function AdminSidebar({ user: userProp }: AdminSidebarProps) {
   const { collapsed, mobileOpen, setMobileOpen } = useSidebar()
   const router = useRouter()
-  const { data: session } = authClient.useSession()
+  const { data: session, isPending, refetch } = authClient.useSession()
+  const [sessionRetried, setSessionRetried] = useState(false)
+
+  useEffect(() => {
+    if (userProp) return
+    if (session?.user) return
+    if (isPending || sessionRetried) return
+    setSessionRetried(true)
+    void refetch()
+  }, [userProp, session, isPending, sessionRetried, refetch])
+
+  const fallbackName = userProp || session?.user || sessionRetried ? 'Account' : 'Loading...'
   const user = userProp ?? {
-    name: session?.user?.name ?? 'Account',
+    name: session?.user?.name ?? fallbackName,
     email: session?.user?.email ?? '',
   }
 
@@ -412,8 +430,14 @@ export function AdminSidebar({ user: userProp }: AdminSidebarProps) {
           <IconMenu2 className="h-5 w-5" />
         </button>
         <a href="/" className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/15 text-primary">
-            <span className="text-xs font-bold">S</span>
+          <div className="h-7 w-7 overflow-hidden rounded-lg">
+            <Image
+              src="/icon.png"
+              alt="Nitejar"
+              width={28}
+              height={28}
+              className="h-full w-full object-cover"
+            />
           </div>
           <span className="text-sm font-semibold text-white/90">Nitejar</span>
         </a>

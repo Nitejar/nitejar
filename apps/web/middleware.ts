@@ -35,7 +35,7 @@ export function middleware(request: NextRequest): NextResponse {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon\\.ico|login|signup|invite|setup|api/webhooks|api/mcp|api/auth).*)',
+    '/((?!_next/static|_next/image|favicon\\.ico|login|signup|invite|setup|api/webhooks|api/mcp|api/auth|.*\\..*).*)',
     '/api/:path*',
   ],
 }

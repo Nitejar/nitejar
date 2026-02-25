@@ -15,6 +15,21 @@ export async function findIdempotencyKey(key: string): Promise<IdempotencyKey | 
   return result ?? null
 }
 
+export async function findIdempotencyKeyByAnyKey(keys: string[]): Promise<IdempotencyKey | null> {
+  const normalizedKeys = [...new Set(keys.map((key) => key.trim()).filter((key) => key.length > 0))]
+  if (normalizedKeys.length === 0) return null
+
+  const db = getDb()
+  const result = await db
+    .selectFrom('idempotency_keys')
+    .selectAll()
+    .where('key', 'in', normalizedKeys)
+    .orderBy('created_at', 'desc')
+    .executeTakeFirst()
+
+  return result ?? null
+}
+
 export async function createIdempotencyKey(
   data: Omit<NewIdempotencyKey, 'created_at'>
 ): Promise<IdempotencyKey> {
@@ -31,4 +46,26 @@ export async function createIdempotencyKey(
     .executeTakeFirstOrThrow()
 
   return result
+}
+
+export async function createIdempotencyKeysIgnoreConflicts(
+  keys: string[],
+  workItemId: string
+): Promise<void> {
+  const normalizedKeys = [...new Set(keys.map((key) => key.trim()).filter((key) => key.length > 0))]
+  if (normalizedKeys.length === 0) return
+
+  const db = getDb()
+  const createdAt = now()
+  await db
+    .insertInto('idempotency_keys')
+    .values(
+      normalizedKeys.map((key) => ({
+        key,
+        work_item_id: workItemId,
+        created_at: createdAt,
+      }))
+    )
+    .onConflict((oc) => oc.column('key').doNothing())
+    .execute()
 }

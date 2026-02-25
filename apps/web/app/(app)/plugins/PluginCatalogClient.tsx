@@ -29,14 +29,7 @@ interface ComingSoonCard {
   category: IntegrationCategory
 }
 
-const comingSoonPlugins: ComingSoonCard[] = [
-  {
-    displayName: 'Slack',
-    description: 'Connect to Slack workspaces for team messaging.',
-    icon: 'brand-slack',
-    category: 'messaging',
-  },
-]
+const comingSoonPlugins: ComingSoonCard[] = []
 
 const categoryLabels: Record<IntegrationCategory, string> = {
   messaging: 'Messaging',

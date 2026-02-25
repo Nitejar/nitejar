@@ -53,7 +53,9 @@ interface LiveInferenceCall {
   payload_state: string | null
   model_span_id: string | null
   request_payload_json: string | null
+  request_payload_metadata_json: string | null
   response_payload_json: string | null
+  response_payload_metadata_json: string | null
 }
 
 interface ParsedToolCall {

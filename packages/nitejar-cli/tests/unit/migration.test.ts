@@ -23,7 +23,10 @@ function makePaths() {
   return paths
 }
 
-function createRuntimeDatabase(paths: ReturnType<typeof resolvePaths>, withBetterSqlite3 = true): void {
+function createRuntimeDatabase(
+  paths: ReturnType<typeof resolvePaths>,
+  withBetterSqlite3 = true
+): void {
   const databaseDir = path.join(paths.currentRuntimeLink, 'packages', 'database')
   mkdirSync(databaseDir, { recursive: true })
   if (withBetterSqlite3) {

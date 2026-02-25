@@ -25,6 +25,8 @@ import {
   setPluginInstanceEnabledInputSchema,
 } from '../services/ops/schemas'
 
+const REDACTED_SECRET_VALUE = '••••••••'
+
 export const pluginInstancesRouter = router({
   list: protectedProcedure.input(listPluginInstancesInputSchema).query(async ({ input }) => {
     return listPluginInstancesOp(input)
@@ -124,6 +126,28 @@ export const pluginInstancesRouter = router({
           })
         }
 
+        // For non-redirect flows, prevent creating an enabled instance unless
+        // the connection test succeeds.
+        if (enabled && !isRedirectFlow && handler.testConnection) {
+          const testResult = await handler.testConnection(configToStore)
+          if (!testResult.ok) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: `Connection test failed: ${testResult.error ?? 'unknown error'}`,
+            })
+          }
+          if (
+            testResult.configUpdates &&
+            typeof testResult.configUpdates === 'object' &&
+            !Array.isArray(testResult.configUpdates)
+          ) {
+            configToStore = {
+              ...configToStore,
+              ...testResult.configUpdates,
+            }
+          }
+        }
+
         // Encrypt sensitive fields
         configToStore = encryptConfig(configToStore, handler.sensitiveFields)
       }
@@ -168,6 +192,23 @@ export const pluginInstancesRouter = router({
       }
 
       const result = await handler.testConnection(config)
+
+      if (
+        result.ok &&
+        result.configUpdates &&
+        typeof result.configUpdates === 'object' &&
+        !Array.isArray(result.configUpdates)
+      ) {
+        const mergedConfig: Record<string, unknown> = {
+          ...config,
+          ...result.configUpdates,
+        }
+        const encryptedConfig = encryptConfig(mergedConfig, handler.sensitiveFields)
+        await updatePluginInstance(pluginInstance.id, {
+          config_json: JSON.stringify(encryptedConfig),
+        })
+      }
+
       return result
     }),
 
@@ -219,6 +260,7 @@ export const pluginInstancesRouter = router({
         pluginInstanceId: z.string(),
         name: z.string().optional(),
         enabled: z.boolean().optional(),
+        config: z.record(z.unknown()).optional(),
       })
     )
     .mutation(async ({ input }) => {
@@ -227,9 +269,56 @@ export const pluginInstancesRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Plugin instance not found' })
       }
 
-      const data: { name?: string; enabled?: number } = {}
+      const data: { name?: string; enabled?: number; config_json?: string } = {}
       if (input.name !== undefined) data.name = input.name
       if (input.enabled !== undefined) data.enabled = input.enabled ? 1 : 0
+      if (input.config !== undefined) {
+        const handler = pluginHandlerRegistry.get(pluginInstance.type)
+        if (handler) {
+          let existingConfig: Record<string, unknown> = {}
+          if (pluginInstance.config) {
+            try {
+              const parsed = JSON.parse(
+                typeof pluginInstance.config === 'string' ? pluginInstance.config : '{}'
+              ) as Record<string, unknown>
+              existingConfig = decryptConfig(parsed, handler.sensitiveFields)
+            } catch {
+              throw new TRPCError({
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to parse existing config',
+              })
+            }
+          }
+
+          const mergedConfig: Record<string, unknown> = {
+            ...existingConfig,
+            ...input.config,
+          }
+
+          for (const sensitiveField of handler.sensitiveFields) {
+            const incoming = (input.config as Record<string, unknown>)[sensitiveField]
+            if (
+              incoming === REDACTED_SECRET_VALUE &&
+              Object.prototype.hasOwnProperty.call(existingConfig, sensitiveField)
+            ) {
+              mergedConfig[sensitiveField] = existingConfig[sensitiveField]
+            }
+          }
+
+          const validation = handler.validateConfig(mergedConfig)
+          if (!validation.valid) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: `Invalid config: ${validation.errors?.join(', ') ?? 'unknown error'}`,
+            })
+          }
+
+          const encryptedConfig = encryptConfig(mergedConfig, handler.sensitiveFields)
+          data.config_json = JSON.stringify(encryptedConfig)
+        } else {
+          data.config_json = JSON.stringify(input.config)
+        }
+      }
 
       const updated = await updatePluginInstance(input.pluginInstanceId, data)
       return updated

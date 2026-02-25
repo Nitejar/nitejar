@@ -94,6 +94,22 @@ export async function setMaxConcurrentDispatches(value: number): Promise<Runtime
     .executeTakeFirstOrThrow()
 }
 
+export async function setRuntimeAppBaseUrl(value: string | null): Promise<RuntimeControl> {
+  const db = getDb()
+  const ts = now()
+  await getRuntimeControl()
+
+  return db
+    .updateTable('runtime_control')
+    .set({
+      app_base_url: value,
+      updated_at: ts,
+    })
+    .where('id', '=', CONTROL_ID)
+    .returningAll()
+    .executeTakeFirstOrThrow()
+}
+
 export interface RuntimeControlStats {
   runningDispatches: number
   queuedDispatches: number

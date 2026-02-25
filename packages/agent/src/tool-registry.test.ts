@@ -8,6 +8,7 @@ import {
 } from './integrations/registry'
 
 // Import telegram provider so it registers itself
+import './integrations/slack'
 import './integrations/telegram'
 
 describe('tool registry', () => {
@@ -63,11 +64,25 @@ describe('integration tool providers', () => {
 
   it('integration tool names do not collide with base tool names', () => {
     const baseNames = new Set(toolDefinitions.map((t) => t.name))
-    const providers = resolveIntegrationProviders(['telegram'])
+    const providers = resolveIntegrationProviders(['telegram', 'slack'])
     const integrationResult = extractIntegrationTools(providers)
     for (const def of integrationResult.definitions) {
       expect(baseNames.has(def.name)).toBe(false)
     }
+  })
+
+  it('resolves slack tools when slack type is enabled', () => {
+    const providers = resolveIntegrationProviders(['slack'])
+    const result = extractIntegrationTools(providers)
+    const names = result.definitions.map((d) => d.name)
+
+    expect(names).toContain('slack_get_thread')
+    expect(names).toContain('slack_get_channel_history')
+    expect(names).toContain('slack_get_channel_info')
+    expect(names).toContain('slack_list_channels')
+    expect(names).toContain('slack_search_channel_messages')
+    expect(names).toContain('slack_search_workspace_context')
+    expect(names).toContain('slack_export_response')
   })
 
   it('supports registering and resolving a custom provider', () => {

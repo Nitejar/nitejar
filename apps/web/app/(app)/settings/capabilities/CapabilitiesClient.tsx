@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import { trpc } from '@/lib/trpc'
-import { IconMicrophone, IconMusic, IconPhoto, IconWorldSearch } from '@tabler/icons-react'
+import {
+  IconMicrophone,
+  IconMusic,
+  IconPhoto,
+  IconTerminal2,
+  IconWorldSearch,
+} from '@tabler/icons-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -44,6 +50,7 @@ export function CapabilitiesClient() {
   const saveCapability = trpc.capabilitySettings.update.useMutation()
 
   const webQuery = trpc.capabilitySettings.get.useQuery({ id: 'web_search' })
+  const toolExecutionQuery = trpc.capabilitySettings.get.useQuery({ id: 'tool_execution' })
   const imageQuery = trpc.capabilitySettings.get.useQuery({ id: 'image_generation' })
   const sttQuery = trpc.capabilitySettings.get.useQuery({ id: 'speech_to_text' })
   const ttsQuery = trpc.capabilitySettings.get.useQuery({ id: 'text_to_speech' })
@@ -55,6 +62,14 @@ export function CapabilitiesClient() {
   const [webStatus, setWebStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(
     null
   )
+
+  const [toolExecutionApiKey, setToolExecutionApiKey] = useState('')
+  const [toolExecutionEnabled, setToolExecutionEnabled] = useState(true)
+  const [toolExecutionHasApiKey, setToolExecutionHasApiKey] = useState(false)
+  const [toolExecutionStatus, setToolExecutionStatus] = useState<{
+    type: 'success' | 'error'
+    text: string
+  } | null>(null)
 
   const [imageEnabled, setImageEnabled] = useState(true)
   const [imageModel, setImageModel] = useState(DEFAULT_IMAGE_MODEL)
@@ -89,6 +104,12 @@ export function CapabilitiesClient() {
       setWebCostPerCredit(webQuery.data.config.cost_per_credit)
     }
   }, [webQuery.data])
+
+  useEffect(() => {
+    if (!toolExecutionQuery.data) return
+    setToolExecutionHasApiKey(toolExecutionQuery.data.hasApiKey)
+    setToolExecutionEnabled(toolExecutionQuery.data.enabled)
+  }, [toolExecutionQuery.data])
 
   useEffect(() => {
     if (!imageQuery.data) return
@@ -154,6 +175,23 @@ export function CapabilitiesClient() {
       setImageStatus({ type: 'success', text: 'Image generation settings saved.' })
     } catch {
       setImageStatus({ type: 'error', text: 'Failed to save image generation settings.' })
+    }
+  }
+
+  const handleSaveToolExecution = async () => {
+    setToolExecutionStatus(null)
+    try {
+      const saved = await saveCapability.mutateAsync({
+        id: 'tool_execution',
+        provider: 'sprites',
+        ...(toolExecutionApiKey.trim() ? { apiKey: toolExecutionApiKey.trim() } : {}),
+        enabled: toolExecutionEnabled,
+      })
+      setToolExecutionHasApiKey(saved.hasApiKey)
+      setToolExecutionApiKey('')
+      setToolExecutionStatus({ type: 'success', text: 'Tool execution settings saved.' })
+    } catch {
+      setToolExecutionStatus({ type: 'error', text: 'Failed to save tool execution settings.' })
     }
   }
 
@@ -281,6 +319,81 @@ export function CapabilitiesClient() {
                 }
               >
                 {webStatus.text}
+              </span>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-white/10 bg-white/[0.02]">
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/5">
+              <IconTerminal2 className="h-5 w-5 text-white/80" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Tool Execution</CardTitle>
+              <CardDescription>Sprite-backed filesystem and command tools.</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="space-y-2">
+            <Label>Sprites API Key</Label>
+            <Input
+              type="password"
+              value={toolExecutionApiKey}
+              placeholder={
+                toolExecutionHasApiKey ? 'Stored (leave blank to keep)' : 'Enter Sprites API key'
+              }
+              onChange={(event) => setToolExecutionApiKey(event.target.value)}
+              disabled={toolExecutionQuery.isLoading}
+            />
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Badge
+                variant="outline"
+                className={
+                  toolExecutionHasApiKey
+                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                    : 'border-zinc-500/30 bg-zinc-500/10 text-zinc-300'
+                }
+              >
+                {toolExecutionHasApiKey ? 'Key stored' : 'No key'}
+              </Badge>
+              <span>Encrypted at rest. Leave blank to keep the current key.</span>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border border-white/10 bg-black/20 p-3">
+            <div>
+              <p className="text-sm font-medium text-white/80">Enabled</p>
+              <p className="text-xs text-muted-foreground">
+                Controls command execution and sprite filesystem tools.
+              </p>
+            </div>
+            <Switch
+              checked={toolExecutionEnabled}
+              onCheckedChange={setToolExecutionEnabled}
+              disabled={toolExecutionQuery.isLoading}
+            />
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Button
+              onClick={handleSaveToolExecution}
+              disabled={saveCapability.isPending || toolExecutionQuery.isLoading}
+            >
+              {saveCapability.isPending ? 'Saving...' : 'Save'}
+            </Button>
+            {toolExecutionStatus && (
+              <span
+                className={
+                  toolExecutionStatus.type === 'success'
+                    ? 'text-xs text-emerald-300'
+                    : 'text-xs text-rose-300'
+                }
+              >
+                {toolExecutionStatus.text}
               </span>
             )}
           </div>

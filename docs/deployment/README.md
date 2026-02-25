@@ -39,9 +39,7 @@ DATABASE_URL=postgres://user:password@host:5432/database
 
 ### Sprites (Agent Execution)
 
-| Variable        | Description                                          |
-| --------------- | ---------------------------------------------------- |
-| `SPRITES_TOKEN` | Token for Sprites API (get from https://sprites.dev) |
+Configure the Sprites API key in **Settings > Capabilities > Tool Execution** after first boot.
 
 ### Integrations
 

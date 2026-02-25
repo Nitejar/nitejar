@@ -1,4 +1,5 @@
 import { listAgentSandboxes, type Agent, type WorkItem } from '@nitejar/database'
+import { getSpritesTokenSettings, isSpritesExecutionAvailable } from '@nitejar/sprites'
 import { parseAgentConfig, DEFAULT_SOUL_TEMPLATE } from './config'
 import { retrieveMemories, formatMemoriesForPrompt } from './memory'
 import { SANDBOX_STALE_SECONDS } from './sandboxes'
@@ -118,10 +119,6 @@ export async function buildSystemPrompt(
       'This is a private inter-agent conversation. Your response is NOT visible to users. ' +
         'Respond directly to the other agent.'
     )
-  } else if (payload?.source_type === 'inter_agent') {
-    sections.push(
-      'You were @mentioned by another agent. Respond normally — your response IS visible to users.'
-    )
   }
 
   // Section 2: Soul document (injected as-is)
@@ -161,7 +158,6 @@ export async function buildSystemPrompt(
       'If you want to pull a teammate into YOUR response (e.g. asking for their opinion), @mention them in your message.',
       'If a request is clearly assigned to a single agent and they already resolved it, defer instead of repeating their answer.',
       'If you have unique, high-signal information (correction, risk, missing constraint, or important context), chime in briefly with only that insight.',
-      'Keep @mention chains short. The system stops chains after 3 levels.',
     ].join('\n')
     sections.push(teamSection)
   }
@@ -238,6 +234,9 @@ async function collectProviderSections(
  */
 async function buildSandboxCatalogPrompt(agentId: string): Promise<string | null> {
   try {
+    const spriteSettings = await getSpritesTokenSettings()
+    if (!isSpritesExecutionAvailable(spriteSettings)) return null
+
     const sandboxes = await listAgentSandboxes(agentId)
     if (sandboxes.length === 0) return null
 
@@ -350,11 +349,6 @@ export function buildUserMessage(workItem: WorkItem): string {
   const payload = safeParsePayload(workItem.payload)
   const parts: string[] = []
 
-  // Annotate inter-agent messages (triggered by @mention)
-  if (payload?.source_type === 'inter_agent' && payload?.triggered_by) {
-    parts.push(`[@${sanitize(payload.triggered_by)} mentioned you]`)
-  }
-
   // Annotate agent DM messages
   if (payload?.source_type === 'agent_dm' && payload?.from_handle) {
     parts.push(`[Private message from @${sanitize(payload.from_handle)}]`)
@@ -379,6 +373,16 @@ export function buildUserMessage(workItem: WorkItem): string {
 
   if (payload?.messageThreadId !== undefined && payload?.messageThreadId !== null) {
     parts.push(`[Thread Context | message_thread_id: ${payload.messageThreadId}]`)
+  }
+
+  // Slack thread context: indicate when message is a reply in a thread
+  if (
+    payload?.source === 'slack' &&
+    payload?.threadTs &&
+    payload?.messageTs &&
+    payload.threadTs !== payload.messageTs
+  ) {
+    parts.push(`[Thread Context | thread_ts: ${payload.threadTs}]`)
   }
 
   // Add reply context metadata if present
@@ -582,17 +586,17 @@ export function buildPostProcessingPrompt(
     `You are ${agent.name} (@${agent.handle}).`,
     soul,
     [
-      `Your task: synthesize the work transcript below into a final public response.`,
+      `Your task: write the final response to ${requester} using the work transcript below.`,
       ``,
-      `The transcript (wrapped in <transcript> tags) is a record of work YOU already performed — tool calls, reasoning, and results from this run. Speakers are labeled [${requester}] and [${agent.name}].`,
+      `The transcript (wrapped in <transcript> tags) is a record of work YOU already performed — tool calls, reasoning, and results from this run. Human speakers may be labeled per person (for example [Name (@handle)]), and your messages are labeled [${agent.name}].`,
       ``,
       `Rules:`,
       `- Write as yourself (${agent.name}). You are the agent who did the work.`,
+      `- Reply directly to ${requester}; this message is sent back in the same conversation.`,
       `- Summarize what you accomplished, found, or built. Focus on outcomes.`,
-      `- Do NOT respond to or converse with ${requester}. This is a summary, not a reply.`,
-      `- Do NOT adopt ${requester}'s voice. Do NOT write as if you are the person who requested the work.`,
-      `- Do NOT narrate your process step-by-step ("First I..., then I..."). State results.`,
-      `- Do NOT repeat or rehash content from prior interactions — only cover this run.`,
+      `- Keep your own voice and perspective; do not write as if you are ${requester}.`,
+      `- Keep it concise and outcome-first instead of step-by-step process narration.`,
+      `- Cover only this run's work.`,
       `- Output clean markdown suitable for posting publicly.`,
     ].join('\n'),
   ]

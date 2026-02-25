@@ -194,6 +194,7 @@ export async function getRuntimeControlView() {
     pausedAt: control.paused_at,
     controlEpoch: control.control_epoch,
     maxConcurrentDispatches: control.max_concurrent_dispatches,
+    appBaseUrl: control.app_base_url,
     updatedAt: control.updated_at,
     stats,
   }

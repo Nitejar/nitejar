@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { trpc } from '@/lib/trpc'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,38 +14,6 @@ import {
 } from '@tabler/icons-react'
 import { toast } from 'sonner'
 import { DynamicFields } from '../components/DynamicFields'
-
-/** Render test result text, turning URLs into clickable links. */
-function TestResultText({
-  testResult,
-}: {
-  testResult: { ok: boolean; error?: string; message?: string }
-}) {
-  const text = testResult.ok
-    ? (testResult.message ?? 'Connection verified')
-    : (testResult.error ?? 'Connection failed')
-
-  const parts = text.split(/(https?:\/\/\S+)/g)
-  return (
-    <span>
-      {parts.map((part, i) =>
-        /^https?:\/\//.test(part) ? (
-          <a
-            key={i}
-            href={part}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline hover:opacity-80"
-          >
-            {testResult.ok ? part : 'Invite bot to server'}
-          </a>
-        ) : (
-          part
-        )
-      )}
-    </span>
-  )
-}
 
 interface PluginSetupFormProps {
   pluginType: string
@@ -59,28 +28,30 @@ export function PluginSetupForm({
   onCreated,
   onCancel,
 }: PluginSetupFormProps) {
+  const router = useRouter()
   const [name, setName] = useState('')
   const [fields, setFields] = useState<Record<string, unknown>>({})
-  const [testResult, setTestResult] = useState<{
-    ok: boolean
-    error?: string
-    message?: string
-  } | null>(null)
+  const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null)
 
   const utils = trpc.useUtils()
   const setupConfigQuery = trpc.pluginInstances.setupConfig.useQuery({ type: pluginType })
   const createMutation = trpc.pluginInstances.createInstance.useMutation()
-  const testDirectMutation = trpc.pluginInstances.testConnectionDirect.useMutation()
 
   const config = setupConfigQuery.data
   const isRedirect = config?.usesRedirectFlow === true
   const canTest = config?.supportsTestBeforeSave === true
+
   function setField(key: string, value: unknown) {
     setFields((prev) => ({ ...prev, [key]: value }))
   }
 
   async function handleCreateAndRedirect() {
     if (!name.trim()) return
+
+    let slackWindow: Window | null = null
+    if (isRedirect && pluginType === 'slack' && typeof window !== 'undefined') {
+      slackWindow = window.open('about:blank', '_blank', 'noopener,noreferrer')
+    }
 
     try {
       const result = await createMutation.mutateAsync({
@@ -124,9 +95,33 @@ export function PluginSetupForm({
         return
       }
 
+      if (isRedirect && pluginType === 'slack') {
+        const install = await utils.slack.getManifest.fetch({
+          pluginInstanceId: result.id,
+        })
+
+        if (!install?.createUrl) {
+          slackWindow?.close()
+          toast.error('Failed to prepare Slack app install link')
+          return
+        }
+
+        if (slackWindow) {
+          slackWindow.location.href = install.createUrl
+        } else {
+          window.open(install.createUrl, '_blank', 'noopener,noreferrer')
+        }
+
+        toast.success('Slack connection created. Finish setup on the connection page.')
+        onCreated(result.id)
+        router.push(`/admin/plugins/instances/${result.id}`)
+        return
+      }
+
       toast.success(`${displayName ?? pluginType} connection created`)
       onCreated(result.id)
     } catch (error) {
+      slackWindow?.close()
       toast.error(error instanceof Error ? error.message : 'Failed to create connection')
     }
   }
@@ -135,35 +130,29 @@ export function PluginSetupForm({
     if (!name.trim()) return
 
     try {
-      // Test connection with raw config first — no instance created yet
-      const test = await testDirectMutation.mutateAsync({
-        type: pluginType,
-        config: fields,
-      })
-      setTestResult(test)
-
-      if (!test.ok) {
-        toast.error(`Connection test failed: ${test.error ?? 'Unknown error'}`)
-        return
-      }
-
-      // Test passed — now create the instance
       const result = await createMutation.mutateAsync({
         type: pluginType,
         name: name.trim(),
         config: fields,
         enabled: true,
       })
-
+      setTestResult({ ok: true })
       toast.success(`${displayName ?? pluginType} connection created and verified`)
       onCreated(result.id)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to create connection')
+      const message = error instanceof Error ? error.message : 'Failed to create connection'
+      setTestResult({ ok: false, error: message })
+      toast.error(message)
     }
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (isRedirect) {
+      await handleCreateAndRedirect()
+      return
+    }
+
     if (canTest) {
       await handleTestThenCreate()
     } else {
@@ -179,7 +168,7 @@ export function PluginSetupForm({
     )
   }
 
-  const isSubmitting = createMutation.isPending || testDirectMutation.isPending
+  const isSubmitting = createMutation.isPending
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -205,6 +194,27 @@ export function PluginSetupForm({
         />
       )}
 
+      {isRedirect && pluginType === 'slack' && (
+        <div className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          <p className="font-medium">Slack setup journey</p>
+          <div className="flex flex-wrap gap-1.5 text-[11px]">
+            <span className="rounded border border-amber-400/40 bg-amber-500/20 px-2 py-0.5">
+              1. Create app from manifest
+            </span>
+            <span className="rounded border border-amber-400/40 bg-amber-500/10 px-2 py-0.5">
+              2. Install app + invite to channel
+            </span>
+            <span className="rounded border border-amber-400/40 bg-amber-500/10 px-2 py-0.5">
+              3. Paste token + secret, then verify
+            </span>
+          </div>
+          <p>
+            We create a pending Slack connection, open Slack with a prefilled manifest, and route
+            you to the connection page to finish verification.
+          </p>
+        </div>
+      )}
+
       {/* Credential help link */}
       {config?.credentialHelpUrl && config?.credentialHelpLabel && (
         <a
@@ -217,22 +227,21 @@ export function PluginSetupForm({
           <IconExternalLink className="h-3 w-3" />
         </a>
       )}
-
       {/* Test result display */}
       {testResult && (
         <div
-          className={`flex gap-2 rounded-md border px-3 py-2 text-xs ${
+          className={`flex items-center gap-2 rounded-md border px-3 py-2 text-xs ${
             testResult.ok
               ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
               : 'border-red-500/30 bg-red-500/10 text-red-300'
           }`}
         >
           {testResult.ok ? (
-            <IconCircleCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <IconCircleCheck className="h-3.5 w-3.5" />
           ) : (
-            <IconAlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <IconAlertTriangle className="h-3.5 w-3.5" />
           )}
-          <TestResultText testResult={testResult} />
+          {testResult.ok ? 'Connection verified' : (testResult.error ?? 'Connection failed')}
         </div>
       )}
 
@@ -251,10 +260,14 @@ export function PluginSetupForm({
           {isSubmitting ? (
             <>
               <IconLoader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              {testDirectMutation.isPending ? 'Testing...' : 'Creating...'}
+              Creating...
             </>
           ) : isRedirect ? (
-            `Register on ${displayName ?? pluginType}`
+            pluginType === 'slack' ? (
+              'Create Slack App'
+            ) : (
+              `Register on ${displayName ?? pluginType}`
+            )
           ) : canTest ? (
             'Test & Create'
           ) : (

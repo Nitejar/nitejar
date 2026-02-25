@@ -68,3 +68,28 @@ Checks:
 - timeout causes reset fallback
 - same session key re-fetch creates a new session
 - recreated session starts at provided recovered cwd
+
+### 6) Slack deterministic trace harness (steer mode)
+
+Runs synthetic signed Slack webhook events against the local dev server, then grades outcomes from DB receipts (`jobs`, `work_items`, `messages`, `inference_calls`, `spans`, queue/dispatch tables).
+
+This harness is a diagnostic workflow, not a required deterministic gate for CI.
+Use unit/integration Slack tests as the primary correctness signal.
+
+```bash
+# Optional override if auto-detection cannot find a recent Slack channel.
+export SLOPBOT_SLACK_CHANNEL_ID=C12345678
+
+# Optional if dev server is not on :3000.
+export SLOPBOT_WEB_BASE_URL=http://localhost:3000
+
+npx tsx packages/sprites/tests/e2e/slack-deterministic.spec.ts
+```
+
+If Slack manifest scopes change, reinstall/re-authorize the Slack app before running this harness so scope failures are not misclassified as logic regressions.
+
+Review-only mode (inspect recent Slack failures without sending new messages):
+
+```bash
+npx tsx packages/sprites/tests/e2e/slack-deterministic.spec.ts --review-only
+```

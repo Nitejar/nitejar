@@ -112,6 +112,39 @@ export async function appendMessage(
 }
 
 /**
+ * Mark the last assistant message in a job as the final response.
+ * Patches the content JSON to add `is_final_response: true` in-place,
+ * avoiding a duplicate message when post-processing is skipped.
+ */
+export async function markLastAssistantAsFinalResponse(jobId: string): Promise<void> {
+  const db = getDb()
+
+  // Find the last assistant message for this job
+  const lastMsg = await db
+    .selectFrom('messages')
+    .selectAll()
+    .where('job_id', '=', jobId)
+    .where('role', '=', 'assistant')
+    .orderBy('created_at', 'desc')
+    .limit(1)
+    .executeTakeFirst()
+
+  if (!lastMsg?.content) return
+
+  try {
+    const parsed = JSON.parse(lastMsg.content) as Record<string, unknown>
+    parsed.is_final_response = true
+    await db
+      .updateTable('messages')
+      .set({ content: JSON.stringify(parsed) })
+      .where('id', '=', lastMsg.id)
+      .execute()
+  } catch {
+    // Content isn't valid JSON — nothing to patch
+  }
+}
+
+/**
  * List all work items with a given session key
  */
 export async function listWorkItemsBySession(

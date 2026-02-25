@@ -11,6 +11,7 @@ export type {
   WebhookImmediateResponse,
   PostResponseResult,
   ConfigValidationResult,
+  TestConnectionResult,
   InboundActorEnvelope,
   InboundActorKind,
   QueueConfig,
@@ -100,6 +101,24 @@ export {
   type DiscordApplicationCommandOptionDefinition,
 } from './discord'
 export {
+  slackHandler,
+  parseSlackConfig,
+  parseSlackWebhook,
+  createSlackClient,
+  markdownToSlackMrkdwn,
+  SlackApiError,
+  SlackRateLimitError,
+  type SlackChannel,
+  type SlackChannelType,
+  type SlackMessage,
+  type SlackMessagePage,
+  type SlackWorkspaceSearchResult,
+  type SlackActionKey,
+  type SlackAssignmentPolicy,
+  type SlackConfig,
+  type SlackResponseContext,
+} from './slack'
+export {
   GitHubCredentialProvider,
   type GitHubCredentialRequest,
 } from './github/credential-provider'
@@ -110,7 +129,9 @@ import { pluginHandlerRegistry } from './registry'
 import { telegramHandler } from './telegram'
 import { githubHandler } from './github'
 import { discordHandler } from './discord'
+import { slackHandler } from './slack'
 
 pluginHandlerRegistry.register(telegramHandler)
 pluginHandlerRegistry.register(githubHandler)
 pluginHandlerRegistry.register(discordHandler)
+pluginHandlerRegistry.register(slackHandler)

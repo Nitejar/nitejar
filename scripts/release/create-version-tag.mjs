@@ -48,7 +48,7 @@ async function dispatchReleaseWorkflow(tagName) {
 
   if (!repository || !token) {
     console.log(
-      `Skipping release workflow dispatch for ${tagName}; missing GITHUB_REPOSITORY or GITHUB_TOKEN.`,
+      `Skipping release workflow dispatch for ${tagName}; missing GITHUB_REPOSITORY or GITHUB_TOKEN.`
     )
     return
   }
@@ -69,13 +69,13 @@ async function dispatchReleaseWorkflow(tagName) {
           version: tagName,
         },
       }),
-    },
+    }
   )
 
   if (!response.ok) {
     const body = await response.text()
     throw new Error(
-      `Failed to dispatch release workflow for ${tagName}: ${response.status} ${response.statusText}\n${body}`,
+      `Failed to dispatch release workflow for ${tagName}: ${response.status} ${response.statusText}\n${body}`
     )
   }
 
@@ -94,7 +94,7 @@ async function main() {
     console.log(`Tag ${tagName} already exists; skipping tag creation.`)
     if (!forceDispatchExistingTag) {
       console.log(
-        `Skipping release workflow dispatch for ${tagName}; set NITEJAR_DISPATCH_IF_TAG_EXISTS=1 to force.`,
+        `Skipping release workflow dispatch for ${tagName}; set NITEJAR_DISPATCH_IF_TAG_EXISTS=1 to force.`
       )
       return
     }

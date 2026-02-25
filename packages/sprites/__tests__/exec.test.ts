@@ -6,6 +6,11 @@ import {
   spriteExecOnSprite,
   type ExecResult,
 } from '../src/exec'
+import { requireSpritesToken } from '../src/token-settings'
+
+vi.mock('../src/token-settings', () => ({
+  requireSpritesToken: vi.fn(),
+}))
 
 function okResponse(body: string): Response {
   return {
@@ -24,16 +29,15 @@ function errorResponse(status: number, body: string): Response {
 }
 
 describe('exec', () => {
-  const originalToken = process.env.SPRITES_TOKEN
   const originalFetch = globalThis.fetch
+  const mockedRequireSpritesToken = vi.mocked(requireSpritesToken)
 
   beforeEach(() => {
     vi.restoreAllMocks()
-    process.env.SPRITES_TOKEN = 'test-token'
+    mockedRequireSpritesToken.mockResolvedValue('test-token')
   })
 
   afterAll(() => {
-    process.env.SPRITES_TOKEN = originalToken
     globalThis.fetch = originalFetch
   })
 
@@ -91,11 +95,9 @@ describe('exec', () => {
     expect(output.stderr).toContain('timed out')
   })
 
-  it('throws when SPRITES_TOKEN is not set', async () => {
-    delete process.env.SPRITES_TOKEN
-    await expect(spriteExecHttp('sprite-1', 'ls')).rejects.toThrow(
-      'SPRITES_TOKEN environment variable is required'
-    )
+  it('throws when sprites token is unavailable', async () => {
+    mockedRequireSpritesToken.mockRejectedValue(new Error('Sprites API key not configured'))
+    await expect(spriteExecHttp('sprite-1', 'ls')).rejects.toThrow('Sprites API key not configured')
   })
 
   it('stops spriteExecMultiple at first failure', async () => {

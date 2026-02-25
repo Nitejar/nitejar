@@ -12,7 +12,7 @@ const footerLinks = [
     heading: 'Community',
     links: [
       { label: 'GitHub', href: 'https://github.com/nitejar/nitejar' },
-      { label: 'Discord', href: 'https://discord.gg/9Dh4QaQ4' },
+      { label: 'Discord', href: 'https://discord.gg/hhSUQs8b' },
       { label: 'Docs', href: '/docs' },
     ],
   },

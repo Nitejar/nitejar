@@ -16,6 +16,7 @@ import {
   PASSIVE_MEMORY_EXTRACT_TURN_BASE,
   PASSIVE_MEMORY_REFINE_TURN_BASE,
 } from '@nitejar/database'
+import { logSchemaMismatchOnce } from './schema-mismatch'
 import {
   createMemoryWithEmbedding,
   findRelatedMemories,
@@ -29,7 +30,7 @@ import { sanitize } from '@nitejar/agent/prompt-sanitize'
 const WORKER_STATE_KEY = '__nitejarPassiveMemoryWorker'
 const TICK_MS = 1500
 const LEASE_SECONDS = 180
-const DEFAULT_EXTRACT_MODEL = 'anthropic/claude-3.5-haiku'
+const DEFAULT_EXTRACT_MODEL = 'arcee-ai/trinity-large-preview:free'
 const DEFAULT_REFINE_MODEL = DEFAULT_EXTRACT_MODEL
 const ASSISTANT_TRANSCRIPT_MAX_TOKENS = 4000
 const CANDIDATE_LIMIT = 10
@@ -376,7 +377,12 @@ function mergeUsages(first: ModelUsage | null, second: ModelUsage | null): Model
 async function insertPassiveInferenceUsage(
   queueRow: { job_id: string; agent_id: string; attempt_count: number },
   usage: ModelUsage,
-  turnBase: number
+  turnBase: number,
+  options?: {
+    modelSpanId?: string | null
+    attemptKind?: string | null
+    attemptIndex?: number | null
+  }
 ): Promise<void> {
   await insertInferenceCall({
     job_id: queueRow.job_id,
@@ -391,6 +397,10 @@ async function insertPassiveInferenceUsage(
     finish_reason: 'stop',
     is_fallback: 0,
     duration_ms: usage.durationMs,
+    attempt_kind: options?.attemptKind ?? null,
+    attempt_index: options?.attemptIndex ?? null,
+    payload_state: 'legacy_unavailable',
+    model_span_id: options?.modelSpanId ?? null,
   })
 }
 
@@ -989,7 +999,12 @@ async function processNextPassiveMemoryQueue(): Promise<void> {
       await insertPassiveInferenceUsage(
         queueRow,
         extraction.usage,
-        PASSIVE_MEMORY_EXTRACT_TURN_BASE
+        PASSIVE_MEMORY_EXTRACT_TURN_BASE,
+        {
+          modelSpanId: span?.id ?? null,
+          attemptKind: 'passive_memory_extract',
+          attemptIndex: 0,
+        }
       )
     }
 
@@ -1016,7 +1031,16 @@ async function processNextPassiveMemoryQueue(): Promise<void> {
     }
 
     if (reconcile.usage) {
-      await insertPassiveInferenceUsage(queueRow, reconcile.usage, PASSIVE_MEMORY_REFINE_TURN_BASE)
+      await insertPassiveInferenceUsage(
+        queueRow,
+        reconcile.usage,
+        PASSIVE_MEMORY_REFINE_TURN_BASE,
+        {
+          modelSpanId: span?.id ?? null,
+          attemptKind: 'passive_memory_refine',
+          attemptIndex: 1,
+        }
+      )
     }
 
     const applyResult = await applyCandidates(
@@ -1056,6 +1080,13 @@ async function processNextPassiveMemoryQueue(): Promise<void> {
       updated_count: summary.updatedIds.length,
       evicted_count: summary.evictedIds.length,
       skipped_count: summary.skipped.length,
+      extraction_prompt_tokens: extraction.usage?.promptTokens ?? 0,
+      extraction_completion_tokens: extraction.usage?.completionTokens ?? 0,
+      extraction_cost_usd: extraction.usage?.costUsd ?? 0,
+      refinement_prompt_tokens: reconcile.usage?.promptTokens ?? 0,
+      refinement_completion_tokens: reconcile.usage?.completionTokens ?? 0,
+      refinement_cost_usd: reconcile.usage?.costUsd ?? 0,
+      total_inference_cost_usd: combinedUsage?.costUsd ?? 0,
       duration_ms: summary.durationMs,
     })
   } catch (error) {
@@ -1100,6 +1131,10 @@ export function ensurePassiveMemoryWorker(): void {
     try {
       await state.processFn?.()
     } catch (error) {
+      if (logSchemaMismatchOnce(error, 'PassiveMemoryWorker')) {
+        stopPassiveMemoryWorker()
+        return
+      }
       console.warn('[PassiveMemoryWorker] Tick failed', error)
     } finally {
       state.running = false

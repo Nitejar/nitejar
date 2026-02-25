@@ -11,6 +11,7 @@ vi.mock('@nitejar/database', () => ({
   listAgentIdsForPluginInstance: vi.fn(),
   updatePluginInstance: vi.fn(),
   findAgentById: vi.fn(),
+  getAgentPluginInstanceAssignment: vi.fn(),
   setAgentPluginInstanceAssignment: vi.fn(),
 }))
 
@@ -23,6 +24,7 @@ vi.mock('@nitejar/plugin-handlers', () => ({
 import {
   findAgentById,
   findPluginInstanceById,
+  getAgentPluginInstanceAssignment,
   listAgentAssignmentsForPluginInstances,
   listAgentIdsForPluginInstance,
   searchPluginInstances,
@@ -42,11 +44,13 @@ const mockedFindPluginInstanceById = vi.mocked(findPluginInstanceById)
 const mockedListAgentIdsForPluginInstance = vi.mocked(listAgentIdsForPluginInstance)
 const mockedUpdatePluginInstance = vi.mocked(updatePluginInstance)
 const mockedFindAgentById = vi.mocked(findAgentById)
+const mockedGetAgentPluginInstanceAssignment = vi.mocked(getAgentPluginInstanceAssignment)
 const mockedSetAgentPluginInstanceAssignment = vi.mocked(setAgentPluginInstanceAssignment)
 
 describe('plugin instances ops', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockedGetAgentPluginInstanceAssignment.mockResolvedValue(null)
   })
 
   it('lists plugin instances with cursor contract and assignments', async () => {
@@ -187,6 +191,55 @@ describe('plugin instances ops', () => {
       pluginInstanceId: 'int-1',
       agentId: 'a-1',
       enabled: true,
+    })
+  })
+
+  it('persists assignment policy JSON when provided', async () => {
+    mockedFindPluginInstanceById.mockResolvedValue({
+      id: 'int-1',
+      plugin_id: 'builtin.slack',
+      type: 'slack',
+      name: 'Slack',
+      config: null,
+      config_json: null,
+      scope: 'global',
+      enabled: 1,
+      created_at: 100,
+      updated_at: 100,
+    })
+    mockedFindAgentById.mockResolvedValue({ id: 'a-1' } as never)
+    mockedGetAgentPluginInstanceAssignment.mockResolvedValue({
+      agent_id: 'a-1',
+      plugin_instance_id: 'int-1',
+      created_at: 123,
+      policy_json: JSON.stringify({
+        mode: 'allow_list',
+        allowedActions: ['read_thread'],
+      }),
+    })
+
+    const result = await setPluginInstanceAgentAssignmentOp({
+      pluginInstanceId: 'int-1',
+      agentId: 'a-1',
+      enabled: true,
+      policy: {
+        mode: 'allow_list',
+        allowedActions: ['read_thread'],
+      },
+    })
+
+    expect(mockedSetAgentPluginInstanceAssignment).toHaveBeenCalledWith({
+      pluginInstanceId: 'int-1',
+      agentId: 'a-1',
+      enabled: true,
+      policyJson: JSON.stringify({
+        mode: 'allow_list',
+        allowedActions: ['read_thread'],
+      }),
+    })
+    expect(result.policy).toEqual({
+      mode: 'allow_list',
+      allowedActions: ['read_thread'],
     })
   })
 })

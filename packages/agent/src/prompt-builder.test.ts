@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { buildSystemPrompt, buildUserMessage } from './prompt-builder'
 import type { Agent, WorkItem } from '@nitejar/database'
 import * as Database from '@nitejar/database'
+import * as Sprites from '@nitejar/sprites'
 import type { IntegrationProvider, PromptSection } from './integrations/registry'
 
 vi.mock('@nitejar/database', async () => {
@@ -9,6 +10,18 @@ vi.mock('@nitejar/database', async () => {
   return {
     ...actual,
     listAgentSandboxes: vi.fn(),
+  }
+})
+
+vi.mock('@nitejar/sprites', async () => {
+  const actual = await vi.importActual<typeof Sprites>('@nitejar/sprites')
+  return {
+    ...actual,
+    getSpritesTokenSettings: vi.fn(),
+    isSpritesExecutionAvailable: vi.fn(
+      (settings: { enabled: boolean; token: string | null }) =>
+        settings.enabled && Boolean(settings.token)
+    ),
   }
 })
 
@@ -37,10 +50,23 @@ const baseWorkItem: WorkItem = {
 }
 
 const mockedListAgentSandboxes = vi.mocked(Database.listAgentSandboxes)
+const mockedGetSpritesTokenSettings = vi.mocked(Sprites.getSpritesTokenSettings)
+const mockedIsSpritesExecutionAvailable = vi.mocked(Sprites.isSpritesExecutionAvailable)
 
 beforeEach(() => {
   mockedListAgentSandboxes.mockReset()
+  mockedGetSpritesTokenSettings.mockReset()
+  mockedIsSpritesExecutionAvailable.mockReset()
   mockedListAgentSandboxes.mockResolvedValue([])
+  mockedGetSpritesTokenSettings.mockResolvedValue({
+    enabled: true,
+    token: 'test-token',
+    source: 'capability_settings',
+  })
+  mockedIsSpritesExecutionAvailable.mockImplementation(
+    (settings: { enabled: boolean; token: string | null }) =>
+      settings.enabled && Boolean(settings.token)
+  )
 })
 
 describe('buildUserMessage', () => {
@@ -204,6 +230,56 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('Your sandboxes:')
     expect(prompt).toContain('home (home)')
     expect(prompt).toContain('switch_sandbox')
+  })
+
+  it('omits sandbox catalog when tool execution is disabled', async () => {
+    mockedGetSpritesTokenSettings.mockResolvedValue({
+      enabled: false,
+      token: 'test-token',
+      source: 'capability_settings',
+    })
+    mockedListAgentSandboxes.mockResolvedValue([
+      {
+        id: 'sb-1',
+        agent_id: 'agent-1',
+        name: 'home',
+        description: 'Persistent home sandbox',
+        sprite_name: 'nitejar-agent',
+        kind: 'home',
+        created_by: 'system',
+        created_at: 0,
+        updated_at: 0,
+        last_used_at: 0,
+      },
+    ])
+
+    const prompt = await buildSystemPrompt(baseAgent, baseWorkItem)
+    expect(prompt).not.toContain('Your sandboxes:')
+  })
+
+  it('omits sandbox catalog when tool execution has no API key', async () => {
+    mockedGetSpritesTokenSettings.mockResolvedValue({
+      enabled: true,
+      token: null,
+      source: 'none',
+    })
+    mockedListAgentSandboxes.mockResolvedValue([
+      {
+        id: 'sb-1',
+        agent_id: 'agent-1',
+        name: 'home',
+        description: 'Persistent home sandbox',
+        sprite_name: 'nitejar-agent',
+        kind: 'home',
+        created_by: 'system',
+        created_at: 0,
+        updated_at: 0,
+        last_used_at: 0,
+      },
+    ])
+
+    const prompt = await buildSystemPrompt(baseAgent, baseWorkItem)
+    expect(prompt).not.toContain('Your sandboxes:')
   })
 
   it('includes clear team routing guidance for single-owner requests and high-signal follow-ups', async () => {
