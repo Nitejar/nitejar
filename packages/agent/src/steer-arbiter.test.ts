@@ -23,6 +23,7 @@ const { createMock, getClientMock } = vi.hoisted(() => {
 vi.mock('./model-client', () => ({
   getClient: getClientMock,
   withProviderRetry: async <T>(fn: () => Promise<T>) => fn(),
+  openRouterTrace: (name: string) => ({ trace: { generation_name: name } }),
 }))
 
 function testAgent(): Agent {

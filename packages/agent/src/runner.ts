@@ -83,6 +83,7 @@ import {
   isLikelyImageInputUnsupportedError,
   isLikelyToolUseUnsupportedError,
   withProviderRetry,
+  openRouterTrace,
 } from './model-client'
 import { buildUserMessageForModel, safeParsePayload } from './telegram-attachments'
 import { sanitize, sanitizeLabel } from './prompt-sanitize'
@@ -1414,13 +1415,15 @@ async function runInferenceLoop(
         toolCount: activeTools.length,
         promptChars: preparedMessages.finalChars,
       })
-      const primaryRequest: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
+      const primaryRequest = {
         model: effectiveModel,
         max_tokens: effectiveMaxTokens,
         temperature: effectiveTemperature,
         tools: activeTools.length > 0 ? activeTools : undefined,
         messages: preparedMessages.messages,
-      }
+        ...openRouterTrace('inference', agent.handle),
+      } satisfies OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming &
+        Record<string, unknown>
       response = await withProviderRetry(() => client.chat.completions.create(primaryRequest), {
         label: `Turn ${turns} model call`,
       })
@@ -1480,12 +1483,14 @@ async function runInferenceLoop(
           agentWarn('Model/provider rejected tool use, retrying without tools', {
             model: modelConfig.model,
           })
-          const noToolsRequest: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
+          const noToolsRequest = {
             model: modelConfig.model,
             max_tokens: modelConfig.maxTokens,
             temperature: modelConfig.temperature,
             messages: preparedMessages.messages,
-          }
+            ...openRouterTrace('inference', agent.handle),
+          } satisfies OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming &
+            Record<string, unknown>
           response = await withProviderRetry(() => client.chat.completions.create(noToolsRequest), {
             label: `Turn ${turns} no-tools fallback`,
           })
@@ -1523,14 +1528,15 @@ async function runInferenceLoop(
             model: modelConfig.model,
             toolCount: fallbackTools.length,
           })
-          const imageFallbackRequest: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming =
-            {
-              model: modelConfig.model,
-              max_tokens: modelConfig.maxTokens,
-              temperature: modelConfig.temperature,
-              tools: fallbackTools.length > 0 ? fallbackTools : undefined,
-              messages: fallbackPreparedMessages.messages,
-            }
+          const imageFallbackRequest = {
+            model: modelConfig.model,
+            max_tokens: modelConfig.maxTokens,
+            temperature: modelConfig.temperature,
+            tools: fallbackTools.length > 0 ? fallbackTools : undefined,
+            messages: fallbackPreparedMessages.messages,
+            ...openRouterTrace('inference', agent.handle),
+          } satisfies OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming &
+            Record<string, unknown>
           response = await withProviderRetry(
             () => client.chat.completions.create(imageFallbackRequest),
             { label: `Turn ${turns} text-only fallback` }
@@ -1570,13 +1576,14 @@ async function runInferenceLoop(
                   model: modelConfig.model,
                 }
               )
-              const imageNoToolsFallbackRequest: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming =
-                {
-                  model: modelConfig.model,
-                  max_tokens: modelConfig.maxTokens,
-                  temperature: modelConfig.temperature,
-                  messages: finalPreparedMessages.messages,
-                }
+              const imageNoToolsFallbackRequest = {
+                model: modelConfig.model,
+                max_tokens: modelConfig.maxTokens,
+                temperature: modelConfig.temperature,
+                messages: finalPreparedMessages.messages,
+                ...openRouterTrace('inference', agent.handle),
+              } satisfies OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming &
+                Record<string, unknown>
               response = await withProviderRetry(
                 () => client.chat.completions.create(imageNoToolsFallbackRequest),
                 { label: `Turn ${turns} text-only + no-tools fallback` }
@@ -2144,12 +2151,14 @@ async function runInferenceLoop(
       await appendMessage(job.id, 'user', { text: lastLookText })
 
       // One more inference pass
-      const lastLookRequest: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
+      const lastLookRequest = {
         model: modelConfig.model,
         max_tokens: modelConfig.maxTokens,
         temperature: modelConfig.temperature,
         messages: prepareMessagesForModel(messages).messages,
-      }
+        ...openRouterTrace('last-look', agent.handle),
+      } satisfies OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming &
+        Record<string, unknown>
       const lastLookStart = Date.now()
       const lastLookResp = await withProviderRetry(
         () => client.chat.completions.create(lastLookRequest),
@@ -2642,15 +2651,17 @@ async function postProcessFinalResponse(
     requesterLabel
   )
 
-  const requestPayload: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
+  const requestPayload = {
     model: modelConfig.model,
     temperature: 0.3,
     max_tokens: modelConfig.maxTokens,
     messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: `<transcript>\n${transcript}\n</transcript>` },
+      { role: 'system' as const, content: systemPrompt },
+      { role: 'user' as const, content: `<transcript>\n${transcript}\n</transcript>` },
     ],
-  }
+    ...openRouterTrace('post-processing', agent.handle),
+  } satisfies OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming &
+    Record<string, unknown>
 
   const response = await withProviderRetry(() => client.chat.completions.create(requestPayload), {
     label: 'Post-processing final response',

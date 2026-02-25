@@ -10,6 +10,7 @@ import {
   getTTSSettings,
 } from '../../media-settings'
 import { getGatewayClient } from '../../gateway-openai-client'
+import { openRouterTrace } from '../../openrouter-trace'
 import type { ToolHandler } from '../types'
 
 const TTS_FORMATS = new Set(['mp3', 'wav', 'opus', 'aac', 'flac', 'pcm'])
@@ -379,6 +380,7 @@ export const generateImageTool: ToolHandler = async (input, context) => {
     model,
     modalities: ['image', 'text'],
     messages: [{ role: 'user', content: requestPrompt }],
+    ...openRouterTrace('image-generation'),
   } as never)
   const durationMs = Date.now() - startedAt
 
@@ -500,6 +502,7 @@ export const transcribeAudioTool: ToolHandler = async (input, context) => {
         ],
       },
     ],
+    ...openRouterTrace('transcription'),
   } as never)
   const durationMs = Date.now() - startedAt
 

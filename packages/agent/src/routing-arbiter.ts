@@ -2,7 +2,7 @@ import type OpenAI from 'openai'
 import type { Agent } from '@nitejar/database'
 import { parseAgentConfig } from './config'
 import { getModelConfig } from './prompt-builder'
-import { getClient, withProviderRetry } from './model-client'
+import { getClient, withProviderRetry, openRouterTrace } from './model-client'
 import { escapeXmlText, sanitize } from './prompt-sanitize'
 
 export type RoutingMode = 'triage' | 'steer'
@@ -333,6 +333,7 @@ export async function runRoutingArbiter(
 
   const request: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming & {
     reasoning?: { effort: 'low' | 'medium' | 'high' }
+    trace?: { generation_name: string; trace_name?: string }
   } = {
     model: modelConfig.model,
     max_tokens: maxTokens,
@@ -341,6 +342,7 @@ export async function runRoutingArbiter(
       { role: 'system', content: buildSystemPrompt(input) },
       { role: 'user', content: sanitize(input.userPrompt) },
     ],
+    ...openRouterTrace(input.mode === 'triage' ? 'triage' : 'steer', input.targetHandle),
   }
   if (reasoningEffort) {
     request.reasoning = { effort: reasoningEffort }

@@ -133,6 +133,8 @@ export async function withProviderRetry<T>(
   throw lastError
 }
 
+export { openRouterTrace, type OpenRouterTrace } from './openrouter-trace'
+
 export function isLikelyImageInputUnsupportedError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
   const lower = message.toLowerCase()

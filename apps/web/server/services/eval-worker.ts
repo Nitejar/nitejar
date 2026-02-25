@@ -281,6 +281,7 @@ async function executeLlmJudge(
       ],
       temperature: 0.1,
       response_format: { type: 'json_object' },
+      trace: { generation_name: 'eval-judge', trace_name: 'nitejar' },
     }),
   })
 

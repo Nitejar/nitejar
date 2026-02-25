@@ -566,6 +566,7 @@ async function extractCandidates(
           content: userPromptParts.join('\n'),
         },
       ],
+      trace: { generation_name: 'memory-extraction', trace_name: 'nitejar' },
     }),
   })
 
@@ -734,6 +735,7 @@ async function reconcileCandidates(
           ].join('\n'),
         },
       ],
+      trace: { generation_name: 'memory-reconciliation', trace_name: 'nitejar' },
     }),
   })
 

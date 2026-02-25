@@ -19,7 +19,9 @@ describe('tool registry', () => {
 
   it('has handlers for all defined tools', () => {
     for (const definition of toolDefinitions) {
-      expect(toolHandlers[definition.name]).toBeTypeOf('function')
+      expect(toolHandlers[definition.name], `missing handler for "${definition.name}"`).toBeTypeOf(
+        'function'
+      )
     }
   })
 
