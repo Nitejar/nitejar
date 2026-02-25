@@ -251,14 +251,6 @@ export const slackHandler: PluginHandler<SlackConfig> = {
           { label: 'All messages in allowed channels', value: 'all' },
         ],
       },
-      {
-        key: 'agentMentionHandoffs',
-        label: 'Enable agent mention handoffs',
-        type: 'boolean',
-        required: false,
-        helpText:
-          'When enabled, explicit handoff language like "handoff to @agent" can spawn a follow-up turn for that agent.',
-      },
     ],
     usesRedirectFlow: true,
     registrationUrl: 'https://api.slack.com/apps?new_app=1',

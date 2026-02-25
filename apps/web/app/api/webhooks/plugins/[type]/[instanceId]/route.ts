@@ -6,7 +6,6 @@ import {
   type WebhookHooks,
 } from '@nitejar/plugin-handlers'
 import { runAgent } from '@nitejar/agent/runner'
-import { extractMentions } from '@nitejar/agent/mention-parser'
 import { parseAgentConfig } from '@nitejar/agent/config'
 import type { TeamContext } from '@nitejar/agent/prompt-builder'
 import type { Agent } from '@nitejar/database'
@@ -16,10 +15,8 @@ import {
 } from '../../../../../../server/services/plugins/hook-dispatch'
 import {
   getAgentsForPluginInstance,
-  findAgentByHandle,
   updateWorkItem,
   findWorkItemById,
-  createWorkItem,
   createJob,
   startJob,
   completeJob,
@@ -51,21 +48,6 @@ const RESET_COMMANDS = ['clear']
 function isDiscordDeferredAckBody(body: unknown): boolean {
   if (!body || typeof body !== 'object') return false
   return (body as { type?: unknown }).type === 5
-}
-
-function isSlackMentionHandoffEnabled(
-  pluginInstance: { type: string; config: string | null } | null
-): boolean {
-  if (!pluginInstance || pluginInstance.type !== 'slack' || !pluginInstance.config) {
-    return false
-  }
-
-  try {
-    const parsed = JSON.parse(pluginInstance.config) as { agentMentionHandoffs?: unknown }
-    return parsed.agentMentionHandoffs === true
-  } catch {
-    return false
-  }
 }
 
 /**
@@ -172,10 +154,6 @@ async function processWorkItemForAgent(
     agentCount?: number
     /** Structured team context for multi-agent awareness */
     teamContext?: TeamContext
-    /** Chain depth for @mention dispatch (0 = human message, increments per @mention) */
-    chainDepth?: number
-    /** All agents on this plugin instance (needed for @mention parsing) */
-    allAgents?: Agent[]
   }
 ) {
   const normalizeAssistantResponse = (value: string | null | undefined): string | null => {
@@ -245,7 +223,6 @@ async function processWorkItemForAgent(
 
     // Resolve plugin instance once so we can emit progress updates during the run.
     const pluginInstance = await getPluginInstanceWithConfig(pluginInstanceId)
-    const enableMentionHandoffs = isSlackMentionHandoffEnabled(pluginInstance)
     const handler = pluginInstance ? pluginHandlerRegistry.get(pluginInstance.type) : null
     let lastDeliveredAssistantMessage: string | null = null
     let progressDeliveryQueue = Promise.resolve()
@@ -350,100 +327,6 @@ async function processWorkItemForAgent(
       phase: 'final',
     })
 
-    // @Mention dispatch (Slack-only, per-instance opt-in): if the agent mentioned
-    // other agents with explicit transfer intent, trigger them.
-    const chainDepth = options?.chainDepth ?? 0
-    const MAX_CHAIN_DEPTH = 3
-    if (
-      enableMentionHandoffs &&
-      result.finalResponse &&
-      chainDepth < MAX_CHAIN_DEPTH &&
-      options?.allAgents
-    ) {
-      const knownHandles = options.allAgents.filter((a) => a.id !== agent.id).map((a) => a.handle)
-      const mentionedHandles = extractMentions(result.finalResponse, knownHandles)
-
-      for (const handle of mentionedHandles) {
-        try {
-          const mentionedAgent = await findAgentByHandle(handle)
-          if (!mentionedAgent) continue
-          if (mentionedAgent.id === agent.id) {
-            console.log(`[webhook] @mention skip (self-mention): ${agent.handle}→@${handle}`)
-            continue
-          }
-
-          const transferIntent = detectOwnershipTransferIntent(result.finalResponse, handle)
-          if (!transferIntent.explicit) {
-            console.log(
-              `[webhook] @mention skip (no explicit transfer intent): ${agent.handle}→@${handle}`
-            )
-            continue
-          }
-
-          // Create a synthetic work item for the mentioned agent
-          const originalWorkItem = await findWorkItemById(workItemId)
-          if (!originalWorkItem) continue
-
-          const syntheticWorkItem = await createWorkItem({
-            plugin_instance_id: originalWorkItem.plugin_instance_id,
-            session_key: originalWorkItem.session_key,
-            source: originalWorkItem.source,
-            source_ref: `inter_agent:${agent.handle}→@${handle}`,
-            title: `@${agent.handle} mentioned you`,
-            payload: JSON.stringify({
-              source_type: 'inter_agent',
-              triggered_by: agent.handle,
-              actor: {
-                kind: 'agent',
-                agentId: agent.id,
-                handle: agent.handle,
-                displayName: agent.name,
-                source: originalWorkItem.source,
-              },
-              chain_depth: chainDepth + 1,
-              transfer_intent: {
-                explicit: transferIntent.explicit,
-                reason: transferIntent.reason,
-              },
-              body: result.finalResponse,
-              responseContext,
-            }),
-          })
-
-          await publishRoutineEnvelopeFromWorkItem(syntheticWorkItem.id).catch((error) => {
-            console.warn(
-              '[webhook] Failed to publish routine envelope for synthetic mention item',
-              {
-                workItemId: syntheticWorkItem.id,
-                error: error instanceof Error ? error.message : String(error),
-              }
-            )
-          })
-
-          console.log(
-            `[webhook] @mention dispatch: ${agent.handle}→@${handle} (depth=${chainDepth + 1})`
-          )
-
-          // Dispatch to the mentioned agent directly (no stagger, they were explicitly called)
-          const mentionTeamContext = buildTeamContext(mentionedAgent, options.allAgents)
-          processWorkItemForAgent(
-            mentionedAgent,
-            syntheticWorkItem.id,
-            pluginInstanceId,
-            responseContext,
-            {
-              agentCount: options?.agentCount,
-              teamContext: mentionTeamContext,
-              chainDepth: chainDepth + 1,
-              allAgents: options.allAgents,
-            }
-          ).catch((err) => console.error(`[webhook] @mention dispatch error for @${handle}:`, err))
-        } catch (err) {
-          console.warn(`[webhook] Failed to dispatch @mention to @${handle}:`, err)
-        }
-      }
-    }
-
     return result
   } catch (error) {
     console.error(`[webhook] Error processing work item with agent ${agent.id}:`, error)
@@ -478,40 +361,6 @@ function buildTeamContext(currentAgent: Agent, allAgents: Agent[]): TeamContext 
 
   if (teammates.length === 0) return undefined
   return { teammates }
-}
-
-function detectOwnershipTransferIntent(
-  text: string,
-  handle: string
-): { explicit: boolean; reason: string } {
-  const escapedHandle = handle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const mentionRegex = new RegExp(`@${escapedHandle}\\b`, 'i')
-  if (!mentionRegex.test(text)) {
-    return { explicit: false, reason: 'No explicit mention present.' }
-  }
-
-  const lowered = text.toLowerCase()
-  const handleLower = handle.toLowerCase()
-  const strongSignals = [
-    `@${handleLower} can you`,
-    `@${handleLower} please`,
-    `@${handleLower} could you`,
-    `@${handleLower} your turn`,
-    `@${handleLower} take over`,
-    `handoff to @${handleLower}`,
-    `assigning @${handleLower}`,
-  ]
-
-  if (strongSignals.some((signal) => lowered.includes(signal))) {
-    return { explicit: true, reason: 'Explicit transfer/request phrasing detected.' }
-  }
-
-  const questionNearMention = new RegExp(`@${escapedHandle}[^\\n\\r]{0,120}\\?`, 'i')
-  if (questionNearMention.test(text)) {
-    return { explicit: true, reason: 'Question directed at mentioned agent.' }
-  }
-
-  return { explicit: false, reason: 'Mention appears conversational/referential.' }
 }
 
 /** Small gap between sequential agent responses (ms) */
@@ -563,7 +412,6 @@ async function dispatchToAgents(
       coalescedText: options?.coalescedText,
       agentCount,
       teamContext,
-      allAgents: agents,
     }
 
     if (i === 0) {

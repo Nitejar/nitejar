@@ -92,9 +92,6 @@ export function InstanceDetailClient({ pluginInstanceId }: { pluginInstanceId: s
 
   const Icon = meta?.icon ? iconMap[meta.icon] : undefined
   const pluginType = instance.type
-  const credentialVaultHref = `/admin/settings/credentials?from=${encodeURIComponent(
-    `/admin/plugins/instances/${pluginInstanceId}`
-  )}`
 
   return (
     <div className="space-y-6">
@@ -107,16 +104,6 @@ export function InstanceDetailClient({ pluginInstanceId }: { pluginInstanceId: s
           label: `Back to ${meta?.displayName ?? pluginType}`,
         }}
       />
-
-      <Card className="border-white/10 bg-white/[0.02]">
-        <CardContent className="py-3 text-xs text-muted-foreground">
-          Need API keys?{' '}
-          <Link href={credentialVaultHref} className="text-primary hover:underline">
-            Open Credentials Vault
-          </Link>
-          .
-        </CardContent>
-      </Card>
 
       {/* Header card: name, type badge, enabled toggle */}
       <HeaderSection

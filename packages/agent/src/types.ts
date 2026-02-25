@@ -230,8 +230,6 @@ export interface WorkItemPayload {
   triggered_by?: string
   /** Handle of the sender agent (for agent DMs) */
   from_handle?: string
-  /** Chain depth for @mention dispatch (0 = human, increments per mention) */
-  chain_depth?: number
   /** Response context passed through for inter-agent messages */
   responseContext?: unknown
   /** Allow additional fields */

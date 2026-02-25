@@ -119,10 +119,6 @@ export async function buildSystemPrompt(
       'This is a private inter-agent conversation. Your response is NOT visible to users. ' +
         'Respond directly to the other agent.'
     )
-  } else if (payload?.source_type === 'inter_agent') {
-    sections.push(
-      'You were @mentioned by another agent. Respond normally — your response IS visible to users.'
-    )
   }
 
   // Section 2: Soul document (injected as-is)
@@ -162,7 +158,6 @@ export async function buildSystemPrompt(
       'If you want to pull a teammate into YOUR response (e.g. asking for their opinion), @mention them in your message.',
       'If a request is clearly assigned to a single agent and they already resolved it, defer instead of repeating their answer.',
       'If you have unique, high-signal information (correction, risk, missing constraint, or important context), chime in briefly with only that insight.',
-      'Keep @mention chains short. The system stops chains after 3 levels.',
     ].join('\n')
     sections.push(teamSection)
   }
@@ -353,11 +348,6 @@ function buildContextTextForRetrieval(workItem: WorkItem): string {
 export function buildUserMessage(workItem: WorkItem): string {
   const payload = safeParsePayload(workItem.payload)
   const parts: string[] = []
-
-  // Annotate inter-agent messages (triggered by @mention)
-  if (payload?.source_type === 'inter_agent' && payload?.triggered_by) {
-    parts.push(`[@${sanitize(payload.triggered_by)} mentioned you]`)
-  }
 
   // Annotate agent DM messages
   if (payload?.source_type === 'agent_dm' && payload?.from_handle) {

@@ -35,14 +35,4 @@ describe('Slack config validation', () => {
 
     expect(result.valid).toBe(true)
   })
-
-  it('accepts agent mention handoff toggle', () => {
-    const result = slackHandler.validateConfig({
-      botToken: 'xoxb-test',
-      signingSecret: 'secret',
-      agentMentionHandoffs: true,
-    })
-
-    expect(result.valid).toBe(true)
-  })
 })

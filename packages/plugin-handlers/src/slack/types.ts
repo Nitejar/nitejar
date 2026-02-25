@@ -27,11 +27,6 @@ export interface SlackConfig {
   allowedChannels?: string[]
   /** Which messages should create work items */
   inboundPolicy?: SlackInboundPolicy
-  /**
-   * Enable synthetic inter-agent handoff when an agent explicitly transfers
-   * ownership via @mention in Slack replies.
-   */
-  agentMentionHandoffs?: boolean
 }
 
 export const SLACK_SENSITIVE_FIELDS = ['botToken', 'signingSecret'] as const

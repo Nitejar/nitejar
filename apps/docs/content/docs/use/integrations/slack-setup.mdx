@@ -15,7 +15,7 @@ Nitejar generates a Slack app manifest for you. No manual scope or event configu
 2. Go to **Plugins** in the sidebar.
 3. Find the **Slack** plugin and click **New Instance**.
 4. Give it a name (this becomes the Slack app display name, up to 35 characters).
-5. Optionally choose your **Listen for** mode and whether to enable **agent mention handoffs** (both can be changed later).
+5. Optionally choose your **Listen for** mode (can be changed later).
 6. Click **Create Slack App**.
 
 Nitejar creates a pending connection and opens Slack's app configuration page with a prefilled manifest. From there:
@@ -106,18 +106,6 @@ Mentions-only is the default because Slack workspaces are noisy. It keeps your f
 By default, the bot listens in every channel it has been invited to. To restrict it, add channel IDs to the `allowedChannels` list in your plugin instance config. Messages from channels not on the list are silently ignored.
 
 To find a channel ID, right-click the channel name in Slack and choose "Copy link." The ID is the last path segment.
-
-### Agent mention handoffs
-
-When **Enable agent mention handoffs** is on, an agent's final response can trigger another agent by using explicit transfer language like "handoff to @agent" or "@agent can you take this?"
-
-Nitejar detects the transfer intent and creates a follow-up work item for the mentioned agent:
-
-- The original message starts at chain depth `0`.
-- Each handoff increments the depth by `1`.
-- Maximum chain depth is **3** to prevent runaway loops.
-
-Only explicit transfer phrasing triggers a handoff. Casual or referential mentions (like "as @agent mentioned earlier") do not.
 
 ## 6. Agent Slack tools
 

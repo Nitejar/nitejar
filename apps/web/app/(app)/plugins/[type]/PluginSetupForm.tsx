@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { trpc } from '@/lib/trpc'
 import { Button } from '@/components/ui/button'
@@ -41,9 +40,6 @@ export function PluginSetupForm({
   const config = setupConfigQuery.data
   const isRedirect = config?.usesRedirectFlow === true
   const canTest = config?.supportsTestBeforeSave === true
-  const credentialVaultHref = `/admin/settings/credentials?from=${encodeURIComponent(
-    `/admin/plugins/${pluginType}`
-  )}`
 
   function setField(key: string, value: unknown) {
     setFields((prev) => ({ ...prev, [key]: value }))
@@ -231,13 +227,6 @@ export function PluginSetupForm({
           <IconExternalLink className="h-3 w-3" />
         </a>
       )}
-      <Link
-        href={credentialVaultHref}
-        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-      >
-        Need API keys? Open Credentials Vault
-      </Link>
-
       {/* Test result display */}
       {testResult && (
         <div

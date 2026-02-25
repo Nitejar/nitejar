@@ -34,7 +34,6 @@ export const slackConfigSchema = z
     botUserId: z.string().min(1).optional(),
     allowedChannels: allowedChannelsSchema,
     inboundPolicy: z.enum(['mentions', 'all']).optional(),
-    agentMentionHandoffs: z.boolean().optional(),
   })
   .refine(
     (config) => {

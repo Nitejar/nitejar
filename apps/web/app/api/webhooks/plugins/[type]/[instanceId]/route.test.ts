@@ -12,10 +12,6 @@ const {
   mockGetRuntimeControl,
   mockRunAgent,
   mockParseAgentConfig,
-  mockExtractMentions,
-  mockFindAgentByHandle,
-  mockFindWorkItemById,
-  mockCreateWorkItem,
   mockPublishRoutineEnvelopeFromWorkItem,
   routeResults,
   postedMessages,
@@ -31,16 +27,6 @@ const {
   const updateWorkItem = vi.fn(() => Promise.resolve(null))
   const getRuntimeControl = vi.fn(() => Promise.resolve({ processing_enabled: 1 }))
   const parseAgentConfig = vi.fn((_config: string | null) => ({}))
-  const extractMentions = vi.fn<(text: string, knownHandles: string[]) => string[]>(() => [])
-  const findAgentByHandle = vi.fn<(handle: string) => Promise<Record<string, unknown> | null>>(() =>
-    Promise.resolve(null)
-  )
-  const findWorkItemById = vi.fn<(id: string) => Promise<Record<string, unknown> | null>>(() =>
-    Promise.resolve(null)
-  )
-  const createWorkItem = vi.fn<
-    (input: Record<string, unknown>) => Promise<Record<string, unknown> | null>
-  >(() => Promise.resolve(null))
   const publishRoutineEnvelopeFromWorkItem = vi.fn(() => Promise.resolve(undefined))
 
   const queuedRouteResults: Array<Record<string, unknown>> = []
@@ -78,10 +64,6 @@ const {
     mockGetRuntimeControl: getRuntimeControl,
     mockRunAgent: runAgent,
     mockParseAgentConfig: parseAgentConfig,
-    mockExtractMentions: extractMentions,
-    mockFindAgentByHandle: findAgentByHandle,
-    mockFindWorkItemById: findWorkItemById,
-    mockCreateWorkItem: createWorkItem,
     mockPublishRoutineEnvelopeFromWorkItem: publishRoutineEnvelopeFromWorkItem,
     routeResults: queuedRouteResults,
     postedMessages: sent,
@@ -108,20 +90,14 @@ vi.mock('@nitejar/agent/runner', () => ({
   runAgent: mockRunAgent,
 }))
 
-vi.mock('@nitejar/agent/mention-parser', () => ({
-  extractMentions: mockExtractMentions,
-}))
-
 vi.mock('@nitejar/agent/config', () => ({
   parseAgentConfig: mockParseAgentConfig,
 }))
 
 vi.mock('@nitejar/database', () => ({
   getAgentsForPluginInstance: mockGetAgentsForPluginInstance,
-  findAgentByHandle: mockFindAgentByHandle,
   updateWorkItem: mockUpdateWorkItem,
-  findWorkItemById: mockFindWorkItemById,
-  createWorkItem: mockCreateWorkItem,
+  findWorkItemById: vi.fn(() => Promise.resolve(null)),
   createJob: vi.fn(() => Promise.resolve(null)),
   startJob: vi.fn(() => Promise.resolve(null)),
   completeJob: vi.fn(() => Promise.resolve(null)),
@@ -147,10 +123,6 @@ describe('webhook route agent-origin exclusion collaboration', () => {
     routeResults.length = 0
     postedMessages.length = 0
     runCalls.length = 0
-    mockExtractMentions.mockReturnValue([])
-    mockFindAgentByHandle.mockResolvedValue(null)
-    mockFindWorkItemById.mockResolvedValue(null)
-    mockCreateWorkItem.mockResolvedValue(null)
     mockPublishRoutineEnvelopeFromWorkItem.mockResolvedValue(undefined)
 
     const agents = [
@@ -635,170 +607,6 @@ describe('webhook route agent-origin exclusion collaboration', () => {
     await vi.waitFor(() => {
       expect(postedMessages).toEqual([{ workItemId: 'wi-stream-dup', content: 'same payload' }])
     })
-  })
-
-  it('keeps Slack mention handoff disabled by default at instance level', async () => {
-    mockGetPluginInstanceWithConfig.mockResolvedValue({
-      id: 'plugin-instance-1',
-      type: 'slack',
-      config: JSON.stringify({
-        botToken: 'xoxb-1',
-        signingSecret: 'secret',
-      }),
-    })
-    mockRunAgent.mockResolvedValueOnce({
-      job: { id: 'job-no-handoff' },
-      finalResponse: 'handoff to @pixel please continue',
-      hitLimit: false,
-    })
-    mockExtractMentions.mockReturnValue(['pixel'])
-    mockFindAgentByHandle.mockResolvedValue({
-      id: 'agent-pixel',
-      handle: 'pixel',
-      name: 'Pixel',
-      sprite_id: null,
-      config: null,
-      status: 'idle',
-      created_at: 1,
-      updated_at: 1,
-    })
-    mockFindWorkItemById.mockResolvedValue({
-      id: 'wi-handoff-off',
-      plugin_instance_id: 'plugin-instance-1',
-      session_key: 'slack:C1:1700000000.1',
-      source: 'slack',
-      source_ref: 'slack:C1:1700000000.1',
-      status: 'NEW',
-      title: 'handoff',
-      payload: null,
-      created_at: 1,
-      updated_at: 1,
-    })
-    routeResults.push({
-      status: 201,
-      body: { created: true, workItemId: 'wi-handoff-off' },
-      workItemId: 'wi-handoff-off',
-      pluginInstanceId: 'plugin-instance-1',
-      responseContext: { threadTs: '1700000000.1', channel: 'C1' },
-      sessionKey: '',
-      senderName: 'Agent Relay',
-      messageText: 'handoff',
-      actor: {
-        kind: 'agent',
-        agentId: 'agent-pixel',
-        handle: 'pixel',
-        source: 'slack',
-      },
-    })
-
-    const req = new Request('http://localhost/api/webhooks/plugins/test-chat/plugin-instance-1', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ body: 'handoff test' }),
-    })
-    const response = await POST(req, {
-      params: Promise.resolve({ type: 'test-chat', instanceId: 'plugin-instance-1' }),
-    })
-
-    expect(response.status).toBe(201)
-    await vi.waitFor(() => {
-      expect(mockRunAgent).toHaveBeenCalled()
-    })
-    expect(mockCreateWorkItem).not.toHaveBeenCalled()
-  })
-
-  it('allows Slack mention handoff when enabled on the instance', async () => {
-    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.999)
-    mockGetPluginInstanceWithConfig.mockResolvedValue({
-      id: 'plugin-instance-1',
-      type: 'slack',
-      config: JSON.stringify({
-        botToken: 'xoxb-1',
-        signingSecret: 'secret',
-        agentMentionHandoffs: true,
-      }),
-    })
-    mockRunAgent.mockImplementation((agentId: string, _workItemId: string, _options?: unknown) => {
-      if (agentId === 'agent-slopper') {
-        return {
-          job: { id: 'job-handoff-on' },
-          finalResponse: 'handoff to @pixel please continue',
-          hitLimit: false,
-        }
-      }
-      return {
-        job: { id: `job-${agentId}` },
-        finalResponse: '',
-        hitLimit: false,
-      }
-    })
-    mockExtractMentions.mockImplementationOnce(() => ['pixel']).mockImplementation(() => [])
-    mockFindAgentByHandle.mockResolvedValue({
-      id: 'agent-pixel',
-      handle: 'pixel',
-      name: 'Pixel',
-      sprite_id: null,
-      config: null,
-      status: 'idle',
-      created_at: 1,
-      updated_at: 1,
-    })
-    mockFindWorkItemById.mockResolvedValue({
-      id: 'wi-handoff-on',
-      plugin_instance_id: 'plugin-instance-1',
-      session_key: 'slack:C1:1700000000.2',
-      source: 'slack',
-      source_ref: 'slack:C1:1700000000.2',
-      status: 'NEW',
-      title: 'handoff',
-      payload: null,
-      created_at: 1,
-      updated_at: 1,
-    })
-    mockCreateWorkItem.mockResolvedValue({
-      id: 'wi-synth-1',
-      plugin_instance_id: 'plugin-instance-1',
-      session_key: 'slack:C1:1700000000.2',
-      source: 'slack',
-      source_ref: 'inter_agent:slopper→@pixel',
-      status: 'NEW',
-      title: '@slopper mentioned you',
-      payload: null,
-      created_at: 1,
-      updated_at: 1,
-    })
-    routeResults.push({
-      status: 201,
-      body: { created: true, workItemId: 'wi-handoff-on' },
-      workItemId: 'wi-handoff-on',
-      pluginInstanceId: 'plugin-instance-1',
-      responseContext: { threadTs: '1700000000.2', channel: 'C1' },
-      sessionKey: '',
-      senderName: 'Agent Relay',
-      messageText: 'handoff',
-      actor: {
-        kind: 'human',
-        externalId: 'U123',
-        handle: 'josh',
-        source: 'slack',
-      },
-    })
-
-    const req = new Request('http://localhost/api/webhooks/plugins/test-chat/plugin-instance-1', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ body: 'handoff test' }),
-    })
-    const response = await POST(req, {
-      params: Promise.resolve({ type: 'test-chat', instanceId: 'plugin-instance-1' }),
-    })
-
-    expect(response.status).toBe(201)
-    await vi.waitFor(() => {
-      expect(mockCreateWorkItem).toHaveBeenCalledTimes(1)
-      expect(mockPublishRoutineEnvelopeFromWorkItem).toHaveBeenCalledWith('wi-synth-1')
-    })
-    randomSpy.mockRestore()
   })
 
   it('enqueues each inbound message when session queue routing is active', async () => {
