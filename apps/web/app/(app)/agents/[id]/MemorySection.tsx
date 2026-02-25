@@ -15,6 +15,7 @@ interface Memory {
   strength: number
   accessCount: number
   permanent: boolean
+  memoryKind?: string
   lastAccessedAt: number | null
   createdAt: number
   updatedAt: number
@@ -49,7 +50,7 @@ export function MemorySection({
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [filter, setFilter] = useState<'all' | 'permanent'>('permanent')
+  const [filter, setFilter] = useState<'all' | 'permanent' | 'digest'>('all')
   const [decayRate, setDecayRate] = useState(
     initialDecayRate !== undefined ? String(initialDecayRate) : '0.1'
   )
@@ -214,8 +215,14 @@ export function MemorySection({
     return 'just now'
   }
 
-  const filteredMemories = filter === 'permanent' ? memories.filter((m) => m.permanent) : memories
+  const filteredMemories =
+    filter === 'permanent'
+      ? memories.filter((m) => m.permanent)
+      : filter === 'digest'
+        ? memories.filter((m) => m.memoryKind === 'digest')
+        : memories
   const pinnedCount = memories.filter((m) => m.permanent).length
+  const digestCount = memories.filter((m) => m.memoryKind === 'digest').length
 
   return (
     <Card className="border-white/10 bg-white/[0.02]">
@@ -386,6 +393,19 @@ export function MemorySection({
             >
               Pinned ({pinnedCount})
             </button>
+            {digestCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setFilter('digest')}
+                className={`rounded-md px-2 py-1 text-[10px] font-medium transition ${
+                  filter === 'digest'
+                    ? 'bg-white/10 text-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Digests ({digestCount})
+              </button>
+            )}
           </div>
         )}
 
@@ -426,6 +446,11 @@ export function MemorySection({
                 <div className="min-w-0 flex-1">
                   <p className="line-clamp-2 text-xs text-foreground">{memory.content}</p>
                   <span className="text-[10px] text-muted-foreground">
+                    {memory.memoryKind && memory.memoryKind !== 'fact' && (
+                      <span className="mr-1 inline-block rounded bg-white/[0.06] px-1 py-px text-[9px] uppercase tracking-wider text-muted-foreground">
+                        {memory.memoryKind}
+                      </span>
+                    )}
                     {formatTimeAgo(memory.lastAccessedAt)}
                     {memory.accessCount > 0 ? ` · ${memory.accessCount}×` : ''}
                   </span>
