@@ -232,6 +232,10 @@ export interface WorkItemPayload {
   from_handle?: string
   /** Response context passed through for inter-agent messages */
   responseContext?: unknown
+  /** Slack thread timestamp */
+  threadTs?: string
+  /** Slack message timestamp */
+  messageTs?: string
   /** Allow additional fields */
   [key: string]: unknown
 }

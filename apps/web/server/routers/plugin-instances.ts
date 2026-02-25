@@ -296,7 +296,7 @@ export const pluginInstancesRouter = router({
           }
 
           for (const sensitiveField of handler.sensitiveFields) {
-            const incoming = (input.config as Record<string, unknown>)[sensitiveField]
+            const incoming = input.config[sensitiveField]
             if (
               incoming === REDACTED_SECRET_VALUE &&
               Object.prototype.hasOwnProperty.call(existingConfig, sensitiveField)

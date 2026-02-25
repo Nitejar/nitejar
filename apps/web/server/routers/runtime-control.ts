@@ -61,7 +61,7 @@ export const runtimeControlRouter = router({
         const message = error instanceof Error ? error.message.toLowerCase() : ''
         const missingColumn =
           message.includes('no column named app_base_url') ||
-          message.includes('column \"app_base_url\" does not exist')
+          message.includes('column "app_base_url" does not exist')
 
         if (missingColumn) {
           throw new TRPCError({
