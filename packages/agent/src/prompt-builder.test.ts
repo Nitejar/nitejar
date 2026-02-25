@@ -83,6 +83,86 @@ describe('buildUserMessage', () => {
     expect(message).toContain('message_thread_id: 77')
   })
 
+  it('includes Slack thread context when threadTs differs from messageTs', () => {
+    const workItem: WorkItem = {
+      ...baseWorkItem,
+      payload: JSON.stringify({
+        body: 'Thread reply',
+        source: 'slack',
+        threadTs: '1710000000.000100',
+        messageTs: '1710000000.000200',
+      }),
+    }
+
+    const message = buildUserMessage(workItem)
+    expect(message).toContain('thread_ts: 1710000000.000100')
+  })
+
+  it('omits Slack thread context when threadTs equals messageTs', () => {
+    const workItem: WorkItem = {
+      ...baseWorkItem,
+      payload: JSON.stringify({
+        body: 'Top-level message',
+        source: 'slack',
+        threadTs: '1710000000.000100',
+        messageTs: '1710000000.000100',
+      }),
+    }
+
+    const message = buildUserMessage(workItem)
+    expect(message).not.toContain('thread_ts')
+  })
+
+  it('annotates agent DM messages with from_handle', () => {
+    const workItem: WorkItem = {
+      ...baseWorkItem,
+      payload: JSON.stringify({
+        body: 'Hey, quick question',
+        source_type: 'agent_dm',
+        from_handle: 'pixel',
+      }),
+    }
+
+    const message = buildUserMessage(workItem)
+    expect(message).toContain('Private message from @pixel')
+  })
+
+  it('includes channel name and source in sender context', () => {
+    const workItem: WorkItem = {
+      ...baseWorkItem,
+      payload: JSON.stringify({
+        body: 'Hello from a group',
+        senderName: 'Alice',
+        senderUsername: 'alice',
+        chatName: 'general',
+        chatType: 'group',
+        source: 'telegram',
+      }),
+    }
+
+    const message = buildUserMessage(workItem)
+    expect(message).toContain('From: Alice @alice')
+    expect(message).toContain('Channel: general')
+    expect(message).toContain('Via: telegram')
+  })
+
+  it('omits channel name for private chats', () => {
+    const workItem: WorkItem = {
+      ...baseWorkItem,
+      payload: JSON.stringify({
+        body: 'Private hello',
+        senderName: 'Bob',
+        chatName: 'Bob',
+        chatType: 'private',
+        source: 'telegram',
+      }),
+    }
+
+    const message = buildUserMessage(workItem)
+    expect(message).toContain('From: Bob')
+    expect(message).not.toContain('Channel:')
+  })
+
   it('includes reply metadata when present', () => {
     const workItem: WorkItem = {
       ...baseWorkItem,
