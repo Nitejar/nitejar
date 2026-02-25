@@ -96,9 +96,9 @@ describe('routeWebhook idempotency', () => {
     expect(result.body).toEqual({ duplicate: true, workItemId: 'wi-existing' })
     expect(mockCreateWorkItem).not.toHaveBeenCalled()
 
-    const duplicateEvent = mockCreatePluginEvent.mock.calls.find(
-      ([input]) => input.kind === 'webhook_ingress' && input.status === 'duplicate'
-    )?.[0]
+    const duplicateEvent = (
+      mockCreatePluginEvent.mock.calls as Array<[Record<string, unknown>]>
+    ).find(([input]) => input.kind === 'webhook_ingress' && input.status === 'duplicate')?.[0]
     expect(duplicateEvent?.work_item_id).toBe('wi-existing')
     expect(duplicateEvent).toBeDefined()
     const detail = JSON.parse(duplicateEvent!.detail_json as string) as Record<string, unknown>
@@ -139,9 +139,9 @@ describe('routeWebhook idempotency', () => {
     expect(keys).toHaveLength(2)
     expect(keys).toEqual(expect.arrayContaining(['k-primary', 'k-alias']))
 
-    const acceptedEvent = mockCreatePluginEvent.mock.calls.find(
-      ([input]) => input.kind === 'webhook_ingress' && input.status === 'accepted'
-    )?.[0]
+    const acceptedEvent = (
+      mockCreatePluginEvent.mock.calls as Array<[Record<string, unknown>]>
+    ).find(([input]) => input.kind === 'webhook_ingress' && input.status === 'accepted')?.[0]
     expect(acceptedEvent?.work_item_id).toBe('wi-new')
   })
 
@@ -162,9 +162,9 @@ describe('routeWebhook idempotency', () => {
     expect(result.status).toBe(200)
     expect(result.body).toEqual({ ignored: true })
 
-    const skippedEvent = mockCreatePluginEvent.mock.calls.find(
-      ([input]) => input.kind === 'webhook_ingress' && input.status === 'skipped'
-    )?.[0]
+    const skippedEvent = (
+      mockCreatePluginEvent.mock.calls as Array<[Record<string, unknown>]>
+    ).find(([input]) => input.kind === 'webhook_ingress' && input.status === 'skipped')?.[0]
     expect(skippedEvent).toBeDefined()
     const detail = JSON.parse(skippedEvent!.detail_json as string) as Record<string, unknown>
     expect(detail.reasonCode).toBe('inbound_policy_filtered')

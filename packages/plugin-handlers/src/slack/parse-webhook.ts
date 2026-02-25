@@ -177,6 +177,7 @@ function stripLeadingSlackBotMention(text: string, botUserId: string | undefined
   let normalized = original
   let stripped = false
 
+  // eslint-disable-next-line no-constant-condition
   while (true) {
     const match = normalized.match(mentionPrefix)
     if (!match) break
