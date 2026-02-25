@@ -403,6 +403,7 @@ export async function parseSlackWebhook(
           source: 'slack',
         },
         channel: event.channel,
+        channelKey: `slack:${event.channel}`,
         ...(channelName ? { chatName: channelName } : {}),
         chatType: event.channel_type === 'im' ? 'private' : (event.channel_type ?? 'channel'),
         threadTs,

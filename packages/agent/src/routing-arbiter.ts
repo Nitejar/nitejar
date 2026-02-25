@@ -29,6 +29,8 @@ export interface RunRoutingArbiterInput {
   teamContext?: string
   activeWorkSnapshot?: string
   ingressContext?: string
+  /** Compressed context from other threads in the same channel */
+  channelPrelude?: string
   rules: string[]
   allowedRoutes: RoutingRoute[]
   defaultRoute: RoutingRoute
@@ -255,6 +257,15 @@ function buildSystemPrompt(input: RunRoutingArbiterInput): string {
       '<recent_conversation>',
       escapeXmlText(input.recentHistory),
       '</recent_conversation>'
+    )
+  }
+  if (input.channelPrelude) {
+    sections.push(
+      '',
+      '<channel_prelude>',
+      escapeXmlText(input.channelPrelude),
+      '</channel_prelude>',
+      'Channel prelude is supporting context from other threads in the same channel. Use it only for background awareness; do not treat it as part of the current conversation.'
     )
   }
 

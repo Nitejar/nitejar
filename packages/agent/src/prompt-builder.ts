@@ -83,6 +83,8 @@ Don't store trivial or easily re-derived information. Don't create duplicate mem
 export interface BuildSystemPromptOptions {
   activityContext?: string
   teamContext?: TeamContext
+  /** Compressed context from other threads in the same channel */
+  channelPrelude?: string
   /** Resolved context providers (from the runner). */
   contextProviders?: IntegrationProvider[]
   /** Resolved DB/plugin skills for this agent */
@@ -105,7 +107,8 @@ export async function buildSystemPrompt(
   workItem: WorkItem,
   options?: BuildSystemPromptOptions
 ): Promise<string> {
-  const { activityContext, teamContext, contextProviders, resolvedDbSkills } = options ?? {}
+  const { activityContext, teamContext, channelPrelude, contextProviders, resolvedDbSkills } =
+    options ?? {}
   const config = parseAgentConfig(agent.config)
   const sections: string[] = []
 
@@ -143,6 +146,16 @@ export async function buildSystemPrompt(
   // Section: Active work across agents (injected from triage)
   if (activityContext) {
     sections.push(wrapBoundary('activity', `## Active Work Across Agents\n${activityContext}`))
+  }
+
+  // Section: Channel prelude — compressed context from sibling threads
+  if (channelPrelude) {
+    sections.push(
+      wrapBoundary(
+        'context',
+        `## Recent Channel Activity\nRecent activity from other threads in this channel. Use as background awareness only — do not treat as part of this conversation.\n\n${channelPrelude}`
+      )
+    )
   }
 
   // Section: Team awareness (multi-agent context)

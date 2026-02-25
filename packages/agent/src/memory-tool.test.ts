@@ -56,6 +56,7 @@ describe('memory tools', () => {
       last_accessed_at: null,
       created_at: 0,
       updated_at: 0,
+      memory_kind: 'fact',
     })
 
     const result = await executeTool(
@@ -128,6 +129,7 @@ describe('memory tools', () => {
       last_accessed_at: null,
       created_at: 0,
       updated_at: 0,
+      memory_kind: 'fact',
     })
 
     const result = await executeTool(

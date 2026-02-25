@@ -236,6 +236,36 @@ describe('parseSlackWebhook', () => {
     expect(payloadBody?.slackBotUserId).toBe('U999')
   })
 
+  it('includes channelKey in payload JSON', async () => {
+    const eventTs = `${Math.floor(Date.now() / 1000)}.000100`
+    const payload = {
+      type: 'event_callback',
+      event_id: 'EvCK1',
+      event: {
+        type: 'app_mention',
+        user: 'U123',
+        text: '<@U999> check this',
+        ts: eventTs,
+        channel: 'C222',
+        thread_ts: eventTs,
+      },
+    }
+
+    const result = await parseSlackWebhook(
+      makeSignedRequest('secret', payload),
+      makePluginInstance({
+        botToken: 'xoxb-1',
+        signingSecret: 'secret',
+        botUserId: 'U999',
+        inboundPolicy: 'mentions',
+      })
+    )
+
+    expect(result.shouldProcess).toBe(true)
+    const parsedPayload = extractPayload(result)
+    expect(parsedPayload?.channelKey).toBe('slack:C222')
+  })
+
   it('keeps mention-prefixed body text while still parsing slash commands', async () => {
     const eventTs = `${Math.floor(Date.now() / 1000)}.000105`
     const payload = {

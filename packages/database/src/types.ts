@@ -349,6 +349,7 @@ export interface AgentMemoryTable {
   last_accessed_at: number | null
   created_at: Generated<number>
   updated_at: Generated<number>
+  memory_kind: Generated<string> // 'fact' | 'task' | 'digest'
 }
 
 export type AgentMemory = Selectable<AgentMemoryTable>
@@ -1306,6 +1307,7 @@ export interface ActivityLogTable {
   summary: string // freeform triage summary
   resources: string | null // JSON array of freeform resource identifiers
   embedding: Uint8Array | null // vector for similarity search on summary
+  final_summary: string | null // populated on completion with outcome description
   created_at: Generated<number>
 }
 

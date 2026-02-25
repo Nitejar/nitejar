@@ -45,12 +45,20 @@ const EXTRACTION_SYSTEM_PROMPT = [
   'You extract long-term memories from conversations between a user and an AI assistant.',
   'Your job is to identify information the assistant should remember for future conversations.',
   '',
+  'MEMORY KINDS:',
+  '- fact: durable knowledge about users, projects, decisions, corrections',
+  '- task: in-progress work, blockers, next steps worth resuming',
+  '- digest: a ONE-LINER summary of what this conversation was about — who participated,',
+  '  what channel/context, the topic, and the outcome or current state.',
+  '  Produce exactly one digest per conversation when the exchange was substantive.',
+  '',
   'EXTRACT:',
   '- Facts about users: names, preferences, roles, projects, relationships, goals',
   '- Project-specific knowledge: tech stack, conventions, repo paths, deployment details',
   '- Decisions and agreements: choices made, policies established, constraints agreed upon',
   '- Task state worth resuming: in-progress work, blockers, next steps',
   '- Corrections: when users correct the assistant, remember the right answer',
+  '- Conversation digest: one per substantive conversation (kind: "digest")',
   '',
   'DO NOT EXTRACT:',
   '- General knowledge the model already knows (science facts, definitions, how-tos)',
@@ -118,7 +126,7 @@ type WorkerState = {
 
 type PassiveMemoryCandidate = {
   content: string
-  kind: 'fact' | 'task'
+  kind: 'fact' | 'task' | 'digest'
   confidence: number
   reason: string
   targetMemoryId?: string
@@ -248,7 +256,14 @@ function parseCandidate(value: unknown): PassiveMemoryCandidate | null {
   const record = value as Record<string, unknown>
   const content = typeof record.content === 'string' ? normalizeText(record.content) : ''
   const kindRaw = record.kind
-  const kind = kindRaw === 'task' ? 'task' : kindRaw === 'fact' ? 'fact' : null
+  const kind =
+    kindRaw === 'task'
+      ? 'task'
+      : kindRaw === 'digest'
+        ? 'digest'
+        : kindRaw === 'fact'
+          ? 'fact'
+          : null
   const confidence = typeof record.confidence === 'number' ? record.confidence : null
   const reason = typeof record.reason === 'string' ? normalizeText(record.reason) : ''
 
@@ -524,7 +539,7 @@ async function extractCandidates(
   }
 
   userPromptParts.push(
-    'Output JSON: {"memories":[{"content":"...","kind":"fact|task","confidence":0.0-1.0,"reason":"..."}]}',
+    'Output JSON: {"memories":[{"content":"...","kind":"fact|task|digest","confidence":0.0-1.0,"reason":"..."}]}',
     'Return {"memories":[]} if nothing is worth remembering.',
     '',
     'Conversation transcript:',
@@ -905,7 +920,10 @@ async function applyCandidates(
       result.evictedIds.push(weakestNonPermanent.id)
     }
 
-    const created = await createMemoryWithEmbedding(agentId, candidate.content, false)
+    const created = await createMemoryWithEmbedding(agentId, candidate.content, false, {
+      kind: candidate.kind,
+      strength: candidate.kind === 'digest' ? 0.5 : undefined,
+    })
     memories.push(created)
     result.createdIds.push(created.id)
   }
@@ -1114,6 +1132,9 @@ async function processNextPassiveMemoryQueue(): Promise<void> {
 
 export const __passiveMemoryWorkerTest = {
   processNextPassiveMemoryQueue,
+  parseCandidate,
+  parseExtractionResponse,
+  applyCandidates,
 }
 
 export function ensurePassiveMemoryWorker(): void {

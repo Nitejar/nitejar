@@ -119,6 +119,7 @@ function scoreMemory(
     updatedAt: memory.updated_at,
     score,
     similarity,
+    memoryKind: memory.memory_kind,
   }
 }
 
@@ -128,7 +129,8 @@ function scoreMemory(
 export async function createMemoryWithEmbedding(
   agentId: string,
   content: string,
-  permanent: boolean = false
+  permanent: boolean = false,
+  options?: { kind?: string; strength?: number }
 ): Promise<AgentMemory> {
   let embedding: Uint8Array | null = null
 
@@ -147,9 +149,10 @@ export async function createMemoryWithEmbedding(
     content,
     embedding,
     permanent: permanent ? 1 : 0,
-    strength: 1.0,
+    strength: options?.strength ?? 1.0,
     access_count: 0,
     last_accessed_at: null,
+    memory_kind: options?.kind ?? 'fact',
   })
 }
 
@@ -189,12 +192,24 @@ export async function updateMemoryWithEmbedding(
  * Includes version and id so agents can reference them for updates.
  * Memory content is sanitized and wrapped in a <memory> boundary.
  */
+const MAX_DIGEST_MEMORIES = 2
+
 export function formatMemoriesForPrompt(memories: ScoredMemory[]): string {
   if (memories.length === 0) {
     return ''
   }
 
-  const memoryLines = memories.map((m) => {
+  // Cap digest-kind memories to MAX_DIGEST_MEMORIES (keep highest-scored)
+  let digestCount = 0
+  const capped = memories.filter((m) => {
+    if (m.memoryKind === 'digest') {
+      digestCount++
+      return digestCount <= MAX_DIGEST_MEMORIES
+    }
+    return true
+  })
+
+  const memoryLines = capped.map((m) => {
     const marker = m.permanent ? '📌 ' : ''
     const versionTag = m.version !== undefined ? `[v${m.version}] ` : ''
     return `- ${marker}${versionTag}${sanitize(m.content)} (id: ${m.id})`

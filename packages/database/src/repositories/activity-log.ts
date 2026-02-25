@@ -132,12 +132,17 @@ export async function findSimilarActivityEntries(
  */
 export async function updateActivityStatus(
   id: string,
-  newStatus: 'completed' | 'failed'
+  newStatus: 'completed' | 'failed',
+  finalSummary?: string | null
 ): Promise<ActivityLogEntry | null> {
   const db = getDb()
+  const updates: Record<string, unknown> = { status: newStatus }
+  if (finalSummary !== undefined && finalSummary !== null) {
+    updates.final_summary = finalSummary
+  }
   const result = await db
     .updateTable('activity_log')
-    .set({ status: newStatus })
+    .set(updates)
     .where('id', '=', id)
     .returningAll()
     .executeTakeFirst()

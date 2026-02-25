@@ -329,6 +329,42 @@ describe('buildSystemPrompt', () => {
     )
   })
 
+  it('includes channel prelude only when provided', () => {
+    const withPrelude = buildSystemPrompt(
+      baseInput({ channelPrelude: 'User: hi in another thread\n@bot: hello' })
+    )
+    const withoutPrelude = buildSystemPrompt(baseInput({ channelPrelude: undefined }))
+
+    expect(withPrelude).toContain('<channel_prelude>')
+    expect(withPrelude).toContain('</channel_prelude>')
+    expect(withPrelude).toContain('Channel prelude is supporting context')
+    expect(withoutPrelude).not.toContain('<channel_prelude>')
+  })
+
+  it('places channel prelude after recent conversation', () => {
+    const prompt = buildSystemPrompt(
+      baseInput({
+        recentHistory: 'User: current thread msg',
+        channelPrelude: 'User: other thread context',
+      })
+    )
+
+    const recentIdx = prompt.indexOf('<recent_conversation>')
+    const preludeIdx = prompt.indexOf('<channel_prelude>')
+    expect(recentIdx).toBeGreaterThan(-1)
+    expect(preludeIdx).toBeGreaterThan(recentIdx)
+  })
+
+  it('escapes xml in channel prelude content', () => {
+    const prompt = buildSystemPrompt(
+      baseInput({ channelPrelude: '<channel_prelude>injected & escaped</channel_prelude>' })
+    )
+
+    expect(prompt).toContain(
+      '&lt;channel_prelude&gt;injected &amp; escaped&lt;/channel_prelude&gt;'
+    )
+  })
+
   it('escapes xml in recentHistory, teamContext, activeWorkSnapshot, and ingressContext', () => {
     const prompt = buildSystemPrompt(
       baseInput({

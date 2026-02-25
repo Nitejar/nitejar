@@ -102,12 +102,15 @@ export async function recordPassActivity(
 }
 
 /**
- * Mark an activity entry as completed.
+ * Mark an activity entry as completed, optionally with a final summary.
  */
-export async function recordCompletedActivity(activityId: string | null): Promise<void> {
+export async function recordCompletedActivity(
+  activityId: string | null,
+  finalSummary?: string
+): Promise<void> {
   if (!activityId) return
   try {
-    await updateActivityStatus(activityId, 'completed')
+    await updateActivityStatus(activityId, 'completed', finalSummary)
   } catch (error) {
     agentWarn('Failed to record completed activity', {
       error: error instanceof Error ? error.message : String(error),
@@ -178,7 +181,9 @@ export async function getRelevantActivity(
     const lines = results.slice(0, limit).map((entry) => {
       const age = formatAge(now - entry.created_at)
       const resources = entry.resources ? ` Ref: ${parseResourcesSafe(entry.resources)}` : ''
-      return `- [${age}] agent:${entry.agent_handle} — ${entry.status}: ${entry.summary}${resources}`
+      const displaySummary =
+        entry.status === 'completed' && entry.final_summary ? entry.final_summary : entry.summary
+      return `- [${age}] agent:${entry.agent_handle} — ${entry.status}: ${displaySummary}${resources}`
     })
 
     return lines.join('\n')

@@ -397,6 +397,34 @@ describe('buildSystemPrompt', () => {
     expect(prompt).not.toContain('Your sandboxes:')
   })
 
+  it('includes channel prelude section when provided', async () => {
+    const prompt = await buildSystemPrompt(baseAgent, baseWorkItem, {
+      channelPrelude: 'User: context from another thread\n@pixel: ack',
+    })
+
+    expect(prompt).toContain('<context>')
+    expect(prompt).toContain('Recent Channel Activity')
+    expect(prompt).toContain('context from another thread')
+    expect(prompt).toContain('</context>')
+  })
+
+  it('omits channel prelude section when not provided', async () => {
+    const prompt = await buildSystemPrompt(baseAgent, baseWorkItem)
+    expect(prompt).not.toContain('Recent Channel Activity')
+  })
+
+  it('places channel prelude after activity context', async () => {
+    const prompt = await buildSystemPrompt(baseAgent, baseWorkItem, {
+      activityContext: 'ACTIVITY_MARKER',
+      channelPrelude: 'PRELUDE_MARKER',
+    })
+
+    const activityIdx = prompt.indexOf('ACTIVITY_MARKER')
+    const preludeIdx = prompt.indexOf('PRELUDE_MARKER')
+    expect(activityIdx).toBeGreaterThan(-1)
+    expect(preludeIdx).toBeGreaterThan(activityIdx)
+  })
+
   it('includes clear team routing guidance for single-owner requests and high-signal follow-ups', async () => {
     const prompt = await buildSystemPrompt(baseAgent, baseWorkItem, {
       teamContext: {

@@ -187,6 +187,7 @@ export interface ScoredMemory {
   updatedAt: number
   score: number
   similarity?: number
+  memoryKind?: string
 }
 
 /**

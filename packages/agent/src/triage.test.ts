@@ -911,6 +911,84 @@ describe('triageWorkItem', () => {
     )
   })
 
+  it('passes channel prelude through to arbiter system prompt', async () => {
+    const createCompletion = vi.fn().mockResolvedValue({
+      choices: [
+        {
+          message: {
+            content: '{"readonly": true, "respond": true, "reason": "ok", "resources": []}',
+          },
+        },
+      ],
+      usage: { prompt_tokens: 5, completion_tokens: 10 },
+      model: 'test-model',
+    })
+    mockedGetClient.mockResolvedValue({
+      chat: {
+        completions: {
+          create: createCompletion,
+        },
+      },
+    } as never)
+    mockedWithProviderRetry.mockImplementation((call) => call() as never)
+
+    const ctx: TriageContext = {
+      agentName: 'TestBot',
+      agentHandle: 'testbot',
+      agentTitle: 'QA Engineer',
+      recentHistory: null,
+      channelPrelude: 'User: hi from thread A\n@pixel: hello from thread A',
+    }
+
+    await triageWorkItem(agent, workItem, 'hello', ctx)
+
+    const triageRequest = createCompletion.mock.calls[0]?.[0] as {
+      messages: Array<{ role: string; content: string }>
+    }
+    const systemPrompt = triageRequest.messages[0]?.content ?? ''
+    expect(systemPrompt).toContain('<channel_prelude>')
+    expect(systemPrompt).toContain('User: hi from thread A')
+    expect(systemPrompt).toContain('</channel_prelude>')
+    expect(systemPrompt).toContain('Channel prelude is supporting context')
+  })
+
+  it('omits channel prelude from arbiter when not provided', async () => {
+    const createCompletion = vi.fn().mockResolvedValue({
+      choices: [
+        {
+          message: {
+            content: '{"readonly": true, "respond": true, "reason": "ok", "resources": []}',
+          },
+        },
+      ],
+      usage: { prompt_tokens: 5, completion_tokens: 10 },
+      model: 'test-model',
+    })
+    mockedGetClient.mockResolvedValue({
+      chat: {
+        completions: {
+          create: createCompletion,
+        },
+      },
+    } as never)
+    mockedWithProviderRetry.mockImplementation((call) => call() as never)
+
+    const ctx: TriageContext = {
+      agentName: 'TestBot',
+      agentHandle: 'testbot',
+      agentTitle: 'QA Engineer',
+      recentHistory: null,
+    }
+
+    await triageWorkItem(agent, workItem, 'hello', ctx)
+
+    const triageRequest = createCompletion.mock.calls[0]?.[0] as {
+      messages: Array<{ role: string; content: string }>
+    }
+    const systemPrompt = triageRequest.messages[0]?.content ?? ''
+    expect(systemPrompt).not.toContain('<channel_prelude>')
+  })
+
   it('captures OpenRouter cost from usage', async () => {
     mockedWithProviderRetry.mockResolvedValue({
       choices: [

@@ -371,6 +371,75 @@ export async function findIdleSessions(idleThresholdSeconds: number): Promise<Id
 }
 
 /**
+ * Lightweight message row for channel thread summaries (cross-thread context).
+ */
+export interface ChannelThreadMessage {
+  sessionKey: string
+  role: string
+  content: string | null
+  agentHandle: string
+  jobCreatedAt: number
+  messageCreatedAt: number
+}
+
+/**
+ * List recent messages from other threads in the same Slack channel.
+ *
+ * Used to build the "channel prelude" — compressed context from sibling threads
+ * so an agent landing in a sparse thread can see what else happened nearby.
+ *
+ * Matches session keys like `slack:<channelId>:%` while excluding the current
+ * session key. Only includes completed jobs with user/assistant messages.
+ */
+export async function listChannelThreadSummaries(
+  channelId: string,
+  options?: {
+    excludeSessionKey?: string
+    limit?: number
+  }
+): Promise<ChannelThreadMessage[]> {
+  const db = getDb()
+  const limit = options?.limit ?? 300
+
+  let query = db
+    .selectFrom('messages')
+    .innerJoin('jobs', 'jobs.id', 'messages.job_id')
+    .innerJoin('work_items', 'work_items.id', 'jobs.work_item_id')
+    .innerJoin('agents', 'agents.id', 'jobs.agent_id')
+    .select([
+      'work_items.session_key as sessionKey',
+      'messages.role',
+      'messages.content',
+      'agents.handle as agentHandle',
+      'jobs.created_at as jobCreatedAt',
+      'messages.created_at as messageCreatedAt',
+    ])
+    .where('work_items.session_key', 'like', `slack:${channelId}:%`)
+    .where('jobs.status', '=', 'COMPLETED')
+    .where('messages.role', 'in', ['user', 'assistant'])
+
+  if (options?.excludeSessionKey) {
+    query = query.where('work_items.session_key', '!=', options.excludeSessionKey)
+  }
+
+  query = query
+    .orderBy('jobs.created_at', 'desc')
+    .orderBy('messages.created_at', 'asc')
+    .limit(limit)
+
+  const results = await query.execute()
+
+  return results.map((row) => ({
+    sessionKey: row.sessionKey,
+    role: row.role,
+    content: row.content,
+    agentHandle: row.agentHandle,
+    jobCreatedAt: row.jobCreatedAt,
+    messageCreatedAt: row.messageCreatedAt,
+  }))
+}
+
+/**
  * Search messages by semantic similarity
  */
 export async function searchMessages(

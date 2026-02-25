@@ -16,6 +16,7 @@ import {
   getPluginInstancesForAgent,
   listMessagesByJob,
   listMessagesBySession,
+  listChannelThreadSummaries,
   listActiveWorkSnapshotsForAgent,
   type Agent,
   type Message,
@@ -89,6 +90,7 @@ import { isTavilyAvailable } from './web-search'
 import { isImageGenAvailable, isSTTAvailable, isTTSAvailable } from './media-settings'
 import { BackgroundTaskManager, type BackgroundTaskEvent } from './background-task-manager'
 import { triageWorkItem, type TriageContext } from './triage'
+import { buildChannelPrelude, CHANNEL_PRELUDE_MAX_MESSAGES } from './channel-prelude'
 import { getSkippedFunctionToolCalls } from './steer-tool-batch'
 import {
   recordStartingActivity,
@@ -281,6 +283,7 @@ export async function runAgent(
 
     // Triage incoming work (lightweight model call to classify intent), unless caller opts out.
     let activityContext: string | undefined
+    let channelPrelude: string | undefined
     const triageSpan = await startSpan(spanCtx, 'triage', 'lifecycle', jobSpan?.id ?? null)
     if (options?.skipTriage) {
       onEvent({
@@ -311,6 +314,7 @@ export async function runAgent(
             triageCtx.teamContext = teamLines.join('\n')
           }
         }
+        channelPrelude = triageCtx.channelPrelude
         const triage = await triageWorkItem(
           agentWithSprite,
           workItem,
@@ -437,7 +441,8 @@ export async function runAgent(
       options?.onSteered,
       integrationProviders,
       sourceProvider,
-      options?.hookDispatch
+      options?.hookDispatch,
+      channelPrelude
     )
 
     // Post-process final response for final-mode channel providers.
@@ -566,7 +571,8 @@ export async function runAgent(
     // Complete job
     await completeJob(job.id)
     try {
-      await recordCompletedActivity(activityLogId)
+      const completionSummary = finalResponse ? finalResponse.slice(0, 300) : workItem.title
+      await recordCompletedActivity(activityLogId, completionSummary)
     } catch (activityError) {
       agentWarn('Failed to record completed activity', {
         error: activityError instanceof Error ? activityError.message : String(activityError),
@@ -665,7 +671,8 @@ async function runInferenceLoop(
   onSteered?: RunOptions['onSteered'],
   integrationProviders?: IntegrationProvider[],
   sourceProvider?: IntegrationProvider,
-  hookDispatch?: RunOptions['hookDispatch']
+  hookDispatch?: RunOptions['hookDispatch'],
+  channelPrelude?: string
 ): Promise<{
   finalResponse: string | null
   hitLimit: boolean
@@ -690,6 +697,7 @@ async function runInferenceLoop(
     (await buildSystemPrompt(agent, workItem, {
       activityContext,
       teamContext,
+      channelPrelude,
       contextProviders: integrationProviders,
       resolvedDbSkills,
     }))
@@ -2682,6 +2690,30 @@ async function postProcessFinalResponse(
 }
 
 /**
+ * Count user→assistant exchange pairs in session messages.
+ * An "exchange" = one user message followed by at least one assistant message.
+ */
+function countThreadExchanges(messages: Array<{ role: string }>): number {
+  let exchanges = 0
+  let sawUser = false
+  for (const msg of messages) {
+    if (msg.role === 'user') {
+      sawUser = true
+    } else if (msg.role === 'assistant' && sawUser) {
+      exchanges += 1
+      sawUser = false
+    }
+  }
+  return exchanges
+}
+
+/**
+ * Threads with fewer than this many exchanges are considered "sparse"
+ * and eligible for channel prelude injection.
+ */
+const CHANNEL_PRELUDE_SPARSE_THRESHOLD = 2
+
+/**
  * Build lightweight triage context: agent identity + condensed recent session history.
  * Kept cheap — just parses recent message text, no embeddings or heavy processing.
  */
@@ -2769,12 +2801,46 @@ async function buildTriageContext(
     })
   }
 
+  // Build channel prelude for sparse Slack threads
+  let channelPrelude: string | undefined
+  if (workItem.session_key.startsWith('slack:')) {
+    try {
+      // Count exchanges from the session messages we already fetched (in the outer try/catch)
+      const sessionMessages = await listMessagesBySession(workItem.session_key, {
+        excludeJobId: currentJobId,
+        completedOnly: true,
+      })
+      const exchangeCount = countThreadExchanges(sessionMessages)
+
+      if (exchangeCount <= CHANNEL_PRELUDE_SPARSE_THRESHOLD) {
+        // Extract channelId from session_key format: slack:<channelId>:<threadTs>
+        const parts = workItem.session_key.split(':')
+        const channelId = parts[1]
+        if (channelId) {
+          const channelMessages = await listChannelThreadSummaries(channelId, {
+            excludeSessionKey: workItem.session_key,
+            limit: CHANNEL_PRELUDE_MAX_MESSAGES,
+          })
+          const prelude = buildChannelPrelude(channelMessages)
+          if (prelude) {
+            channelPrelude = prelude
+          }
+        }
+      }
+    } catch (error) {
+      agentWarn('Failed to build channel prelude for triage', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
   return {
     agentName: agent.name,
     agentHandle: agent.handle,
     agentTitle: config.title ?? null,
     recentHistory,
     activeWorkSnapshot,
+    channelPrelude,
   }
 }
 

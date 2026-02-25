@@ -77,7 +77,9 @@ export const queryActivityTool: ToolHandler = async (input) => {
     const sim =
       'similarity' in entry && entry.similarity ? ` (sim: ${entry.similarity.toFixed(2)})` : ''
     const resources = entry.resources ? ` | ref: ${parseResourcesSafe(entry.resources)}` : ''
-    return `- [${age}] agent:${entry.agent_handle} — ${entry.status}: ${entry.summary}${resources}${sim}`
+    const displaySummary =
+      entry.status === 'completed' && entry.final_summary ? entry.final_summary : entry.summary
+    return `- [${age}] agent:${entry.agent_handle} — ${entry.status}: ${displaySummary}${resources}${sim}`
   })
 
   return {

@@ -55,6 +55,8 @@ export interface TriageContext {
   teamContext?: string
   /** Active work snapshot across plugin instances for this same agent */
   activeWorkSnapshot?: string
+  /** Compressed context from other threads in the same Slack channel */
+  channelPrelude?: string
 }
 
 function normalizeForDuplicateComparison(value: string): string {
@@ -181,6 +183,7 @@ export async function triageWorkItem(
     teamContext: effectiveTriageContext?.teamContext,
     activeWorkSnapshot: effectiveTriageContext?.activeWorkSnapshot,
     ingressContext: ingressContext ?? undefined,
+    channelPrelude: effectiveTriageContext?.channelPrelude,
     rules: [
       'Mentions are intent signals, not hard routing locks.',
       'Distinguish directive mentions ("@you do X") from referential mentions ("@you did X").',
