@@ -12,6 +12,13 @@ type WorkItemPayload = {
   sessionKey?: string
   targetAgentIds?: string[]
   clientMessageId?: string
+  ticketId?: string
+  ticketTitle?: string
+  ticketStatus?: string
+  goalId?: string
+  goalTitle?: string
+  goalStatus?: string
+  goalOutcome?: string
 }
 
 export type AppSessionTargetAgent = {
@@ -37,6 +44,15 @@ export async function enqueueAppSessionMessage(input: {
   message: string
   targetAgents: AppSessionTargetAgent[]
   clientMessageId?: string
+  workContext?: {
+    ticketId?: string | null
+    ticketTitle?: string | null
+    ticketStatus?: string | null
+    goalId?: string | null
+    goalTitle?: string | null
+    goalStatus?: string | null
+    goalOutcome?: string | null
+  } | null
 }): Promise<{ workItemId: string; targetAgentIds: string[] }> {
   const message = input.message.trim()
   const timestamp = now()
@@ -56,6 +72,13 @@ export async function enqueueAppSessionMessage(input: {
       sessionKey: input.sessionKey,
       targetAgentIds,
       clientMessageId: input.clientMessageId,
+      ticketId: input.workContext?.ticketId ?? undefined,
+      ticketTitle: input.workContext?.ticketTitle ?? undefined,
+      ticketStatus: input.workContext?.ticketStatus ?? undefined,
+      goalId: input.workContext?.goalId ?? undefined,
+      goalTitle: input.workContext?.goalTitle ?? undefined,
+      goalStatus: input.workContext?.goalStatus ?? undefined,
+      goalOutcome: input.workContext?.goalOutcome ?? undefined,
     } satisfies WorkItemPayload),
   })
 

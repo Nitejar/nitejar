@@ -2,9 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@nitejar/database', () => ({
   addAppSessionParticipants: vi.fn(),
+  claimTicket: vi.fn(),
+  createTicketLink: vi.fn(),
   createAppSession: vi.fn(),
+  createWorkUpdate: vi.fn(),
   findAgentById: vi.fn(),
   findAppSessionByKeyAndOwner: vi.fn(),
+  findGoalById: vi.fn(),
+  findTicketById: vi.fn(),
+  findTicketBySessionKey: vi.fn(),
   getDb: vi.fn(),
   listAgents: vi.fn(),
   listAppSessionParticipantAgents: vi.fn(),
@@ -15,11 +21,16 @@ vi.mock('../services/app-session-enqueue', () => ({
   enqueueAppSessionMessage: vi.fn(),
 }))
 
-import { findAppSessionByKeyAndOwner, listAppSessionParticipantAgents } from '@nitejar/database'
+import {
+  findAppSessionByKeyAndOwner,
+  findTicketBySessionKey,
+  listAppSessionParticipantAgents,
+} from '@nitejar/database'
 import { enqueueAppSessionMessage } from '../services/app-session-enqueue'
 import { sessionsRouter } from './sessions'
 
 const mockedFindAppSessionByKeyAndOwner = vi.mocked(findAppSessionByKeyAndOwner)
+const mockedFindTicketBySessionKey = vi.mocked(findTicketBySessionKey)
 const mockedListAppSessionParticipantAgents = vi.mocked(listAppSessionParticipantAgents)
 const mockedEnqueueAppSessionMessage = vi.mocked(enqueueAppSessionMessage)
 
@@ -74,6 +85,7 @@ describe('sessions router sendMessage', () => {
       workItemId: 'work-1',
       targetAgentIds: ['agent-1'],
     })
+    mockedFindTicketBySessionKey.mockResolvedValue(null)
   })
 
   it('routes to primary agent when no mention is present', async () => {

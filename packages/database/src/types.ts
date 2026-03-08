@@ -29,9 +29,18 @@ export interface Database {
   oauth_access_token: OAuthAccessTokenTable
   oauth_consent: OAuthConsentTable
   invitations: InvitationTable
+  org_units: OrgUnitTable
   teams: TeamTable
   team_members: TeamMemberTable
   agent_teams: AgentTeamTable
+  initiatives: InitiativeTable
+  goals: GoalTable
+  goal_agent_allocations: GoalAgentAllocationTable
+  tickets: TicketTable
+  ticket_relations: TicketRelationTable
+  work_updates: WorkUpdateTable
+  ticket_links: TicketLinkTable
+  work_views: WorkViewTable
   collections: CollectionTable
   collection_rows: CollectionRowTable
   collection_permissions: CollectionPermissionTable
@@ -517,11 +526,34 @@ export type NewInvitation = Insertable<InvitationTable>
 export type InvitationUpdate = Updateable<InvitationTable>
 
 // ============================================================================
+// Org Units
+// ============================================================================
+
+export interface OrgUnitTable {
+  id: Generated<string>
+  parent_org_unit_id: string | null
+  name: string
+  slug: string | null
+  description: string | null
+  kind: Generated<string> // 'company' | 'function' | 'department' | 'team'
+  owner_kind: string | null // 'user' | 'agent' | 'team'
+  owner_ref: string | null
+  sort_order: Generated<number>
+  created_at: Generated<number>
+  updated_at: Generated<number>
+}
+
+export type OrgUnit = Selectable<OrgUnitTable>
+export type NewOrgUnit = Insertable<OrgUnitTable>
+export type OrgUnitUpdate = Updateable<OrgUnitTable>
+
+// ============================================================================
 // Teams
 // ============================================================================
 
 export interface TeamTable {
   id: Generated<string>
+  org_unit_id: string | null
   name: string
   description: string | null
   slug: string | null
@@ -562,6 +594,153 @@ export interface AgentTeamTable {
 export type AgentTeam = Selectable<AgentTeamTable>
 export type NewAgentTeam = Insertable<AgentTeamTable>
 export type AgentTeamUpdate = Updateable<AgentTeamTable>
+
+// ============================================================================
+// Initiatives
+// ============================================================================
+
+export interface InitiativeTable {
+  id: Generated<string>
+  parent_initiative_id: string | null
+  title: string
+  slug: string | null
+  description: string | null
+  status: Generated<string> // 'planned' | 'active' | 'at_risk' | 'blocked' | 'done' | 'archived'
+  owner_kind: string | null // 'user' | 'agent' | 'team'
+  owner_ref: string | null
+  team_id: string | null
+  target_label: string | null
+  created_by_user_id: string | null
+  created_at: Generated<number>
+  updated_at: Generated<number>
+  archived_at: number | null
+}
+
+export type Initiative = Selectable<InitiativeTable>
+export type NewInitiative = Insertable<InitiativeTable>
+export type InitiativeUpdate = Updateable<InitiativeTable>
+
+// ============================================================================
+// Goals + Tickets (shared work layer)
+// ============================================================================
+
+export interface GoalTable {
+  id: Generated<string>
+  initiative_id: string | null
+  parent_goal_id: string | null
+  title: string
+  outcome: string
+  status: Generated<string> // 'draft' | 'active' | 'at_risk' | 'blocked' | 'done' | 'archived'
+  owner_kind: string | null // 'user' | 'agent' | 'team'
+  owner_ref: string | null
+  team_id: string | null
+  created_by_user_id: string | null
+  created_at: Generated<number>
+  updated_at: Generated<number>
+  archived_at: number | null
+}
+
+export type Goal = Selectable<GoalTable>
+export type NewGoal = Insertable<GoalTable>
+export type GoalUpdate = Updateable<GoalTable>
+
+export interface GoalAgentAllocationTable {
+  goal_id: string
+  agent_id: string
+  created_by_kind: string
+  created_by_ref: string | null
+  created_at: Generated<number>
+}
+
+export type GoalAgentAllocation = Selectable<GoalAgentAllocationTable>
+export type NewGoalAgentAllocation = Insertable<GoalAgentAllocationTable>
+export type GoalAgentAllocationUpdate = Updateable<GoalAgentAllocationTable>
+
+export interface TicketTable {
+  id: Generated<string>
+  goal_id: string | null
+  parent_ticket_id: string | null
+  title: string
+  body: string | null
+  status: Generated<string> // 'inbox' | 'ready' | 'in_progress' | 'blocked' | 'done' | 'canceled'
+  assignee_kind: string | null // 'user' | 'agent' | 'team'
+  assignee_ref: string | null
+  created_by_user_id: string | null
+  claimed_by_kind: string | null
+  claimed_by_ref: string | null
+  claimed_at: number | null
+  created_at: Generated<number>
+  updated_at: Generated<number>
+  archived_at: number | null
+}
+
+export type Ticket = Selectable<TicketTable>
+export type NewTicket = Insertable<TicketTable>
+export type TicketUpdate = Updateable<TicketTable>
+
+export interface TicketRelationTable {
+  id: Generated<string>
+  ticket_id: string
+  related_ticket_id: string
+  kind: string // 'blocked_by' | 'related_to'
+  created_by_kind: string
+  created_by_ref: string | null
+  created_at: Generated<number>
+}
+
+export type TicketRelation = Selectable<TicketRelationTable>
+export type NewTicketRelation = Insertable<TicketRelationTable>
+export type TicketRelationUpdate = Updateable<TicketRelationTable>
+
+export interface WorkUpdateTable {
+  id: Generated<string>
+  goal_id: string | null
+  ticket_id: string | null
+  team_id: string | null
+  author_kind: string // 'user' | 'agent' | 'system'
+  author_ref: string | null
+  kind: Generated<string> // 'note' | 'status' | 'heartbeat'
+  body: string
+  metadata_json: string | null
+  created_at: Generated<number>
+}
+
+export type WorkUpdate = Selectable<WorkUpdateTable>
+export type NewWorkUpdate = Insertable<WorkUpdateTable>
+export type WorkUpdateUpdate = Updateable<WorkUpdateTable>
+
+export interface TicketLinkTable {
+  id: Generated<string>
+  ticket_id: string
+  kind: string // 'session' | 'work_item' | 'external'
+  ref: string
+  label: string | null
+  metadata_json: string | null
+  created_by_kind: string // 'user' | 'agent' | 'system'
+  created_by_ref: string | null
+  created_at: Generated<number>
+}
+
+export type TicketLink = Selectable<TicketLinkTable>
+export type NewTicketLink = Insertable<TicketLinkTable>
+export type TicketLinkUpdate = Updateable<TicketLinkTable>
+
+export interface WorkViewTable {
+  id: Generated<string>
+  owner_user_id: string
+  scope: Generated<string> // 'user' | future org/shared scopes
+  entity_kind: string // 'goal' | 'ticket' | 'agent'
+  name: string
+  filters_json: string
+  sort_json: string | null
+  group_by: string | null
+  created_at: Generated<number>
+  updated_at: Generated<number>
+}
+
+export type WorkView = Selectable<WorkViewTable>
+export type NewWorkView = Insertable<WorkViewTable>
+export type WorkViewUpdate = Updateable<WorkViewTable>
 
 // ============================================================================
 // Collections (shared org-scoped structured data)
@@ -816,7 +995,7 @@ export interface RoutineTable {
   rule_json: string // JSON rule object
   condition_probe: string | null
   condition_config: string | null // JSON config
-  target_plugin_instance_id: string
+  target_plugin_instance_id: string | null
   target_session_key: string
   target_response_context: string | null // JSON context
   action_prompt: string

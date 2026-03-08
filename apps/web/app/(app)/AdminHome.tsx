@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
-import { trpc } from '@/lib/trpc'
+import { trpc, type RouterOutputs } from '@/lib/trpc'
 import { parseAgentIdentityConfig } from '@/lib/agent-config-client'
+import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
@@ -495,6 +496,176 @@ function RecentSessionsList({ sessions }: { sessions: SessionItem[] }) {
   )
 }
 
+function WorkAttentionColumn({ dashboard }: { dashboard: RouterOutputs['work']['getDashboard'] }) {
+  const urgentItems = [
+    ...dashboard.atRiskGoals.map((goal) => ({
+      id: `goal:${goal.id}`,
+      label: goal.title,
+      detail: `${goal.health.replace(/_/g, ' ')} goal`,
+      href: `/work/goals/${goal.id}`,
+    })),
+    ...dashboard.blockedTickets.map((ticket) => ({
+      id: `ticket:${ticket.id}`,
+      label: ticket.title,
+      detail: 'Blocked ticket',
+      href: `/work/tickets/${ticket.id}`,
+    })),
+  ].slice(0, 8)
+
+  return (
+    <div className="space-y-6">
+      <Card className="border-white/10 bg-white/[0.02]">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">Needs Attention Now</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-lg border border-white/10 bg-white/[0.02] p-3">
+              <p className="text-[0.65rem] uppercase tracking-[0.25em] text-muted-foreground">
+                At Risk
+              </p>
+              <p className="mt-2 text-xl font-semibold tabular-nums">
+                {dashboard.summary.atRiskGoalCount}
+              </p>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-white/[0.02] p-3">
+              <p className="text-[0.65rem] uppercase tracking-[0.25em] text-muted-foreground">
+                Blocked
+              </p>
+              <p className="mt-2 text-xl font-semibold tabular-nums">
+                {dashboard.summary.blockedTicketCount}
+              </p>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-white/[0.02] p-3">
+              <p className="text-[0.65rem] uppercase tracking-[0.25em] text-muted-foreground">
+                Unclaimed
+              </p>
+              <p className="mt-2 text-xl font-semibold tabular-nums">
+                {dashboard.summary.unclaimedTicketCount}
+              </p>
+            </div>
+          </div>
+          <p className="text-sm text-muted-foreground">{dashboard.orgSummary}</p>
+          <div className="space-y-2">
+            {urgentItems.length > 0 ? (
+              urgentItems.map((item) => (
+                <Link
+                  key={item.id}
+                  href={item.href}
+                  className="flex items-center justify-between rounded-md border border-white/10 bg-white/[0.02] px-3 py-2 transition hover:bg-white/5"
+                >
+                  <div>
+                    <p className="text-sm font-medium">{item.label}</p>
+                    <p className="text-xs text-muted-foreground">{item.detail}</p>
+                  </div>
+                  <IconArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                </Link>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No urgent interventions right now.</p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card className="border-white/10 bg-white/[0.02]">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">At-Risk Goals</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {dashboard.atRiskGoals.length > 0 ? (
+              dashboard.atRiskGoals.map((goal) => (
+                <Link
+                  key={goal.id}
+                  href={`/work/goals/${goal.id}`}
+                  className="flex items-center justify-between rounded-md px-2 py-1.5 transition hover:bg-white/5"
+                >
+                  <span className="truncate text-sm">{goal.title}</span>
+                  <span className="text-xs text-muted-foreground">{goal.status}</span>
+                </Link>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No goals are currently at risk.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-white/10 bg-white/[0.02]">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">Unclaimed Tickets</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {dashboard.unclaimedTickets.length > 0 ? (
+              dashboard.unclaimedTickets.map((ticket) => (
+                <Link
+                  key={ticket.id}
+                  href={`/work/tickets/${ticket.id}`}
+                  className="flex items-center justify-between rounded-md px-2 py-1.5 transition hover:bg-white/5"
+                >
+                  <span className="truncate text-sm">{ticket.title}</span>
+                  <span className="text-xs text-muted-foreground">{ticket.status}</span>
+                </Link>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No unclaimed work right now.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-white/10 bg-white/[0.02]">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">Recent Heartbeats</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {dashboard.heartbeatUpdates.length > 0 ? (
+              dashboard.heartbeatUpdates.map((update) => (
+                <div
+                  key={update.id}
+                  className="rounded-md border border-white/10 bg-white/[0.02] px-3 py-2"
+                >
+                  <p className="text-sm text-muted-foreground">{update.body}</p>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No heartbeat updates yet.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-white/10 bg-white/[0.02]">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">Workload Hotspots</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {dashboard.workload.length > 0 ? (
+              dashboard.workload.map((entry) => (
+                <Link
+                  key={entry.key}
+                  href={entry.kind === 'agent' ? '/agents' : '/work'}
+                  className="flex items-center justify-between rounded-md px-2 py-1.5 transition hover:bg-white/5"
+                >
+                  <div>
+                    <p className="truncate text-sm">{entry.label}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {entry.count} open · {entry.blockedCount} blocked
+                    </p>
+                  </div>
+                  <Badge variant={entry.overloaded ? 'destructive' : 'outline'}>
+                    {entry.overloaded ? 'hot' : 'stable'}
+                  </Badge>
+                </Link>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No workload hotspots right now.</p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Getting Started State — 1-3 agents
 // ---------------------------------------------------------------------------
@@ -502,9 +673,11 @@ function RecentSessionsList({ sessions }: { sessions: SessionItem[] }) {
 function GettingStartedState({
   agents,
   sessions,
+  dashboard,
 }: {
   agents: FleetAgent[]
   sessions: SessionItem[]
+  dashboard: RouterOutputs['work']['getDashboard']
 }) {
   const [dismissed, setDismissed] = useState(() => {
     if (typeof window === 'undefined') return false
@@ -521,8 +694,10 @@ function GettingStartedState({
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-semibold">Home</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Your agents and recent activity.</p>
+          <h2 className="text-2xl font-semibold">Command Center</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            What needs attention now across goals, tickets, agents, and sessions.
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Link
@@ -541,6 +716,8 @@ function GettingStartedState({
       <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
         {/* Left column */}
         <div className="space-y-6">
+          <WorkAttentionColumn dashboard={dashboard} />
+
           {/* Agent cards */}
           <div>
             <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -575,9 +752,19 @@ function GettingStartedState({
 // Active Fleet State — 4+ agents
 // ---------------------------------------------------------------------------
 
-function ActiveFleetState({ sessions }: { sessions: SessionItem[] }) {
+function ActiveFleetState({
+  agents,
+  sessions,
+  dashboard,
+}: {
+  agents: FleetAgent[]
+  sessions: SessionItem[]
+  dashboard: RouterOutputs['work']['getDashboard']
+}) {
   return (
-    <div>
+    <div className="space-y-6">
+      <HomeSearch agents={agents} sessions={sessions} />
+      <WorkAttentionColumn dashboard={dashboard} />
       <FleetDashboard recentSessions={sessions} />
     </div>
   )
@@ -590,8 +777,9 @@ function ActiveFleetState({ sessions }: { sessions: SessionItem[] }) {
 export function AdminHome() {
   const fleetQuery = trpc.commandCenter.getFleetStatus.useQuery({ period: '7d' })
   const sessionsQuery = trpc.sessions.list.useQuery({ limit: 5 })
+  const workQuery = trpc.work.getDashboard.useQuery(undefined, { refetchInterval: 30_000 })
 
-  if (fleetQuery.isLoading) {
+  if (fleetQuery.isLoading || workQuery.isLoading) {
     return (
       <div className="flex items-center justify-center py-24">
         <IconLoader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -600,7 +788,8 @@ export function AdminHome() {
   }
 
   const fleet = fleetQuery.data
-  if (!fleet) return null
+  const work = workQuery.data
+  if (!fleet || !work) return null
 
   const sessions: SessionItem[] = (sessionsQuery.data?.items ?? []).map((s) => ({
     sessionKey: s.sessionKey,
@@ -623,9 +812,9 @@ export function AdminHome() {
 
   // State 2: Getting Started (1-3 agents)
   if (totalAgents <= 3) {
-    return <GettingStartedState agents={fleet.roster} sessions={sessions} />
+    return <GettingStartedState agents={fleet.roster} sessions={sessions} dashboard={work} />
   }
 
   // State 3: Active Fleet
-  return <ActiveFleetState sessions={sessions} />
+  return <ActiveFleetState agents={fleet.roster} sessions={sessions} dashboard={work} />
 }

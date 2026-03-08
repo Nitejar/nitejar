@@ -28,7 +28,7 @@ docker run -d \
 
 Either way, confirm you can reach [http://localhost:3000](http://localhost:3000) before continuing.
 
-## 2. Open the admin
+## 2. Open the app
 
 Navigate to [http://localhost:3000](http://localhost:3000).
 
@@ -55,7 +55,7 @@ You are a helpful assistant that responds concisely and honestly.
 When you don't know something, say so.
 ```
 
-- **Model:** Leave this as the default (`arcee-ai/trinity-large-preview:free`) unless you have a different model API key configured in your gateway settings. The default is free and works out of the box.
+- **Model:** Leave this as the default (`arcee-ai/trinity-large-preview:free`) unless you have a different model API key configured in your gateway settings. You still need a provider key configured in **Settings > Gateway** before the agent can run inference.
 
 Click **Save**.
 
@@ -92,7 +92,7 @@ You should get a JSON response back. Behind the scenes, Nitejar received your we
 
 ## 6. Watch it work
 
-Go to **Admin > Activity** in the sidebar. You should see a new work item at the top of the list.
+Go to **Activity** in the sidebar. You should see a new work item at the top of the list.
 
 Click into it. The detail page shows you everything that happened:
 

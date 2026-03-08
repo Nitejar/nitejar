@@ -3,7 +3,7 @@ title: Quickstart
 description: Start Nitejar in one command, then inspect receipts and logs.
 ---
 
-Nitejar is a self-hosted AI agent runtime. It receives messages from channels (Telegram, GitHub, Discord, generic webhooks), routes them to configured agents, runs inference with tool access inside sandboxed environments, and delivers responses back to the source. Every action — inference calls, tool executions, response deliveries — is logged as an inspectable receipt.
+Nitejar is a self-hosted AI agent runtime. It receives messages from channels (Telegram, GitHub, Slack, Discord, generic webhooks), routes them to configured agents, runs inference with tool access inside sandboxed environments, and delivers responses back to the source. Every action — inference calls, tool executions, response deliveries — is logged as an inspectable receipt.
 
 ## One command
 
@@ -80,7 +80,7 @@ This validates the same packaged artifact shape users get from npm.
 ## Prerequisites
 
 - **Node.js** 20 or later
-- A model API key (the default free model `arcee-ai/trinity-large-preview:free` works out of the box via OpenRouter)
+- A model API key configured either in **Settings > Gateway** or via `OPENROUTER_API_KEY` / `OPENAI_API_KEY`
 
 Optional:
 
@@ -149,7 +149,7 @@ docker run -d \
 
 The simplest way to test is with the built-in **Generic Webhook** plugin:
 
-1. Go to **Plugins** in the admin sidebar.
+1. Go to **Plugins** in the sidebar.
 2. Find the **Generic Webhook** plugin and create a new instance.
 3. Assign your agent to the instance.
 4. Send a test webhook:
@@ -160,7 +160,7 @@ curl -X POST http://localhost:3000/api/webhooks/plugins/webhook/YOUR_INSTANCE_ID
   -d '{"text": "Hello, what can you do?", "sender_id": "test-user"}'
 ```
 
-5. Check the **Work Items** page in the admin to see the agent process your message and produce a response.
+5. Check **Activity** to see the agent process your message and produce a response.
 
 ### Follow the receipts
 
@@ -174,7 +174,9 @@ Every work item has a detail page showing:
 This is the receipt trail. It is the source of truth for what the agent did and why.
 
 <Callout type="info" title="Where to verify">
-Open Admin > Activity and click any work item. The timeline shows every step: webhook received, work item created, run dispatched, inference calls made, tools executed, response delivered. Each step has timestamps and cost.
+  Open **Activity** and click any work item. The timeline shows every step: webhook received, work
+  item created, run dispatched, inference calls made, tools executed, response delivered. Each step
+  has timestamps and cost.
 </Callout>
 
 ## Next steps

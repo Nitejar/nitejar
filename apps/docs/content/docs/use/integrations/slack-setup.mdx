@@ -81,13 +81,13 @@ Then set `APP_BASE_URL` in your `.env` to the ngrok URL, or configure it in **Se
 1. Open Slack and find a channel where the bot has been invited.
 2. Mention the bot: `@your-bot-handle what's up?`
 3. The bot adds an eyes reaction to acknowledge receipt, then replies in the same thread once the agent finishes.
-4. Open **Admin > Activity** to see the work item. Click it to inspect the full run: webhook payload, inference calls, tool executions, token counts, and the delivered response.
+4. Open **Activity** to see the work item. Click it to inspect the full run: webhook payload, inference calls, tool executions, token counts, and the delivered response.
 
 If the bot does not respond, see [Troubleshooting](#8-troubleshooting) below.
 
 <Callout type="info" title="Where to verify">
-  Go to Admin > Plugins and click your Slack instance. The instance detail page shows recent
-  inbound and outbound events. This is the first place to check when something is not working.
+  Go to **Plugins** and click your Slack instance. The instance detail page shows recent inbound and
+  outbound events. This is the first place to check when something is not working.
 </Callout>
 
 ## 5. Configuration options
@@ -130,7 +130,7 @@ Each agent-plugin assignment has a **policy** with two modes:
 - **`allow_all`** (default) -- The agent can use all 7 Slack tools.
 - **`allow_list`** -- The agent can only use the tools you explicitly allow. Everything else is blocked.
 
-When you assign an agent to a Slack plugin instance (in the admin UI or via the API), you can attach a policy. For example, to give an agent read-only access to the current thread and channel info, set the policy to `allow_list` with `read_thread` and `read_channel_info`.
+When you assign an agent to a Slack plugin instance in the app or via the API, you can attach a policy. For example, to give an agent read-only access to the current thread and channel info, set the policy to `allow_list` with `read_thread` and `read_channel_info`.
 
 Different agents on the same Slack instance can have different restrictions.
 
@@ -142,10 +142,10 @@ The bot recognizes `/clear`, which resets the conversation session for the curre
 
 **Bot does not respond at all**
 
-- Verify the bot token and signing secret are correct. Go to Admin > Plugins > your instance and check for config validation errors.
+- Verify the bot token and signing secret are correct. Go to **Plugins > your Slack instance** and check for config validation errors.
 - Make sure the bot has been invited to the channel (`/invite @your-bot-handle`).
 - Check that the webhook URL is reachable. The instance detail page shows the configured request URL. If it points to localhost, Slack cannot reach it.
-- Check Admin > Activity for work items. If work items appear but responses fail, the issue is on the delivery side. Click the work item to see error details.
+- Check **Activity** for work items. If work items appear but responses fail, the issue is on the delivery side. Click the work item to see error details.
 
 **Bot does not respond to messages (only to mentions)**
 

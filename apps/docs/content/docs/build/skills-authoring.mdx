@@ -20,7 +20,7 @@ Skills can contain scripts, but those scripts are content the agent interprets a
 Skills come from three places, unified into a single index:
 
 1. **Repo skills** -- `SKILL.md` files discovered from `.agents/skills/*/SKILL.md` and `skills/*/SKILL.md` in project repositories. The agent reads these from the project tree at runtime. They are not stored in the database.
-2. **Admin skills** -- Created through the admin UI. Content is stored in the database and synced to agent sandboxes at `/home/sprite/.skills/<slug>/`.
+2. **App skills** -- Created through the app UI. Content is stored in the database and synced to agent sandboxes at `/home/sprite/.skills/<slug>/`.
 3. **Plugin skills** -- Contributed by installed plugins via the `SkillContribution` interface. Stored in the database like admin skills and synced to sandboxes.
 
 When slugs collide across sources, admin skills take priority over plugin skills, and plugin skills take priority over repo skills.
@@ -99,7 +99,7 @@ Use `templates/checklist.md` as the output format.
 
 The agent uses `read_file` to load supporting files from its sandbox when it needs them. The system prompt lists available skills with sandbox paths but does not inject full content -- the agent reads on demand.
 
-## Creating a skill in the admin UI
+## Creating a skill in the app UI
 
 1. Go to **Skills** in the admin sidebar.
 2. Click **New Skill**.
@@ -114,7 +114,7 @@ After creation, assign the skill to agents, teams, or globally from the skill de
 
 ## Assigning skills to agents
 
-Skills are assigned through the admin UI. Assignments control which skills are synced to which agent sandboxes.
+Skills are assigned through the app UI. Assignments control which skills are synced to which agent sandboxes.
 
 - **Agent scope** -- Skill is synced to one specific agent's sandbox.
 - **Team scope** -- Skill is synced to all agents in a team.
@@ -200,7 +200,7 @@ export default definePlugin({
 })
 ```
 
-Plugin-contributed skills are stored in the database when the plugin is enabled and synced to sandboxes like any admin-created skill. They appear as read-only in the admin UI.
+Plugin-contributed skills are stored in the database when the plugin is enabled and synced to sandboxes like any app-created skill. They appear as read-only in the app UI.
 
 ## Limits
 

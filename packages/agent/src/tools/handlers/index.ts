@@ -64,6 +64,14 @@ import {
   updateAgentConfigTool,
   updateAgentSoulTool,
 } from './platform-control'
+import {
+  claimTicketTool,
+  getTicketTool,
+  postWorkUpdateTool,
+  searchGoalsTool,
+  searchTicketsTool,
+  updateTicketTool,
+} from './work'
 import type { ToolHandler } from '../types'
 
 export const toolHandlers: Record<string, ToolHandler> = {
@@ -126,6 +134,12 @@ export const toolHandlers: Record<string, ToolHandler> = {
   synthesize_speech: synthesizeSpeechTool,
   download_attachment: downloadAttachmentTool,
   query_activity: queryActivityTool,
+  search_goals: searchGoalsTool,
+  search_tickets: searchTicketsTool,
+  get_ticket: getTicketTool,
+  claim_ticket: claimTicketTool,
+  update_ticket: updateTicketTool,
+  post_work_update: postWorkUpdateTool,
   // Intentionally disabled: private agent DMs are off while we stabilize
   // public-channel inter-agent communication and routing receipts.
   list_runs: listRunsTool,

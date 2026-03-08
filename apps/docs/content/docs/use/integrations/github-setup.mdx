@@ -89,7 +89,7 @@ Replace `YOUR_NITEJAR_URL` with your public base URL and `INSTANCE_ID` with the 
 Go back to your GitHub App settings, set the **Webhook URL** to the URL above, and paste the webhook secret you generated earlier.
 
 <Callout type="info" title="Where to verify">
-Open **Admin > Plugins > [your GitHub instance]** to see inbound webhook events and their delivery status. Each event shows the GitHub event type, delivery ID, processing result, and any errors.
+Open **Plugins > [your GitHub instance]** to see inbound webhook events and their delivery status. Each event shows the GitHub event type, delivery ID, processing result, and any errors.
 </Callout>
 
 ## Configure comment policy
@@ -123,7 +123,7 @@ Two additional config flags control event processing:
 1. Go to a repo where the app is installed.
 2. Create a new issue with a title like "Test Nitejar" and mention the bot in the body: `@nitejar what can you do?`
 3. Wait for the agent to process the work item and post a response comment.
-4. Open **Admin > Activity** in the Nitejar admin UI. You should see the work item with a full receipt trail: webhook received, work item created, run dispatched, inference calls, response delivered.
+4. Open **Activity** in Nitejar. You should see the work item with a full receipt trail: webhook received, work item created, run dispatched, inference calls, response delivered.
 
 If using the `mentions` comment policy, make sure the mention handle matches the bot's GitHub username.
 

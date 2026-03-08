@@ -239,6 +239,21 @@ describe('getOpenAITools', () => {
     expect(names).toContain('delete_routine')
     expect(names).toContain('run_routine_now')
   })
+
+  it('keeps work tools while excluding sandbox tools', () => {
+    const tools = getOpenAITools({ excludeSandboxTools: true })
+    const names = tools.map(
+      (t) => (t as { type: string; function: { name: string } }).function.name
+    )
+
+    expect(names).not.toContain('bash')
+    expect(names).not.toContain('read_file')
+    expect(names).not.toContain('create_service')
+    expect(names).not.toContain('create_ephemeral_sandbox')
+    expect(names).toContain('search_tickets')
+    expect(names).toContain('post_work_update')
+    expect(names).toContain('query_activity')
+  })
 })
 
 // ---------------------------------------------------------------------------

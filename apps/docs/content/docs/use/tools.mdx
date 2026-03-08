@@ -6,7 +6,7 @@ description: All built-in tools available to Nitejar agents, organized by catego
 Nitejar agents interact with the world through tools. Each tool is a discrete capability the agent can invoke during a run. Tools are registered by the platform and optionally by plugins. This page lists every built-in tool, grouped by category.
 
 <Callout type="info" title="Where to verify">
-Open **Admin > Agents > [agent] > Tools** to see which tools are enabled for a specific agent. Tools can be toggled per-agent. Disabled tools are hidden from the agent's system prompt and cannot be called.
+Open **Agents > [agent]** to see which tools are enabled for a specific agent. Tools can be toggled per-agent. Disabled tools are hidden from the agent's system prompt and cannot be called.
 </Callout>
 
 ## Core Execution
@@ -137,6 +137,6 @@ export default definePlugin({
 })
 ```
 
-Plugin tools follow the same enable/disable rules as built-in tools. They are toggled per-agent from **Admin > Agents > [agent] > Tools**.
+Plugin tools follow the same enable/disable rules as built-in tools. They are toggled per-agent from **Agents > [agent]**.
 
 For details on building plugins, see the [Plugin SDK documentation](/build/plugins).

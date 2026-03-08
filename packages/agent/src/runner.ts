@@ -1085,14 +1085,13 @@ async function runInferenceLoop(
     isTTSAvailable(),
   ])
 
-  const baseToolsUnfiltered = spriteName
-    ? getOpenAITools({
-        excludeWebTools: !tavilyAvailable,
-        editToolMode,
-        allowEphemeralSandboxCreation: config.allowEphemeralSandboxCreation,
-        allowRoutineManagement: config.allowRoutineManagement,
-      })
-    : []
+  const baseToolsUnfiltered = getOpenAITools({
+    excludeWebTools: !tavilyAvailable,
+    excludeSandboxTools: !spriteName,
+    editToolMode,
+    allowEphemeralSandboxCreation: config.allowEphemeralSandboxCreation,
+    allowRoutineManagement: config.allowRoutineManagement,
+  })
   const baseTools = baseToolsUnfiltered.filter((tool) => {
     const name =
       tool.type === 'function' && typeof tool.function?.name === 'string' ? tool.function.name : ''

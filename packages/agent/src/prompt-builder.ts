@@ -351,6 +351,15 @@ function buildContextTextForRetrieval(workItem: WorkItem): string {
   const payload = safeParsePayload(workItem.payload)
   const parts: string[] = [workItem.title]
 
+  if (payload?.ticketTitle) {
+    parts.push(payload.ticketTitle)
+  }
+  if (payload?.goalTitle) {
+    parts.push(payload.goalTitle)
+  }
+  if (payload?.goalOutcome) {
+    parts.push(payload.goalOutcome)
+  }
   if (payload?.body) {
     parts.push(payload.body)
   }
@@ -370,6 +379,26 @@ function buildContextTextForRetrieval(workItem: WorkItem): string {
 export function buildMessageContextPrefix(workItem: WorkItem): string[] {
   const payload = safeParsePayload(workItem.payload)
   const parts: string[] = []
+
+  if (payload?.ticketTitle || payload?.goalTitle) {
+    const workContextParts: string[] = []
+    if (payload.ticketTitle) {
+      const ticketStatus = payload.ticketStatus
+        ? ` (${sanitize(String(payload.ticketStatus))})`
+        : ''
+      workContextParts.push(`Ticket: ${sanitize(payload.ticketTitle)}${ticketStatus}`)
+    }
+    if (payload.goalTitle) {
+      const goalStatus = payload.goalStatus ? ` (${sanitize(String(payload.goalStatus))})` : ''
+      workContextParts.push(`Goal: ${sanitize(payload.goalTitle)}${goalStatus}`)
+    }
+    if (workContextParts.length > 0) {
+      parts.push(`[Work Context | ${workContextParts.join(' | ')}]`)
+    }
+    if (payload.goalOutcome) {
+      parts.push(`[Goal Outcome | ${sanitize(payload.goalOutcome)}]`)
+    }
+  }
 
   // Annotate agent DM messages
   if (payload?.source_type === 'agent_dm' && payload?.from_handle) {

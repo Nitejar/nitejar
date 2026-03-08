@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   IconArrowUp,
@@ -96,15 +97,22 @@ function TypingRow({ name }: { name: string }) {
 }
 
 export function SessionDetailClient({ sessionKey }: { sessionKey: string }) {
+  const router = useRouter()
   const utils = trpc.useUtils()
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
   const [composerValue, setComposerValue] = useState('')
   const [composerCursor, setComposerCursor] = useState(0)
   const [pendingTurns, setPendingTurns] = useState<PendingTurn[]>([])
   const [agentToAdd, setAgentToAdd] = useState('')
+  const [attachTicketId, setAttachTicketId] = useState('')
 
   const sessionQuery = trpc.sessions.get.useQuery({ sessionKey })
   const agentsQuery = trpc.sessions.listAgents.useQuery()
+  const openTicketsQuery = trpc.work.listTickets.useQuery({
+    scope: 'all',
+    statuses: ['inbox', 'ready', 'in_progress', 'blocked'],
+    limit: 50,
+  })
 
   const timelineQuery = trpc.sessions.timeline.useInfiniteQuery(
     { sessionKey, limit: 30 },
@@ -144,6 +152,27 @@ export function SessionDetailClient({ sessionKey }: { sessionKey: string }) {
   const retryMutation = trpc.sessions.retryMessage.useMutation({
     onSuccess: async () => {
       await utils.sessions.timeline.invalidate({ sessionKey, limit: 30 })
+    },
+  })
+  const linkTicketMutation = trpc.work.linkTicket.useMutation({
+    onSuccess: async () => {
+      setAttachTicketId('')
+      await Promise.all([
+        utils.sessions.get.invalidate({ sessionKey }),
+        utils.work.getDashboard.invalidate(),
+        utils.work.listTickets.invalidate(),
+      ])
+    },
+  })
+  const promoteSessionMutation = trpc.work.promoteSession.useMutation({
+    onSuccess: async ({ ticket }) => {
+      await Promise.all([
+        utils.sessions.get.invalidate({ sessionKey }),
+        utils.work.getDashboard.invalidate(),
+        utils.work.listTickets.invalidate(),
+      ])
+      if (!ticket) return
+      router.push(`/work/tickets/${ticket.id}`)
     },
   })
 
@@ -192,6 +221,13 @@ export function SessionDetailClient({ sessionKey }: { sessionKey: string }) {
     const assigned = new Set(participants.map((participant) => participant.id))
     return (agentsQuery.data ?? []).filter((agent) => !assigned.has(agent.id))
   }, [agentsQuery.data, participants])
+  const attachableTickets = useMemo(
+    () =>
+      (openTicketsQuery.data ?? []).filter(
+        (ticket) => ticket.id !== sessionQuery.data?.linkedTicket?.id
+      ),
+    [openTicketsQuery.data, sessionQuery.data?.linkedTicket?.id]
+  )
 
   const headerPrimaryAgent =
     participants.find((participant) => participant.id === sessionQuery.data?.primaryAgentId) ??
@@ -351,6 +387,76 @@ export function SessionDetailClient({ sessionKey }: { sessionKey: string }) {
               </Button>
             </div>
           </div>
+
+          {sessionQuery.data.linkedTicket ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2.5">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">
+                  Linked Ticket
+                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <Link
+                    href={`/work/tickets/${sessionQuery.data.linkedTicket.id}`}
+                    className="truncate text-sm font-medium hover:text-primary"
+                  >
+                    {sessionQuery.data.linkedTicket.title}
+                  </Link>
+                  <Badge variant="outline">{sessionQuery.data.linkedTicket.status}</Badge>
+                  {sessionQuery.data.linkedTicket.goalTitle ? (
+                    <Link
+                      href={`/work/goals/${sessionQuery.data.linkedTicket.goalId}`}
+                      className="text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      {sessionQuery.data.linkedTicket.goalTitle}
+                    </Link>
+                  ) : null}
+                </div>
+              </div>
+              <Link
+                href={`/work/tickets/${sessionQuery.data.linkedTicket.id}`}
+                className={buttonVariants({ variant: 'outline', size: 'sm' })}
+              >
+                Open Ticket
+              </Link>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2.5">
+              <NativeSelect
+                value={attachTicketId}
+                onChange={(event) => setAttachTicketId(event.target.value)}
+                className="w-full min-w-[240px]"
+              >
+                <NativeSelectOption value="">Attach to an existing ticket…</NativeSelectOption>
+                {attachableTickets.map((ticket) => (
+                  <NativeSelectOption key={ticket.id} value={ticket.id}>
+                    {ticket.title}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  linkTicketMutation.mutate({
+                    ticketId: attachTicketId,
+                    kind: 'session',
+                    ref: sessionKey,
+                    label: sessionQuery.data.title ?? null,
+                  })
+                }
+                disabled={!attachTicketId || linkTicketMutation.isPending}
+              >
+                Attach
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => promoteSessionMutation.mutate({ sessionKey })}
+                disabled={promoteSessionMutation.isPending}
+              >
+                Promote to Ticket
+              </Button>
+            </div>
+          )}
 
           <div className="max-h-[62vh] space-y-4 overflow-y-auto rounded-md border border-border/60 bg-background/20 p-4">
             {timelineQuery.hasNextPage ? (

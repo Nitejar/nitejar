@@ -1,6 +1,17 @@
 # Nitejar Roadmap
 
-> **Detailed milestone tracking:** See [milestones/](./milestones/) for task checklists and open questions.
+> Strategy lives in [STRATEGY.md](./STRATEGY.md).
+>
+> Active product-shaping specs live in [specs/](./specs/), including [WS6 Command Center](./specs/WS6_COMMAND_CENTER.md), [WS8 Operator Work Surface](./specs/WS8_OPERATOR_WORK_SURFACE.md), [WS9 Company Map and Staffing](./specs/WS9_COMPANY_MAP_AND_STAFFING.md), and [WS10 Product Hierarchy and Navigation](./specs/WS10_PRODUCT_HIERARCHY_AND_NAVIGATION.md).
+>
+> Older milestone docs are being retired. Prefer live specs plus in-product goals and tickets for current planning.
+
+Current operator runtime shape:
+
+- `Command Center` is the attention-and-intervention surface.
+- `Company` is the structural portfolio, staffing, and management surface.
+- `Work` is the goals-and-tickets execution surface.
+- `Agents` shows roster, capacity, ownership, and direct session launch.
 
 ## Product principles
 

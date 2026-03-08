@@ -45,7 +45,8 @@ Nitejar ships four rubric templates to get you started:
 Templates are starting points. You can customize criteria, adjust weights, and add or remove criteria after creation.
 
 <Callout type="info" title="Where to verify">
-Open **Admin > Agents > [agent] > Evals** and click **Add Evaluator** to see available templates. Each template lists its criteria and weights before you assign it.
+  Open an agent detail page and use its eval assignment section to see available templates. Each
+  template lists its criteria and weights before you assign it.
 </Callout>
 
 ## Evaluators
@@ -96,7 +97,8 @@ Each assignment has:
 You can assign multiple evaluators to the same agent. Gates run in assignment order, scorers run after all gates pass.
 
 <Callout type="info" title="Where to verify">
-Open **Admin > Agents > [agent] > Evals** to see all assigned evaluators, their gate/scorer status, weights, and sample rates. You can add, edit, or remove assignments from this panel.
+  Open an agent detail page to see all assigned evaluators, their gate/scorer status, weights, and
+  sample rates. You can add, edit, or remove assignments from that panel.
 </Callout>
 
 ## Sampling and daily limits
@@ -105,7 +107,7 @@ Evals cost tokens. Sampling controls prevent runaway eval spend on high-volume a
 
 ### Pipeline-level sampling
 
-Configured in **Admin > Evals > Settings**:
+Configured in **Evals > Settings**:
 
 - **Sample rate (default)** — the probability of running evals on any completed job. Default: 1.0 (100%).
 - **High-volume threshold** — once an agent completes this many runs in a day, the sample rate drops. Default: 20 runs/day.
@@ -146,7 +148,9 @@ The system compares the last 7 days of scores against the previous 7 days:
 The agent eval summary shows each evaluator's average score and pass rate. Gates show pass rate (what percentage of evals passed the gate). Scorers show average normalized score. The lowest and highest scoring evaluators are highlighted.
 
 <Callout type="info" title="Where to verify">
-Open **Admin > Agents > [agent] > Evals** for the agent's eval summary, score trend chart, and per-evaluator breakdown. Click any eval run to see the full pipeline result, individual criterion scores, and the judge's reasoning.
+  Open an agent detail page for the agent's eval summary, score trend chart, and per-evaluator
+  breakdown. Click any eval run to see the full pipeline result, individual criterion scores, and
+  the judge's reasoning.
 </Callout>
 
 ## Running evals manually
@@ -168,7 +172,7 @@ Manual runs bypass sampling — they always run all active evaluators. They stil
 Keep scenarios concrete. "Correct issue labels applied" is better than "good triage quality."
 
 <Callout type="info" title="Where to verify">
-Open **Admin > Evals** for run history, evaluator results, and quality trends over time.
+  Open **Evals** for run history, evaluator results, and quality trends over time.
 </Callout>
 
 ## Cost of evals
@@ -191,5 +195,6 @@ Control eval costs with:
 Eval costs are tracked separately from agent inference costs. Each eval result records its own `cost_usd` and `duration_ms`, and the eval run aggregates total cost across all results.
 
 <Callout type="info" title="Where to verify">
-Open **Admin > Agents > [agent] > Evals** to see total eval cost alongside the eval summary. Individual eval runs show per-result cost breakdowns.
+  Open an agent detail page to see total eval cost alongside the eval summary. Individual eval runs
+  show per-result cost breakdowns.
 </Callout>

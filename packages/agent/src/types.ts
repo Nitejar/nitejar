@@ -245,6 +245,15 @@ export interface WorkItemPayload {
   slackBotDisplayName?: string
   /** Resolved Slack bot handle/username for the app mention target */
   slackBotHandle?: string
+  /** Linked ticket context for work-managed sessions */
+  ticketId?: string
+  ticketTitle?: string
+  ticketStatus?: string
+  /** Parent goal context for work-managed sessions */
+  goalId?: string
+  goalTitle?: string
+  goalStatus?: string
+  goalOutcome?: string
   /** Allow additional fields */
   [key: string]: unknown
 }

@@ -69,8 +69,27 @@ Most variables are optional.
 | `POSTGRES_URL`          | No               | None                                  | Legacy Postgres connection string. Deprecated -- use `DATABASE_URL` instead. Will be removed.                                                                                              |
 
 <Callout type="info" title="Where to verify">
-After starting Nitejar, open **Admin > Settings > Gateway** for model provider keys and **Admin > Settings > Capabilities > Tool Execution** for the Sprites key. Admin UI settings are the source of truth.
+After starting Nitejar, open **Settings > Gateway** for model provider keys and **Settings > Capabilities > Tool Execution** for the Sprites key. Runtime settings stored in the app are the source of truth.
 </Callout>
+
+## Runtime requirements
+
+Nitejar runs as a single web application process. There is no separate worker service, Redis, or queue daemon required for normal operation.
+
+### What is required
+
+- **The web app** (`apps/web`)
+- **A database** -- SQLite by default, Postgres optional
+
+### What is optional
+
+- **Sprites** -- required only for bash, filesystem, and other sandbox-backed tool execution
+- **A public app URL** -- required only for inbound webhooks from Telegram, GitHub, Slack, Discord, or external webhook senders
+- **Channel-specific credentials** -- only for the plugins you enable
+
+### SQLite vs Postgres
+
+SQLite is enough for local development and single-node deployments. Postgres is only needed when you want multiple application instances sharing one database or when your hosting environment already standardizes on Postgres.
 
 ## Database
 
@@ -138,11 +157,11 @@ In development, Nitejar stores values in plaintext and logs a security warning o
 
 ### What happens if you lose the key
 
-Encrypted values become unrecoverable. There is no backdoor, no recovery mechanism, no "contact support." You will need to re-enter every API key and secret through the admin UI. Treat the encryption key like a database password -- back it up somewhere safe.
+Encrypted values become unrecoverable. There is no backdoor, no recovery mechanism, no "contact support." You will need to re-enter every API key and secret through the app. Treat the encryption key like a database password -- back it up somewhere safe.
 
 ### Rotating the key
 
-There is no built-in key rotation command yet. If you need to rotate: export your config, change the key, re-enter secrets through the admin UI.
+There is no built-in key rotation command yet. If you need to rotate: export your config, change the key, re-enter secrets through the app.
 
 ## Model configuration
 
@@ -160,9 +179,9 @@ This only affects newly created agents. Existing agents keep whatever model they
 
 ### Per-agent model
 
-Each agent stores its own model setting. Change it in the admin UI:
+Each agent stores its own model setting. Change it in the app:
 
-1. Go to **Admin > Agents**.
+1. Go to **Agents**.
 2. Click the agent.
 3. Under model settings, pick a model from the catalog or type a model identifier.
 4. Save.
@@ -171,12 +190,12 @@ The model catalog is populated from the gateway settings. If you're using OpenRo
 
 ### Gateway settings
 
-The gateway controls how Nitejar reaches model providers. Configure it at **Admin > Settings > Gateway**:
+The gateway controls how Nitejar reaches model providers. Configure it at **Settings > Gateway**:
 
 - **API Key** -- Your OpenRouter or OpenAI key. Stored encrypted in the database.
 - **Base URL** -- Defaults to `https://openrouter.ai/api/v1`. Change this if you're running a local proxy, a custom OpenAI-compatible endpoint, or a different provider.
 
-Keys set through the admin UI take priority over environment variables. The resolution order is: gateway database settings, then `OPENROUTER_API_KEY` env var, then `OPENAI_API_KEY` env var.
+Keys set in the app take priority over environment variables. The resolution order is: gateway database settings, then `OPENROUTER_API_KEY` env var, then `OPENAI_API_KEY` env var.
 
 ## Network and webhooks
 
@@ -186,21 +205,21 @@ This is the URL external services use to reach Nitejar. It must be correct for w
 
 Nitejar resolves the public URL using the first value it finds in this order:
 
-1. **Settings > Runtime > Public app URL** -- set in the admin UI, stored in the database. Takes highest precedence.
+1. **Settings > Runtime > Public app URL** -- set in the app, stored in the database. Takes highest precedence.
 2. `APP_URL` env var
 3. `APP_BASE_URL` env var
 4. `NEXTAUTH_URL` env var
 5. `NEXT_PUBLIC_APP_URL` env var
 6. `http://localhost:3000` (fallback)
 
-The runtime setting is the recommended approach for production. It persists across restarts and does not require redeploying or editing environment files. Set it at **Settings > Runtime** in the admin UI.
+The runtime setting is the recommended approach for production. It persists across restarts and does not require redeploying or editing environment files. Set it at **Settings > Runtime**.
 
 Environment variables still work and are fine for local development or CI. If neither the runtime setting nor any env var is set, Nitejar falls back to `http://localhost:3000`.
 
 **Typical setups:**
 
 - **Local development:** Leave everything unset. `http://localhost:3000` is the default.
-- **With ngrok:** Set `APP_BASE_URL=https://your-subdomain.ngrok-free.app` in your `.env`, or set the runtime URL in the admin UI.
+- **With ngrok:** Set `APP_BASE_URL=https://your-subdomain.ngrok-free.app` in your `.env`, or set the runtime URL in the app.
 - **Production:** Set the public URL in **Settings > Runtime**, or set `APP_BASE_URL` in your environment. The runtime setting takes priority if both are set.
 
 ### Webhook URLs
@@ -217,7 +236,7 @@ For example, a Telegram plugin instance with ID `abc123`:
 https://nitejar.yourdomain.com/api/webhooks/plugins/telegram/abc123
 ```
 
-The admin UI shows the full webhook URL for each plugin instance. Copy it from there -- do not construct it by hand.
+Each plugin instance page shows the full webhook URL. Copy it from there rather than constructing it by hand.
 
 ### Local development with ngrok
 
@@ -233,7 +252,7 @@ Set `APP_BASE_URL` in your `.env` to your ngrok URL:
 APP_BASE_URL=https://your-subdomain.ngrok-free.app
 ```
 
-Or set the URL in **Settings > Runtime > Public app URL** in the admin UI. The runtime setting takes priority over environment variables.
+Or set the URL in **Settings > Runtime > Public app URL**. The runtime setting takes priority over environment variables.
 
 Nitejar uses this to construct webhook URLs and register them with external services. Without it, Telegram and GitHub have no way to deliver events to your laptop.
 

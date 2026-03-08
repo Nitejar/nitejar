@@ -3,7 +3,7 @@ title: Agents and Fleet
 description: Soul prompts, models, memory, sessions, tools, and network policy.
 ---
 
-An agent is a configured AI entity: a model paired with a personality, a set of tools, and permissions. Each agent runs independently inside its own sandbox. You create agents in the admin UI, give them a soul prompt that shapes their behavior, assign tools and skills, and point them at channels. From there, they handle work autonomously.
+An agent is a configured AI entity: a model paired with a personality, a set of tools, and permissions. Each agent runs independently inside its own sandbox. You create agents in the app, give them a soul prompt that shapes their behavior, assign tools and skills, and point them at channels. From there, they handle work autonomously.
 
 ## Soul prompts
 
@@ -11,13 +11,13 @@ The soul is a markdown description injected into the agent's system prompt at ru
 
 Write the soul in plain markdown. Be specific. "You are a helpful assistant" produces a generic agent. "You are a senior SRE who triages alerts, writes postmortems in plain English, and never suggests restarting as a first step" produces a useful one.
 
-The soul is editable from the agent detail page in the admin UI. Changes take effect on the next run -- no restart required.
+The soul is editable from the agent detail page in the app. Changes take effect on the next run -- no restart required.
 
 ## Models
 
-Each agent uses a single model for inference. The default is `arcee-ai/trinity-large-preview:free` via OpenRouter. It works out of the box with no API key costs.
+Each agent uses a single model for inference. The default is `arcee-ai/trinity-large-preview:free` via OpenRouter. The model itself is free, but you still need a configured provider key in **Settings > Gateway** for inference to run.
 
-- Configurable per-agent in the admin UI.
+- Configurable per-agent in the app.
 - Any OpenRouter-compatible model works. Set the model identifier and the agent uses it on the next run.
 - Paid models (GPT-4o, Claude, etc.) work but can cause rate limit errors and unexpected costs during development. Stick with the free default unless you have a reason to switch.
 
@@ -83,10 +83,12 @@ Skills are assigned per-agent, per-team, or globally. See [Skills](/use/skills) 
 
 ## Budget limits
 
-Every agent can have a cost budget configured in the admin UI. Costs are tracked per-model and per-agent, so you can see exactly where inference spend is going. When an agent hits its budget limit, runs are paused until the limit is raised or reset.
+Every agent can have a cost budget configured in the app. Costs are tracked per-model and per-agent, so you can see exactly where inference spend is going. When an agent hits its budget limit, runs are paused until the limit is raised or reset.
 
 See [Costs & Budgets](/use/costs-and-budgets) for configuration details and cost tracking.
 
 <Callout type="info" title="Where to verify">
-Open **Admin > Agents** to see all configured agents. Click into any agent to inspect its soul prompt, model, memory, tools, skills, queue mode, network policy, and budget. The agent detail page is the single source of truth for an agent's full configuration.
+  Open **Agents** to see all configured agents. Click into any agent to inspect its soul prompt,
+  model, memory, tools, skills, queue mode, network policy, and budget. The agent detail page is the
+  single source of truth for an agent's full configuration.
 </Callout>

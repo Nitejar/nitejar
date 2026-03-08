@@ -234,7 +234,7 @@ export const commandCenterRouter = router({
             severity: 'critical',
             message: `${agent.name}: ${pct}% failure rate (${agent.failedCount}/${agent.runCount} runs)`,
             agentId: agent.agentId,
-            link: `/admin/agents/${agent.agentId}`,
+            link: `/agents/${agent.agentId}`,
           })
         }
       }
@@ -251,7 +251,7 @@ export const commandCenterRouter = router({
               severity: 'warning',
               message: `${op.agent_name}: dispatch running for ${mins}m — "${op.title}"`,
               agentId: op.agent_id,
-              link: `/admin/work-items`,
+              link: `/work-items`,
             })
           }
         }
@@ -269,7 +269,7 @@ export const commandCenterRouter = router({
               severity: 'warning',
               message: `${agent.name}: cost up ${multiplier}x vs prior period`,
               agentId: agent.agentId,
-              link: `/admin/agents/${agent.agentId}`,
+              link: `/agents/${agent.agentId}`,
             })
           }
         }
@@ -282,7 +282,7 @@ export const commandCenterRouter = router({
           severity: 'critical',
           message: `${z.agent_name}: stale dispatch with expired lease — "${z.title}"`,
           agentId: z.agent_id,
-          link: `/admin/settings/runtime`,
+          link: `/settings/runtime`,
         })
       }
 

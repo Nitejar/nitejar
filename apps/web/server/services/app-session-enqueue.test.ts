@@ -165,4 +165,39 @@ describe('enqueueAppSessionMessage', () => {
     expect(result.workItemId).toBe('work-1')
     expect(result.targetAgentIds).toEqual(['agent-1'])
   })
+
+  it('includes linked work context in the work item payload when provided', async () => {
+    await enqueueAppSessionMessage({
+      sessionKey: 'app:user-1:s1',
+      userId: 'user-1',
+      senderName: 'Josh',
+      message: 'status update',
+      targetAgents: [{ id: 'agent-1', handle: 'scout', name: 'Scout' }],
+      workContext: {
+        ticketId: 'ticket-1',
+        ticketTitle: 'Ship the work layer',
+        ticketStatus: 'in_progress',
+        goalId: 'goal-1',
+        goalTitle: 'Make work legible',
+        goalStatus: 'active',
+        goalOutcome: 'Goals and tickets drive execution.',
+      },
+    })
+
+    const firstCreateWorkItemCall = mockedCreateWorkItem.mock.calls[0] as
+      | [{ payload: string | null }]
+      | undefined
+    const payloadRaw = firstCreateWorkItemCall?.[0]?.payload
+    const payload = payloadRaw ? (JSON.parse(payloadRaw) as Record<string, unknown>) : null
+
+    expect(payload).toMatchObject({
+      ticketId: 'ticket-1',
+      ticketTitle: 'Ship the work layer',
+      ticketStatus: 'in_progress',
+      goalId: 'goal-1',
+      goalTitle: 'Make work legible',
+      goalStatus: 'active',
+      goalOutcome: 'Goals and tickets drive execution.',
+    })
+  })
 })

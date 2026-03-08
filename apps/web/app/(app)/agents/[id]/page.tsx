@@ -29,6 +29,7 @@ import { ChatWithAgentButton } from './ChatWithAgentButton'
 import { CostSection } from './CostSection'
 import { SkillsSection } from './SkillsSection'
 import { EvalsSection } from './EvalsSection'
+import { WorkSection } from './WorkSection'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   IconPlug,
@@ -232,6 +233,8 @@ export default async function AgentDetailPage({ params }: Props) {
 
           {/* Inference Costs */}
           <CostSection agentId={agent.id} />
+
+          <WorkSection agentId={agent.id} />
 
           {/* Session Section */}
           <SessionSection agentId={agent.id} initialSettings={config.sessionSettings} />

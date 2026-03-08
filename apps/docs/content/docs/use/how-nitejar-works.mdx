@@ -17,7 +17,7 @@ Channel → Plugin Handler → Work Item → Queue → Agent Runtime → Effect 
 
 An external channel (Telegram, GitHub, a custom webhook) sends an HTTP POST to `/api/webhooks/plugins/[type]/[instanceId]`. The URL identifies which plugin type and which specific plugin instance should handle the request.
 
-**Where to verify:** Admin > Plugins. Each plugin instance shows its webhook URL and recent webhook activity.
+**Where to verify:** Plugins. Each plugin instance shows its webhook URL and recent webhook activity.
 
 ### 2. Plugin handler parses the webhook
 
@@ -29,32 +29,35 @@ The plugin handler for that type receives the raw request and decides what to do
 
 The parsed message becomes a work item in the database with status `pending`. The work item records the session key, source, payload, and a reference back to the original message. This is the durable record that the message existed.
 
-**Where to verify:** Admin > Activity. The work item appears immediately with status `pending` and a timestamp.
+**Where to verify:** Activity. The work item appears immediately with status `pending` and a timestamp.
 
 ### 4. Queue dispatch
 
 The queue claims the work item and decides when to start a run. It does not fire immediately -- it waits through a debounce window (2000ms by default) to collect any additional messages that arrive in quick succession. Once the window expires, the queue coalesces the buffered messages and dispatches them as a single run.
 
-**Where to verify:** Admin > Activity > click a work item. The timeline shows the gap between "work item created" and "run dispatched" -- that gap is the debounce window.
+**Where to verify:** Activity > click a work item. The timeline shows the gap between "work item created" and "run dispatched" -- that gap is the debounce window.
 
 ### 5. Agent runtime
 
 The runtime builds the agent's system prompt from its configuration, personality, memories, skills, and available tools. It enters the inference loop: call the model, check for tool calls, execute them, feed results back, repeat until the model produces a final response. Each iteration is logged.
 
-**Where to verify:** Admin > Activity > click a work item > Run timeline. Every inference call shows the model used, token counts, latency, and cost. Every tool execution shows the tool name, arguments, and result.
+**Where to verify:** Activity > click a work item > Run timeline. Every inference call shows the model used, token counts, latency, and cost. Every tool execution shows the tool name, arguments, and result.
 
 ### 6. Effect outbox delivers the response
 
 The agent's response does not go directly to the channel. It lands in the effect outbox first -- a durable ledger that tracks delivery state. The outbox picks up the response and calls the plugin handler's `postResponse()` method to send it back to the source channel. If delivery fails, the outbox records the failure and can retry.
 
-**Where to verify:** Admin > Activity > click a work item. The response delivery entry shows the outcome (`sent`, `failed`, `unknown`), the external message ID if the channel returned one, and the delivery timestamp.
+**Where to verify:** Activity > click a work item. The response delivery entry shows the outcome (`sent`, `failed`, `unknown`), the external message ID if the channel returned one, and the delivery timestamp.
 
 ### 7. Receipts recorded
 
 At every step above, a receipt is written. Work item creation, run dispatch, each inference call, each tool execution, response delivery, and cost. The receipt trail is the source of truth. If the agent did something unexpected, the trail shows exactly what happened, when, and how much it cost.
 
 <Callout type="info" title="Where to verify">
-Open Admin > Activity and click any work item. The full timeline is there: webhook received, work item created, run dispatched, inference calls, tool executions, response delivered. Each entry has timestamps, and cost rolls up to the work item and agent level. You can also check Admin > Costs for aggregate spend across agents and models.
+  Open **Activity** and click any work item. The full timeline is there: webhook received, work item
+  created, run dispatched, inference calls, tool executions, response delivered. Each entry has
+  timestamps, and cost rolls up to the work item and agent level. You can also check **Costs** for
+  aggregate spend across agents and models.
 </Callout>
 
 ## Session keys

@@ -7,7 +7,7 @@ The Generic Webhook plugin is the simplest way to get data into Nitejar. Send a 
 
 ## Create a plugin instance
 
-1. Open **Admin > Plugins** and find **Generic Webhook** in the catalog.
+1. Open **Plugins** and find **Generic Webhook** in the catalog.
 2. Click **New Instance**.
 3. Assign one or more agents to the instance.
 4. Optionally enter an **HMAC Secret** if you want request signature verification (more on that below).
@@ -27,7 +27,7 @@ In local development, that is:
 http://localhost:3000/api/webhooks/plugins/webhook/YOUR_INSTANCE_ID
 ```
 
-Replace `YOUR_INSTANCE_ID` with the ID from the admin UI.
+Replace `YOUR_INSTANCE_ID` with the instance ID shown in the app.
 
 ## Payload shape
 
@@ -73,7 +73,9 @@ You should get a `201` response with a body containing the work item ID:
 That `201` means the work item was created. The agent processes it asynchronously.
 
 <Callout type="info" title="Where to verify">
-Open **Admin > Activity** to see the work item and the agent's response. Click into the work item for the full receipt trail: webhook received, run dispatched, inference calls, tools executed, response delivered. Each step has timestamps and cost.
+  Open **Activity** to see the work item and the agent's response. Click into the work item for the
+  full receipt trail: webhook received, run dispatched, inference calls, tools executed, response
+  delivered. Each step has timestamps and cost.
 </Callout>
 
 ## HMAC verification (optional)
@@ -125,9 +127,9 @@ The webhook endpoint returns `201` immediately after creating the work item. The
 
 To get the agent's response, you have three options:
 
-**1. Check Admin > Activity**
+**1. Check Activity**
 
-Open the admin UI, find the work item, and read the agent's response in the timeline. Good for development and debugging.
+Open the app, find the work item, and read the agent's response in the timeline. Good for development and debugging.
 
 **2. Poll the work item via the admin API**
 
@@ -144,7 +146,7 @@ For production integrations that need the response programmatically, build a cus
 
 ## Use cases
 
-- **Testing agents during development.** The fastest way to throw a message at an agent and see what happens. Pair with Admin > Activity for the full receipt trail.
+- **Testing agents during development.** The fastest way to throw a message at an agent and see what happens. Pair with **Activity** for the full receipt trail.
 - **Custom integrations from internal tools.** Wire up any internal dashboard, Retool app, or admin panel to trigger agent work.
 - **Connecting services without a dedicated plugin.** If Nitejar does not have a native plugin for your platform, the webhook is the escape hatch.
 - **CI/CD pipeline notifications.** Post deploy summaries, test failures, or PR events. Use HMAC verification to lock it down.
@@ -174,16 +176,16 @@ If you configured a secret but the `X-Webhook-Signature` header is missing or wr
 
 - The header name is exactly `X-Webhook-Signature` (case-insensitive on most servers, but use this casing to be safe).
 - The signature is the hex-encoded HMAC-SHA256 of the **raw request body** (not a re-serialized version).
-- The secret matches what you entered in the admin UI.
+- The secret matches what you entered in the app.
 
 ### Instance ID not found
 
-If the instance ID in the URL does not match any plugin instance, you get a `404`. Verify the ID in **Admin > Plugins**.
+If the instance ID in the URL does not match any plugin instance, you get a `404`. Verify the ID in **Plugins**.
 
 ### No agents assigned
 
-If the plugin instance has no agents assigned, the work item is created but immediately marked `FAILED`. Assign at least one agent in the admin UI.
+If the plugin instance has no agents assigned, the work item is created but immediately marked `FAILED`. Assign at least one agent in the app.
 
 ### Agent not responding
 
-Check **Admin > Activity** for the work item. Look at the run timeline for errors. Common causes: model rate limits, missing API keys, agent configuration issues.
+Check **Activity** for the work item. Look at the run timeline for errors. Common causes: model rate limits, missing API keys, agent configuration issues.

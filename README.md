@@ -117,10 +117,12 @@ Everything below works today. Not a roadmap — click through and check.
 - Export agents as `.nitejar-agent.json` and import them on another instance
 
 **Operations**
-- Command center with fleet metrics, agent roster, cost breakdown, and active operations
-- Per-agent, per-model cost ledger with budget limits — follow the money in Admin > Costs
+- Command Center for live attention: fleet metrics, hot queues, blocked work, and intervention posture
+- Company for structural portfolio management: board summary, saved views, staffing matrix, and team load
+- Work for goals, tickets, heartbeats, and queue movement without collapsing everything into sessions
+- Per-agent, per-model cost ledger with budget limits — follow the money in Costs
 - Routines for scheduled and event-driven runs (cron, webhook triggers, on-event)
-- Full execution traces: spans, tool calls, inference calls, messages, errors — follow the breadcrumbs in Admin > Activity
+- Full execution traces: spans, tool calls, inference calls, messages, errors — follow the breadcrumbs in Activity
 
 **Intelligence**
 - Skills: directory packages with markdown, scripts, and reference files deployed to agent sandboxes
@@ -136,15 +138,16 @@ Everything below works today. Not a roadmap — click through and check.
 **Extensibility**
 - Plugin system: install from npm, git, or upload. 9-point hook lifecycle. Crash-loop auto-disable.
 - Plugin SDK with zero workspace dependencies — `npx create-nitejar-plugin` and go
-- Skill authoring through the admin UI or via plugin contributions
+- Skill authoring through the app or via plugin contributions
 
 ## Architecture
 
 ```
                   ┌────────────────────────────────────────────┐
-                  │              Admin Dashboard                │
-                  │   Command Center · Agents · Evals · Skills  │
-                  │   Plugins · Costs · Routines · Collections  │
+                  │                 Dashboard                   │
+                  │  Command Center · Company · Work · Agents   │
+                  │   Evals · Skills · Plugins · Costs          │
+                  │        Routines · Collections               │
                   └─────────────────────┬──────────────────────┘
                                         │
       ┌──────────────────┬──────────────────┬──────────────────┐
@@ -182,7 +185,7 @@ Everything below works today. Not a roadmap — click through and check.
 ```
 nitejar/
 ├── apps/
-│   ├── web/                    # Next.js 15 — admin UI, webhook API, tRPC server
+│   ├── web/                    # Next.js 15 — app UI, webhook API, tRPC server
 │   ├── docs/                   # Documentation site (Fumadocs)
 │   └── marketing/              # Marketing site (nitejar.dev)
 ├── packages/
@@ -301,7 +304,7 @@ skills/
     openapi-spec.json     # Data the agent consults
 ```
 
-Attach skills to agents globally, per-team, or per-agent. Create them in the admin UI, import/export as `.nitejar-skill.json`, or ship them inside plugins.
+Attach skills to agents globally, per-team, or per-agent. Create them in the app, import/export as `.nitejar-skill.json`, or ship them inside plugins.
 
 ## Evals
 
@@ -321,7 +324,7 @@ v1 ships LLM judge evaluators: you define rubrics with weighted criteria and 5-l
 
 The pipeline schema already supports `programmatic`, `statistical`, `safety`, and `custom` evaluator types. The execution logic ships as contributors build them.
 
-Scores, trends, and suggestions live in Admin > Evals and on each agent's detail page.
+Scores, trends, and suggestions live in Evals and on each agent's detail page.
 
 ## Development
 

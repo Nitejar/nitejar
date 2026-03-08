@@ -12,6 +12,7 @@ import {
   IconCloud,
   IconCurrencyDollar,
   IconDatabase,
+  IconHierarchy,
   IconHome,
   IconInbox,
   IconKey,
@@ -21,8 +22,8 @@ import {
   IconLayoutSidebarLeftExpand,
   IconPlug,
   IconPlayerPause,
-  IconRadar,
   IconReportAnalytics,
+  IconRobot,
   IconServer,
   IconSettings,
   IconUsers,
@@ -57,12 +58,16 @@ interface NavGroup {
 const navGroups: NavGroup[] = [
   {
     label: 'Interact',
-    items: [{ label: 'Home', href: '/', icon: IconHome, exact: true }],
+    items: [
+      { label: 'Command Center', href: '/', icon: IconHome, exact: true },
+      { label: 'Company', href: '/company', icon: IconHierarchy },
+      { label: 'Work', href: '/work', icon: IconInbox },
+    ],
   },
   {
     label: 'Observe',
     items: [
-      { label: 'Fleet', href: '/fleet', icon: IconRadar },
+      { label: 'Agents', href: '/agents', icon: IconRobot },
       { label: 'Activity', href: '/activity', icon: IconActivity },
       { label: 'Costs', href: '/costs', icon: IconCurrencyDollar },
     ],

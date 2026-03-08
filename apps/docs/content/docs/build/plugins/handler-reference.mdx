@@ -43,7 +43,7 @@ responseMode: 'final',
 
 ## `setupConfig`
 
-Optional. Tells the admin UI how to render a setup form when someone creates a new plugin instance.
+Optional. Tells the app UI how to render a setup form when someone creates a new plugin instance.
 
 ```ts
 setupConfig: {
@@ -183,7 +183,7 @@ async postResponse(
 
 ## `testConnection(config)` (optional)
 
-Called from the admin UI "Test Connection" button. Receives the parsed config.
+Called from the app UI "Test Connection" button. Receives the parsed config.
 
 ```ts
 async testConnection(config: MyConfig): Promise<{ ok: boolean; error?: string }> {
@@ -195,7 +195,7 @@ async testConnection(config: MyConfig): Promise<{ ok: boolean; error?: string }>
 }
 ```
 
-Set `setupConfig.supportsTestBeforeSave: true` to show the button in the admin UI.
+Set `setupConfig.supportsTestBeforeSave: true` to show the button in the app UI.
 
 ## `acknowledgeReceipt(pluginInstance, responseContext?)` (optional)
 

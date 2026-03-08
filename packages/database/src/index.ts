@@ -1,5 +1,6 @@
 // Database connection
 export { getDb, closeDb, getDatabaseType, type DatabaseType } from './db'
+export { sql } from 'kysely'
 
 // Type exports
 export {
@@ -80,6 +81,9 @@ export {
   type Invitation,
   type NewInvitation,
   type InvitationUpdate,
+  type OrgUnit,
+  type NewOrgUnit,
+  type OrgUnitUpdate,
   type Team,
   type NewTeam,
   type TeamUpdate,
@@ -89,6 +93,30 @@ export {
   type AgentTeam,
   type NewAgentTeam,
   type AgentTeamUpdate,
+  type Initiative,
+  type NewInitiative,
+  type InitiativeUpdate,
+  type Goal,
+  type NewGoal,
+  type GoalUpdate,
+  type GoalAgentAllocation,
+  type NewGoalAgentAllocation,
+  type GoalAgentAllocationUpdate,
+  type Ticket,
+  type NewTicket,
+  type TicketUpdate,
+  type TicketRelation,
+  type NewTicketRelation,
+  type TicketRelationUpdate,
+  type WorkUpdate,
+  type NewWorkUpdate,
+  type WorkUpdateUpdate,
+  type TicketLink,
+  type NewTicketLink,
+  type TicketLinkUpdate,
+  type WorkView,
+  type NewWorkView,
+  type WorkViewUpdate,
   type Collection,
   type NewCollection,
   type CollectionUpdate,

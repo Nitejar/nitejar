@@ -73,6 +73,49 @@ Nitejar is a centralized product with a decentralized culture orbiting it. Desig
 - When adding a capability, also add or extend at least one receipt path (persisted record, admin view, replayable harness, or deterministic log).
 - When writing docs/README/admin copy, include a "where to verify" hint for any non-trivial claim, using the Public Lexicon.
 
+### Product Editing (Hierarchy + Taste)
+
+Nitejar should feel edited, not accumulated.
+Capability depth is good. Equal-weight presentation is not.
+
+When designing or refining product surfaces, follow these rules:
+
+- **Design the screen, not the components.** Start with the page's reading path and hierarchy. Do not assemble a UI by giving every feature a container.
+- **One screen, one dominant object, one dominant question.** Every major surface should make it obvious what level of the system the user is looking at and what question the screen answers.
+- **Make hierarchy spatial, not just textual.** Parent-child, reporting, containment, and dependency should be obvious from layout, position, indentation, connectors, or sequencing, not just labels.
+- **Do not default to cards.** Cards are for browseable peer objects. They are a poor default for reporting structure, hierarchies, dense management views, timelines, or list-detail workflows. Choose the form that matches the relationship.
+- **Promote structure; demote controls.** Saved views, filters, sort, grouping, density, and configuration are secondary unless they change the meaning of the default view. Hide or soften advanced controls until needed.
+- **Subtract on purpose.** If a new capability makes the first impression noisier, demote or remove something else. Refinement work should usually reduce visual competition, not add more of it.
+- **Receipts live underneath the work.** Runs, sessions, activity, costs, and logs are evidence. They should be easy to reach, but they should not become the top-level organizing primitive when the real object is a company, org unit, goal, or ticket.
+- **Prefer one canonical drill-in path.** Breadcrumbs, selection state, right-side properties, and list-detail patterns should reinforce where the user is in the hierarchy instead of making each surface invent its own navigation logic.
+- **Do not duplicate responsibility across surfaces.** If `Company` owns structure, `Work` should not become a second structure screen. If `Command Center` owns attention, `Company` should not become a second triage hub.
+
+Hierarchy contract for the app:
+
+- **Command Center** answers: what needs attention now?
+- **Company** answers: how is the company organized and where is it weak?
+- **Work** answers: what is moving, blocked, or waiting?
+- **Agents** answers: who is carrying load and what are they touching?
+- **Activity / receipts** answers: what happened?
+
+Before implementing a new screen or materially changing an existing one:
+
+1. State the dominant object and dominant question in your own working notes or commentary.
+2. State what is intentionally secondary, hidden, or deferred.
+3. If the change affects navigation, hierarchy, or the above-the-fold composition of a major surface, generate 2-3 materially different interface directions before choosing one.
+4. Choose the direction that makes hierarchy and next action legible fastest, not the one that is easiest to assemble from existing components.
+
+Red flags that require another editing pass before shipping:
+
+- the page reads like a gallery of modules rather than a single composition
+- multiple sections compete as the "main thing"
+- cards are being used to represent reporting lines, nested work, or chain of command
+- controls are louder than the underlying objects
+- the user cannot tell "where am I?" or "what does this belong to?" in a few seconds
+- the same summary or management concept appears on multiple top-level surfaces
+
+For the detailed rubric, examples, and screen-type guidance, use [docs/specs/PRODUCT_EDITING_AND_HIERARCHY_RUBRIC.md](./docs/specs/PRODUCT_EDITING_AND_HIERARCHY_RUBRIC.md).
+
 ## Public Identity & Marketing
 
 ### Nitejar (public name)
@@ -161,6 +204,13 @@ These are default behavior rules for multi-agent conversations across plugin-bac
 - For autonomy/routing improvements in local development, prefer shipping complete one-go changes (implementation + tests + eval updates) rather than staged rollout flags.
 
 ## Development Workflow
+
+## Execution Context
+
+- **You are running on the user's local machine.** Do not describe this environment as a conceptual sandbox.
+- **Tool access is human-controlled.** Some commands or capabilities may be allowed, denied, or require explicit user approval depending on the user's local allowlist and safety preferences.
+- **When a command is blocked, describe it as a permission or allowlist constraint, not as proof that the agent is isolated from the host machine.**
+- **Be precise about what is sandboxed.** Nitejar agents may run in their own sandboxes; Codex itself is operating directly on the user's computer subject to the user's tooling controls.
 
 **Run things yourself.** Don't ask the user to start servers or run commands - just do it. Use background tasks for long-running processes like `pnpm dev`.
 

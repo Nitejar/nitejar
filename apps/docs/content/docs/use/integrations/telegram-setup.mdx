@@ -24,7 +24,7 @@ You need a bot token from Telegram's BotFather.
 
 ## 2. Add the bot token to Nitejar
 
-Telegram bot tokens are configured per plugin instance in the admin UI. No environment variable is required.
+Telegram bot tokens are configured per plugin instance in the app. No environment variable is required.
 
 ## 3. Create a plugin instance
 
@@ -45,7 +45,7 @@ Telegram delivers messages to your Nitejar instance via webhooks. The webhook UR
 {APP_BASE_URL}/api/webhooks/plugins/telegram/{INSTANCE_ID}
 ```
 
-**Production:** Set your public URL in **Settings > Runtime > Public app URL** in the admin UI, or set `APP_BASE_URL` in your environment. Nitejar auto-registers the webhook with Telegram when you save the plugin instance. The runtime setting takes priority over environment variables. See the [configuration docs](/docs/start-here/configuration#public-app-url) for the full resolution order.
+**Production:** Set your public URL in **Settings > Runtime > Public app URL**, or set `APP_BASE_URL` in your environment. Nitejar auto-registers the webhook with Telegram when you save the plugin instance. The runtime setting takes priority over environment variables. See the [configuration docs](/start-here/configuration#public-app-url) for the full resolution order.
 
 **Local development:** Telegram needs a public URL to reach your machine. Use ngrok:
 
@@ -59,7 +59,7 @@ Then set `APP_BASE_URL` in your `.env` to the ngrok URL:
 APP_BASE_URL=https://your-subdomain.ngrok-free.app
 ```
 
-Or set it in **Settings > Runtime > Public app URL** in the admin UI.
+Or set it in **Settings > Runtime > Public app URL**.
 
 Nitejar uses this to construct the webhook URL and registers it with Telegram automatically. If you use a paid ngrok plan with a stable domain, set it once and forget it.
 
@@ -68,23 +68,25 @@ Nitejar uses this to construct the webhook URL and registers it with Telegram au
 1. Open Telegram and find your bot by its username.
 2. Send a message — anything works.
 3. The bot should show a typing indicator, then reply with the agent's response.
-4. Open **Admin > Activity** to see the work item. Click it to inspect the full run: webhook payload, inference calls, tool executions, token counts, and the delivered response.
+4. Open **Activity** to see the work item. Click it to inspect the full run: webhook payload, inference calls, tool executions, token counts, and the delivered response.
 
 If the bot does not respond, see [Troubleshooting](#7-troubleshooting) below.
 
 <Callout type="info" title="Where to verify">
-Go to Admin > Plugins and click your Telegram instance. The instance detail page shows webhook registration status, recent events, and delivery outcomes. This is the first place to check when something is not working.
+  Go to **Plugins** and click your Telegram instance. The instance detail page shows webhook
+  registration status, recent events, and delivery outcomes. This is the first place to check when
+  something is not working.
 </Callout>
 
 ## 6. Optional: restrict access
 
 By default, the bot responds to anyone who messages it. To lock it down, use the `allowedChatIds` config field.
 
-1. Open your Telegram plugin instance in the admin UI.
+1. Open your Telegram plugin instance.
 2. Add chat IDs to the `allowedChatIds` array.
 3. Save.
 
-To find a chat ID, send a message to the bot and check the work item payload in Admin > Activity. The `chat.id` field in the Telegram payload is what you need.
+To find a chat ID, send a message to the bot and check the work item payload in **Activity**. The `chat.id` field in the Telegram payload is what you need.
 
 When `allowedChatIds` is set, the bot silently ignores messages from any chat not on the list.
 
@@ -99,9 +101,9 @@ When `allowedChatIds` is set, the bot silently ignores messages from any chat no
 
 **Bot does not respond at all**
 
-- Verify the token is correct. Go to Admin > Plugins > your instance and check for config validation errors.
+- Verify the token is correct. Go to **Plugins > your Telegram instance** and check for config validation errors.
 - Check that the webhook is registered. The instance detail page shows webhook status. If it says "not registered," your `APP_BASE_URL` may be missing or incorrect.
-- Check Admin > Activity for work items. If work items are being created but responses fail, the issue is on the delivery side — look at the work item detail for errors.
+- Check **Activity** for work items. If work items are being created but responses fail, the issue is on the delivery side — look at the work item detail for errors.
 
 **Bot does not respond in groups**
 

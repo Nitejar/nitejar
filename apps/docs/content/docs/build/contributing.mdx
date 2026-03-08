@@ -164,20 +164,20 @@ nitejar/
 3. Write tests using `testHandler()` from `@nitejar/plugin-sdk`.
 4. Create a `nitejar-plugin.json` manifest (see [Manifest Format](/build/plugins/manifest)).
 5. Build with esbuild: `npx esbuild src/index.ts --bundle --format=esm --outfile=dist/index.js --platform=node --external:@nitejar/plugin-sdk`
-6. Test locally: install via admin UI **Plugins > Install Custom Plugin** and point to your directory.
+6. Test locally: install via the app UI at **Plugins > Install Custom Plugin** and point to your directory.
 7. For inclusion in the main repo, add your plugin under `plugins/` and submit a PR.
 
 ## How to add a skill
 
 1. Create a directory with a `SKILL.md` file (see the [Skills guide](/build/skills-authoring)).
 2. Add optional supporting files (references, scripts, templates).
-3. Test by creating the skill in the admin UI and assigning it to an agent.
+3. Test by creating the skill in the app UI and assigning it to an agent.
 4. Verify the agent can discover and use the skill via `use_skill`.
-5. For sharing, export as JSON from the admin UI.
+5. For sharing, export as JSON from the app UI.
 
 ## Architecture guidance
 
-- **tRPC for admin UI data flows.** Add procedures in `apps/web/server/routers/`, wire through `apps/web/server/routers/_app.ts`, consume via the tRPC client in admin pages.
+- **tRPC for app UI data flows.** Add procedures in `apps/web/server/routers/`, wire through `apps/web/server/routers/_app.ts`, consume via the tRPC client in app pages.
 - **Remove unused code** when iterating. Delete obsolete routes, components, configs, and docs.
 - **Be proactive.** Fix type errors and lint issues as you encounter them. Run migrations after schema changes. Do not stop for fixable problems.
 

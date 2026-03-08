@@ -4,9 +4,15 @@ import { parseAgentConfig } from '@nitejar/agent/config'
 import { generateUuidV7 } from '@nitejar/core'
 import {
   addAppSessionParticipants,
+  claimTicket,
+  createTicketLink,
+  createWorkUpdate,
   createAppSession,
+  findGoalById,
   findAgentById,
   findAppSessionByKeyAndOwner,
+  findTicketById,
+  findTicketBySessionKey,
   getDb,
   listAgents,
   listAppSessionParticipantAgents,
@@ -184,6 +190,37 @@ async function resolveSessionTargets(input: {
   ]
 }
 
+async function getSessionWorkContext(sessionKey: string): Promise<{
+  linkedTicket: {
+    id: string
+    title: string
+    status: string
+    goalId: string | null
+    goalTitle: string | null
+    goalStatus: string | null
+    goalOutcome: string | null
+  } | null
+}> {
+  const ticket = await findTicketBySessionKey(sessionKey)
+  if (!ticket) {
+    return { linkedTicket: null }
+  }
+
+  const goal = ticket.goal_id ? await findGoalById(ticket.goal_id) : null
+
+  return {
+    linkedTicket: {
+      id: ticket.id,
+      title: ticket.title,
+      status: ticket.status,
+      goalId: goal?.id ?? null,
+      goalTitle: goal?.title ?? null,
+      goalStatus: goal?.status ?? null,
+      goalOutcome: goal?.outcome ?? null,
+    },
+  }
+}
+
 function computeFailedTurnStatus(input: {
   jobStatuses: string[]
   dispatchStatuses: DispatchStatus[]
@@ -209,7 +246,12 @@ const TWENTY_FOUR_HOURS = 24 * 60 * 60
 
 export const sessionsRouter = router({
   startOrResume: protectedProcedure
-    .input(z.object({ agentId: z.string().min(1) }))
+    .input(
+      z.object({
+        agentId: z.string().min(1),
+        ticketId: z.string().trim().optional().nullable(),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
       const userId = requireUserId(ctx.session)
       const agent = await findAgentById(input.agentId)
@@ -218,6 +260,73 @@ export const sessionsRouter = router({
       }
 
       const db = getDb()
+      if (input.ticketId) {
+        const ticket = await findTicketById(input.ticketId)
+        if (!ticket) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Ticket not found.' })
+        }
+
+        const existingLinks = await db
+          .selectFrom('ticket_links')
+          .select(['ref'])
+          .where('ticket_id', '=', ticket.id)
+          .where('kind', '=', 'session')
+          .orderBy('created_at', 'desc')
+          .execute()
+
+        for (const link of existingLinks) {
+          const existingSession = await findAppSessionByKeyAndOwner(link.ref, userId)
+          if (existingSession) {
+            return { sessionKey: existingSession.session_key }
+          }
+        }
+
+        const sessionKey = `app:${userId}:${generateUuidV7()}`
+        await createAppSession({
+          session_key: sessionKey,
+          owner_user_id: userId,
+          primary_agent_id: input.agentId,
+          title: ticket.title,
+        })
+        await addAppSessionParticipants({
+          sessionKey,
+          agentIds: [input.agentId],
+          addedByUserId: userId,
+        })
+        await createTicketLink({
+          ticket_id: ticket.id,
+          kind: 'session',
+          ref: sessionKey,
+          label: ticket.title,
+          metadata_json: null,
+          created_by_kind: 'user',
+          created_by_ref: userId,
+        })
+        if (
+          ticket.assignee_kind !== 'agent' ||
+          ticket.assignee_ref !== input.agentId ||
+          ticket.status !== 'in_progress'
+        ) {
+          await claimTicket(ticket.id, {
+            assigneeKind: 'agent',
+            assigneeRef: input.agentId,
+            claimedByKind: 'user',
+            claimedByRef: userId,
+          })
+          await createWorkUpdate({
+            goal_id: ticket.goal_id,
+            ticket_id: ticket.id,
+            team_id: null,
+            author_kind: 'user',
+            author_ref: userId,
+            kind: 'status',
+            body: `Started session ${sessionKey} with agent ${agent.name}.`,
+            metadata_json: null,
+          })
+        }
+        return { sessionKey }
+      }
+
       const cutoff = Math.floor(Date.now() / 1000) - TWENTY_FOUR_HOURS
       const recent = await db
         .selectFrom('app_sessions')
@@ -407,13 +516,17 @@ export const sessionsRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Session not found.' })
       }
 
-      const participants = await listAppSessionParticipantAgents(session.session_key)
+      const [participants, workContext] = await Promise.all([
+        listAppSessionParticipantAgents(session.session_key),
+        getSessionWorkContext(session.session_key),
+      ])
       return {
         sessionKey: session.session_key,
         title: session.title,
         primaryAgentId: session.primary_agent_id,
         createdAt: session.created_at,
         lastActivityAt: session.last_activity_at,
+        linkedTicket: workContext.linkedTicket,
         participants: participants.map((agent) => {
           const config = parseAgentConfig(agent.config)
           return {
@@ -625,7 +738,7 @@ export const sessionsRouter = router({
         for (const targetAgentId of targetAgentIds) {
           const participant = participantById.get(targetAgentId)
           const job = jobsByAgent.get(targetAgentId)
-          const runLink = `/admin/work-items/${item.id}`
+          const runLink = `/work-items/${item.id}`
           if (job) {
             const assistant = latestAssistantByJob.get(job.id)
             const message =
@@ -680,7 +793,7 @@ export const sessionsRouter = router({
           status,
           canRetry: false,
           agentReplies,
-          runLink: `/admin/work-items/${item.id}`,
+          runLink: `/work-items/${item.id}`,
         }
       })
 
@@ -717,6 +830,7 @@ export const sessionsRouter = router({
         primaryAgentId: session.primary_agent_id,
         message: input.message,
       })
+      const workContext = await getSessionWorkContext(session.session_key)
 
       if (targets.length === 0) {
         throw new TRPCError({
@@ -732,6 +846,17 @@ export const sessionsRouter = router({
         message: input.message,
         targetAgents: targets,
         clientMessageId: input.clientMessageId,
+        workContext: workContext.linkedTicket
+          ? {
+              ticketId: workContext.linkedTicket.id,
+              ticketTitle: workContext.linkedTicket.title,
+              ticketStatus: workContext.linkedTicket.status,
+              goalId: workContext.linkedTicket.goalId,
+              goalTitle: workContext.linkedTicket.goalTitle,
+              goalStatus: workContext.linkedTicket.goalStatus,
+              goalOutcome: workContext.linkedTicket.goalOutcome,
+            }
+          : null,
       })
 
       return {
@@ -864,6 +989,7 @@ export const sessionsRouter = router({
           message: 'Retry failed because no valid participant target could be resolved.',
         })
       }
+      const workContext = await getSessionWorkContext(input.sessionKey)
 
       const result = await enqueueAppSessionMessage({
         sessionKey: input.sessionKey,
@@ -872,6 +998,17 @@ export const sessionsRouter = router({
         message,
         targetAgents: targets,
         clientMessageId: payload.clientMessageId,
+        workContext: workContext.linkedTicket
+          ? {
+              ticketId: workContext.linkedTicket.id,
+              ticketTitle: workContext.linkedTicket.title,
+              ticketStatus: workContext.linkedTicket.status,
+              goalId: workContext.linkedTicket.goalId,
+              goalTitle: workContext.linkedTicket.goalTitle,
+              goalStatus: workContext.linkedTicket.goalStatus,
+              goalOutcome: workContext.linkedTicket.goalOutcome,
+            }
+          : null,
       })
 
       return {

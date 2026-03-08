@@ -167,6 +167,32 @@ const ROUTINE_WRITE_TOOLS = new Set([
   'delete_routine',
   'run_routine_now',
 ])
+const SANDBOX_REQUIRED_TOOLS = new Set([
+  'bash',
+  'configure_github_credentials',
+  'download_attachment',
+  'read_file',
+  'write_file',
+  'list_directory',
+  'create_directory',
+  'edit_file',
+  'use_skill',
+  'create_service',
+  'list_services',
+  'manage_service',
+  'get_sprite_url',
+  'start_background_task',
+  'check_background_task',
+  'list_background_tasks',
+  'stop_background_task',
+  'list_sandboxes',
+  'switch_sandbox',
+  'create_ephemeral_sandbox',
+  'delete_sandbox',
+  'generate_image',
+  'transcribe_audio',
+  'synthesize_speech',
+])
 const DANGEROUS_PLATFORM_TOOLS = new Set([
   'list_agents',
   'get_agent_config',
@@ -185,6 +211,7 @@ const DANGEROUS_PLATFORM_TOOLS = new Set([
  */
 export function getOpenAITools(opts?: {
   excludeWebTools?: boolean
+  excludeSandboxTools?: boolean
   editToolMode?: EditToolMode
   allowEphemeralSandboxCreation?: boolean
   allowRoutineManagement?: boolean
@@ -193,6 +220,9 @@ export function getOpenAITools(opts?: {
   let defs = getToolDefinitions({ editToolMode: opts?.editToolMode })
   if (opts?.excludeWebTools) {
     defs = defs.filter((t) => !TAVILY_TOOLS.has(t.name))
+  }
+  if (opts?.excludeSandboxTools) {
+    defs = defs.filter((t) => !SANDBOX_REQUIRED_TOOLS.has(t.name))
   }
   if (opts?.dangerouslyUnrestricted !== true) {
     defs = defs.filter((t) => !DANGEROUS_PLATFORM_TOOLS.has(t.name))

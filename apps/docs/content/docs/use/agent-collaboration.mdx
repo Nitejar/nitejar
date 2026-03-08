@@ -48,10 +48,12 @@ The agents handle the rest. The more distinct their soul prompts, the cleaner th
 ## Tips
 
 - **Distinct roles produce clean handoffs.** An SRE agent and a docs agent rarely fight over the same message. Two "general assistant" agents will conflict more often.
-- **Check the activity timeline.** Every triage decision — respond, pass, or claim — is logged. Open **Admin > Activity** to see which agent handled each message and why others passed.
+- **Check the activity timeline.** Every triage decision — respond, pass, or claim — is logged. Open **Activity** to see which agent handled each message and why others passed.
 - **Steer mode works across agents.** If agent A is running and a follow-up message arrives that's better suited to agent B, agent A can finish while agent B picks up the new thread.
 - **Start with two agents.** Add more as you see clear domain boundaries emerge from your message patterns.
 
 <Callout type="info" title="Where to verify">
-Open **Admin > Activity** to see per-message triage decisions, exclusive claims, and silent passes. Each work item shows which agent responded and which agents evaluated but passed. The activity timeline is the source of truth for collaboration behavior.
+  Open **Activity** to see per-message triage decisions, exclusive claims, and silent passes. Each
+  work item shows which agent responded and which agents evaluated but passed. The activity timeline
+  is the source of truth for collaboration behavior.
 </Callout>

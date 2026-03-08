@@ -12,8 +12,8 @@ export default function AgentsPage() {
           <p className="text-[0.65rem] uppercase tracking-[0.35em] text-muted-foreground">Agents</p>
           <h2 className="text-2xl font-semibold">Agents</h2>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Your autonomous workforce. Configure identities, manage capabilities, and monitor agent
-            readiness.
+            Fleet health first, then the full roster. Configure identities, manage capabilities, and
+            monitor agent readiness in one place.
           </p>
         </div>
         <AgentListActions />

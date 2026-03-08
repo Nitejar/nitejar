@@ -39,12 +39,7 @@ const nextConfig: NextConfig = {
       },
       {
         source: '/command-center',
-        destination: '/fleet',
-        permanent: true,
-      },
-      {
-        source: '/agents',
-        destination: '/fleet',
+        destination: '/',
         permanent: true,
       },
       {

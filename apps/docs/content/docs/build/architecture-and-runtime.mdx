@@ -14,7 +14,7 @@ Channels (Telegram, GitHub, Slack, Discord, Webhooks)
 ┌─────────────────────────────────┐
 │  apps/web  (Next.js 15)        │
 │  ┌───────────┐  ┌────────────┐ │
-│  │ Webhook   │  │ Admin UI   │ │
+│  │ Webhook   │  │ Dashboard   │ │
 │  │ Routes    │  │ (tRPC)     │ │
 │  └─────┬─────┘  └────────────┘ │
 │        │                        │
@@ -55,8 +55,8 @@ The Next.js 15 application. Contains:
 
 - **Webhook routes** — HTTP endpoints that receive inbound messages from channels (`/api/webhooks/plugins/[type]/[instanceId]`).
 - **Dashboard** — React pages for managing agents, plugins, skills, work items, and runtime settings.
-- **tRPC routers** — Server-side procedures for the admin UI, organized by domain (agents, plugins, skills, credentials, etc.).
-- **Runtime workers** — Background processes for queue dispatch, run execution, and effect outbox delivery. Started eagerly on server boot via `instrumentation.ts`.
+- **tRPC routers** — Server-side procedures for the app UI, organized by domain (agents, plugins, skills, credentials, etc.).
+- **Runtime workers** — Background processes for queue dispatch, run execution, and effect outbox delivery. They run in-process and start eagerly on server boot via `instrumentation.ts`.
 
 ### `packages/agent`
 
@@ -155,6 +155,8 @@ The runtime uses two durable ledgers:
 - **Effect ledger** (`effect_outbox`) — Tracks external side-effect delivery state.
 
 On startup, the system recovers stale state: abandoned dispatches are marked for replay, unknown effect outcomes are held for manual release. Queue messages and lane state survive restarts. This means you can stop and restart Nitejar without losing in-flight work.
+
+There is no separate worker deployment to keep in sync. For the current architecture, one Nitejar app process boots the UI, API routes, and background workers together.
 
 ## Database
 

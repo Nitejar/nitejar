@@ -29,6 +29,7 @@ import { routineDefinitions } from './handlers/routines'
 import { collectionDefinitions } from './handlers/collections'
 import { credentialDefinitions } from './handlers/credentials'
 import { platformControlDefinitions } from './handlers/platform-control'
+import { workDefinitions } from './handlers/work'
 
 const baseToolDefinitions: Anthropic.Tool[] = [
   bashDefinition,
@@ -51,6 +52,7 @@ const baseToolDefinitions: Anthropic.Tool[] = [
   synthesizeSpeechDefinition,
   downloadAttachmentDefinition,
   queryActivityDefinition,
+  ...workDefinitions,
   ...platformControlDefinitions,
   // Intentionally disabled: private agent DMs are off while we stabilize
   // public-channel inter-agent communication and routing receipts.

@@ -708,7 +708,7 @@ export function RoutinesClient() {
       ruleJsonText: ruleText,
       conditionProbe: routine.condition_probe ?? '',
       conditionConfigText: stringifySafe(routine.conditionConfig),
-      targetPluginInstanceId: routine.target_plugin_instance_id,
+      targetPluginInstanceId: routine.target_plugin_instance_id ?? '',
       targetSessionKey: routine.target_session_key,
       targetResponseContextText: stringifySafe(routine.targetResponseContext),
       actionPrompt: routine.action_prompt,

@@ -41,17 +41,29 @@ DATABASE_URL=postgres://user:password@host:5432/database
 
 Configure the Sprites API key in **Settings > Capabilities > Tool Execution** after first boot.
 
+## Runtime shape
+
+The current app runs as a single web process. Queue dispatch, effect delivery, evals, routines, and passive-memory workers all run inside that same process.
+
+You do not need:
+
+- Redis
+- A separate worker service
+- A separate queue service
+
+For a single-node deployment, SQLite is enough.
+
 ### Integrations
 
 #### Telegram
 
-Configure via the admin UI. Required config:
+Configure in the app. Required config:
 
 - `botToken`: Get from @BotFather
 
 #### GitHub
 
-Configure via the admin UI. Required config:
+Configure in the app. Required config:
 
 - For GitHub App: `appId`, `privateKey`
 - Optional: `webhookSecret` for signature verification
@@ -93,7 +105,7 @@ See [kubernetes.md](./kubernetes.md) for Kubernetes manifests.
 
 ## Post-Deployment Setup
 
-1. **Access the admin UI**: Navigate to `https://your-domain/admin`
+1. **Open the app**: Navigate to `https://your-domain`
 
 2. **Create a plugin instance**:
    - Go to Plugins
@@ -114,6 +126,6 @@ See [kubernetes.md](./kubernetes.md) for Kubernetes manifests.
 - [ ] Set `ENCRYPTION_KEY` (required for secret storage)
 - [ ] Use HTTPS in production
 - [ ] Configure webhook secrets for GitHub/Telegram
-- [ ] Restrict admin UI access (consider adding auth)
+- [ ] Restrict app access appropriately
 - [ ] Use Postgres for production deployments
 - [ ] Back up the database regularly
