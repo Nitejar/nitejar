@@ -19,6 +19,8 @@ import {
   findWorkViewById,
   getDb,
   listGoals,
+  reorderGoal,
+  reorderTicket,
   listGoalHealthSummaries,
   listAgentWorkloadRollups,
   listInitiatives,
@@ -44,8 +46,16 @@ import { getAlwaysTrueRuleForEnvelope } from '../services/routines/rules'
 import { protectedProcedure, router } from '../trpc'
 
 const goalStatusSchema = z.enum(['draft', 'active', 'at_risk', 'blocked', 'done', 'archived'])
+const progressSourceSchema = z.enum([
+  'ticket_rollup',
+  'sub_goal_rollup',
+  'number',
+  'currency',
+  'percentage',
+  'boolean',
+])
 const ticketStatusSchema = z.enum(['inbox', 'ready', 'in_progress', 'blocked', 'done', 'canceled'])
-const actorKindSchema = z.enum(['user', 'agent', 'team'])
+const actorKindSchema = z.enum(['user', 'agent'])
 const ticketLinkKindSchema = z.enum(['session', 'work_item', 'external'])
 const heartbeatTargetKindSchema = z.enum(['goal', 'team'])
 const workViewEntityKindSchema = z.enum(['goal', 'ticket'])
@@ -54,6 +64,7 @@ const goalSortFieldSchema = z.enum(['updated_at', 'created_at', 'title', 'status
 const ticketSortFieldSchema = z.enum(['updated_at', 'created_at', 'title', 'status'])
 
 const goalListInputSchema = z.object({
+  scope: z.enum(['mine', 'my_team', 'all']).default('all'),
   statuses: z.array(goalStatusSchema).optional(),
   q: z.string().trim().optional(),
   ownerKind: actorKindSchema.optional(),
@@ -156,7 +167,7 @@ function resolveTicketAssignmentPatch(args: {
     claimed_at: number | null
   }
   patch: {
-    assigneeKind?: 'user' | 'agent' | 'team' | null
+    assigneeKind?: 'user' | 'agent' | null
     assigneeRef?: string | null
   }
   actorUserId: string
@@ -275,13 +286,11 @@ function buildGoalHeartbeatPrompt(goal: { id: string; title: string; outcome: st
 function buildTeamHeartbeatPrompt(team: {
   id: string
   name: string
-  description: string | null
+  charter: string | null
 }): string {
   return [
     `You are running the recurring heartbeat for team ${team.id}: "${team.name}".`,
-    team.description
-      ? `Team charter: ${team.description}`
-      : 'Review the team queue and owned goals.',
+    team.charter ? `Team charter: ${team.charter}` : 'Review the team queue and owned goals.',
     '',
     'Review the work before you summarize it:',
     `- Use search_goals with owner_kind="team" and owner_ref="${team.id}".`,
@@ -523,7 +532,14 @@ async function enrichGoals(rows: Awaited<ReturnType<typeof listGoals>>) {
         .execute(),
       db
         .selectFrom('goals')
-        .select(['id', 'parent_goal_id'])
+        .select([
+          'id',
+          'parent_goal_id',
+          'progress_source',
+          'progress_current',
+          'progress_target',
+          'status',
+        ])
         .where('parent_goal_id', 'in', goalIds)
         .where('archived_at', 'is', null)
         .execute(),
@@ -594,8 +610,69 @@ async function enrichGoals(rows: Awaited<ReturnType<typeof listGoals>>) {
   const parentGoalMap = new Map(parentGoals.map((goal) => [goal.id, goal]))
   const healthByGoal = new Map(healthSummaries.map((summary) => [summary.goal_id, summary]))
 
+  // Build a map of child goals per parent for sub_goal_rollup computation
+  const childGoalsByParent = new Map<
+    string,
+    Array<{
+      id: string
+      progress_source: string
+      progress_current: number | null
+      progress_target: number | null
+      status: string
+    }>
+  >()
+  for (const child of childGoals) {
+    if (!child.parent_goal_id) continue
+    const list = childGoalsByParent.get(child.parent_goal_id) ?? []
+    list.push(child)
+    childGoalsByParent.set(child.parent_goal_id, list)
+  }
+
   return rows.map((row) => {
     const health = healthByGoal.get(row.id)
+    const tc = ticketCounts.get(row.id) ?? {
+      total: 0,
+      inbox: 0,
+      ready: 0,
+      in_progress: 0,
+      blocked: 0,
+      done: 0,
+    }
+
+    // Compute progressPercent based on progress_source
+    const source = row.progress_source ?? 'ticket_rollup'
+    let progressPercent: number
+    switch (source) {
+      case 'ticket_rollup':
+        progressPercent = tc.total > 0 ? (tc.done / tc.total) * 100 : 0
+        break
+      case 'sub_goal_rollup': {
+        const children = childGoalsByParent.get(row.id) ?? []
+        if (children.length === 0) {
+          progressPercent = 0
+        } else {
+          const sum = children.reduce((acc, child) => {
+            return acc + computeChildProgressPercent(child, ticketCounts)
+          }, 0)
+          progressPercent = sum / children.length
+        }
+        break
+      }
+      case 'number':
+      case 'currency':
+      case 'percentage':
+        progressPercent =
+          row.progress_target && row.progress_target > 0
+            ? Math.min(100, Math.max(0, ((row.progress_current ?? 0) / row.progress_target) * 100))
+            : 0
+        break
+      case 'boolean':
+        progressPercent = (row.progress_current ?? 0) >= 1 ? 100 : 0
+        break
+      default:
+        progressPercent = 0
+    }
+
     return {
       id: row.id,
       initiative:
@@ -621,24 +698,62 @@ async function enrichGoals(rows: Awaited<ReturnType<typeof listGoals>>) {
       status: row.status,
       health: health?.health ?? row.status,
       isStale: health?.is_stale ?? false,
+      progressSource: source,
+      progressCurrent: row.progress_current,
+      progressTarget: row.progress_target,
+      progressUnit: row.progress_unit,
+      progressPercent: Math.round(progressPercent * 100) / 100,
       owner: presentActor(row.owner_kind, row.owner_ref, actors),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       lastActivityAt: health?.last_activity_at ?? row.updated_at,
       lastHeartbeatAt: health?.last_heartbeat_at ?? null,
       archivedAt: row.archived_at,
+      sortOrder: row.sort_order,
       childGoalCount: childCounts.get(row.id) ?? 0,
-      ticketCounts: ticketCounts.get(row.id) ?? {
-        total: 0,
-        inbox: 0,
-        ready: 0,
-        in_progress: 0,
-        blocked: 0,
-        done: 0,
-      },
+      ticketCounts: tc,
       latestUpdate: latestUpdates.get(row.id) ?? null,
     }
   })
+}
+
+/**
+ * Compute progress percent for a child goal (used in sub_goal_rollup).
+ * This is a simplified version that handles all source types without
+ * recursing into sub_goal_rollup children of children.
+ */
+function computeChildProgressPercent(
+  child: {
+    id: string
+    progress_source: string
+    progress_current: number | null
+    progress_target: number | null
+    status: string
+  },
+  ticketCounts: Map<string, { total: number; done: number }>
+): number {
+  const source = child.progress_source ?? 'ticket_rollup'
+  switch (source) {
+    case 'ticket_rollup': {
+      const tc = ticketCounts.get(child.id)
+      if (!tc || tc.total === 0) return 0
+      return (tc.done / tc.total) * 100
+    }
+    case 'number':
+    case 'currency':
+    case 'percentage':
+      return child.progress_target && child.progress_target > 0
+        ? Math.min(100, Math.max(0, ((child.progress_current ?? 0) / child.progress_target) * 100))
+        : 0
+    case 'boolean':
+      return (child.progress_current ?? 0) >= 1 ? 100 : 0
+    case 'sub_goal_rollup':
+      // For nested sub_goal_rollup, we'd need recursive fetching.
+      // Use status as a proxy: done = 100, else 0.
+      return child.status === 'done' ? 100 : 0
+    default:
+      return 0
+  }
 }
 
 async function enrichTickets(rows: Awaited<ReturnType<typeof listTickets>>) {
@@ -808,11 +923,12 @@ async function enrichTickets(rows: Awaited<ReturnType<typeof listTickets>>) {
           }
         : null,
     assignee: presentActor(row.assignee_kind, row.assignee_ref, actors),
-    isUnclaimed: !row.assignee_kind || row.assignee_kind === 'team',
+    isUnclaimed: !row.assignee_kind,
     claimedAt: row.claimed_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     archivedAt: row.archived_at,
+    sortOrder: row.sort_order,
     latestUpdate: latestUpdates.get(row.id) ?? null,
     links: linksByTicket.get(row.id) ?? [],
     blockedByCount: relationCountsByTicket.get(row.id)?.blockedByCount ?? 0,
@@ -954,6 +1070,15 @@ export const workRouter = router({
     )
 
     const myTeamIds = new Set(teamMemberships.map((membership) => membership.team_id))
+    const myTeamAgentRows =
+      myTeamIds.size > 0
+        ? await db
+            .selectFrom('agent_teams')
+            .select(['agent_id'])
+            .where('team_id', 'in', [...myTeamIds])
+            .execute()
+        : []
+    const myTeamAgentIds = new Set(myTeamAgentRows.map((row) => row.agent_id))
     const atRiskGoals = goalRows.filter(
       (goal) => goal.health === 'at_risk' || goal.health === 'blocked'
     )
@@ -967,7 +1092,10 @@ export const workRouter = router({
       (ticket) => ticket.assignee?.kind === 'user' && ticket.assignee.ref === userId
     )
     const myTeamTickets = ticketRows.filter(
-      (ticket) => ticket.assignee?.kind === 'team' && myTeamIds.has(ticket.assignee.ref)
+      (ticket) =>
+        ticket.assignee?.kind === 'agent' &&
+        ticket.assignee.ref &&
+        myTeamAgentIds.has(ticket.assignee.ref)
     )
     const agentRollupMap = new Map(agentRollups.map((rollup) => [rollup.agent_id, rollup]))
     const workload = workloadRollups.map((entry) => {
@@ -1006,6 +1134,8 @@ export const workRouter = router({
       .slice(0, 6)
 
     return {
+      currentUserId: userId,
+      myTeamIds: Array.from(myTeamIds),
       summary: {
         goalCount: goalRows.length,
         openGoalCount: goalRows.filter((goal) => !['done', 'archived'].includes(goal.status))
@@ -1140,22 +1270,58 @@ export const workRouter = router({
       return { ok: true }
     }),
 
-  listGoals: protectedProcedure.input(goalListInputSchema.optional()).query(async ({ input }) => {
-    const goals = await listGoals({
-      statuses: input?.statuses,
-      q: input?.q,
-      ownerKind: input?.ownerKind,
-      ownerRef: input?.ownerRef,
-      teamId: input?.teamId,
-      initiativeId: input?.initiativeId,
-      includeArchived: input?.includeArchived,
-      limit: input?.limit,
-      sortBy: input?.sort?.field,
-      sortDirection: input?.sort?.direction,
-    })
-    const rows = await enrichGoals(goals)
-    return input?.staleOnly ? rows.filter((goal) => goal.isStale) : rows
-  }),
+  listGoals: protectedProcedure
+    .input(goalListInputSchema.optional())
+    .query(async ({ ctx, input }) => {
+      const scope = input?.scope ?? 'all'
+      const userId = scope !== 'all' ? requireUserId(ctx.session) : undefined
+      const db = getDb()
+
+      // Resolve scope into ownerKind/ownerRef filters (only when not explicitly set)
+      let ownerKind = input?.ownerKind
+      let ownerRef = input?.ownerRef
+      const teamId = input?.teamId
+      let teamIds: string[] | undefined
+
+      if (scope === 'mine' && !ownerKind && !ownerRef) {
+        ownerKind = 'user'
+        ownerRef = userId
+      } else if (scope === 'my_team' && !teamId) {
+        const teamMemberships = await db
+          .selectFrom('team_members')
+          .select(['team_id'])
+          .where('user_id', '=', userId!)
+          .execute()
+        teamIds = teamMemberships.map((m) => m.team_id)
+      }
+
+      const goals = await listGoals({
+        statuses: input?.statuses,
+        q: input?.q,
+        ownerKind,
+        ownerRef,
+        teamId,
+        initiativeId: input?.initiativeId,
+        includeArchived: input?.includeArchived,
+        limit: input?.limit,
+        sortBy: input?.sort?.field,
+        sortDirection: input?.sort?.direction,
+      })
+
+      // Post-filter for my_team scope (multiple team IDs)
+      let filtered = goals
+      if (scope === 'my_team' && teamIds && teamIds.length > 0) {
+        const teamIdSet = new Set(teamIds)
+        filtered = goals.filter(
+          (g) =>
+            (g.owner_kind === 'team' && g.owner_ref && teamIdSet.has(g.owner_ref)) ||
+            (g.team_id && teamIdSet.has(g.team_id))
+        )
+      }
+
+      const rows = await enrichGoals(filtered)
+      return input?.staleOnly ? rows.filter((goal) => goal.isStale) : rows
+    }),
 
   listInitiatives: protectedProcedure
     .input(
@@ -1290,6 +1456,9 @@ export const workRouter = router({
         ownerKind: actorKindSchema.optional().nullable(),
         ownerRef: z.string().trim().optional().nullable(),
         teamId: z.string().trim().optional().nullable(),
+        progressSource: progressSourceSchema.optional(),
+        progressTarget: z.number().optional().nullable(),
+        progressUnit: z.string().max(50).optional().nullable(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -1305,6 +1474,15 @@ export const workRouter = router({
         team_id: input.teamId ?? null,
         created_by_user_id: userId,
         archived_at: null,
+        ...(input.progressSource !== undefined && {
+          progress_source: input.progressSource,
+        }),
+        ...(input.progressTarget !== undefined && {
+          progress_target: input.progressTarget ?? null,
+        }),
+        ...(input.progressUnit !== undefined && {
+          progress_unit: input.progressUnit ?? null,
+        }),
       })
 
       await createWorkUpdate({
@@ -1334,6 +1512,10 @@ export const workRouter = router({
           ownerRef: z.string().trim().optional().nullable(),
           teamId: z.string().trim().optional().nullable(),
           parentGoalId: z.string().trim().optional().nullable(),
+          progressSource: progressSourceSchema.optional(),
+          progressCurrent: z.number().optional().nullable(),
+          progressTarget: z.number().optional().nullable(),
+          progressUnit: z.string().max(50).optional().nullable(),
         }),
       })
     )
@@ -1359,6 +1541,22 @@ export const workRouter = router({
         owner_ref:
           input.patch.ownerRef === undefined ? existing.owner_ref : (input.patch.ownerRef ?? null),
         team_id: input.patch.teamId === undefined ? existing.team_id : (input.patch.teamId ?? null),
+        progress_source:
+          input.patch.progressSource === undefined
+            ? existing.progress_source
+            : input.patch.progressSource,
+        progress_current:
+          input.patch.progressCurrent === undefined
+            ? existing.progress_current
+            : (input.patch.progressCurrent ?? null),
+        progress_target:
+          input.patch.progressTarget === undefined
+            ? existing.progress_target
+            : (input.patch.progressTarget ?? null),
+        progress_unit:
+          input.patch.progressUnit === undefined
+            ? existing.progress_unit
+            : (input.patch.progressUnit ?? null),
         parent_goal_id:
           input.patch.parentGoalId === undefined
             ? existing.parent_goal_id
@@ -1423,6 +1621,30 @@ export const workRouter = router({
       return requireFirst(await enrichGoals([updated]), 'goal')
     }),
 
+  updateGoalProgress: protectedProcedure
+    .input(
+      z.object({
+        goalId: z.string().min(1),
+        value: z.number(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const existing = await findGoalById(input.goalId)
+      if (!existing) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Goal not found.' })
+      }
+
+      const updated = await updateGoal(input.goalId, {
+        progress_current: input.value,
+      })
+
+      if (!updated) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Goal not found.' })
+      }
+
+      return requireFirst(await enrichGoals([updated]), 'goal')
+    }),
+
   listTickets: protectedProcedure
     .input(ticketListInputSchema.optional())
     .query(async ({ ctx, input }) => {
@@ -1430,24 +1652,33 @@ export const workRouter = router({
       const db = getDb()
       const scope = input?.scope ?? 'all'
       const staleBefore = input?.staleOnly ? now() - WORK_TICKET_STALE_AFTER_SECONDS : undefined
-      const teamMemberships =
-        scope === 'my_team'
-          ? await db
-              .selectFrom('team_members')
-              .select(['team_id'])
-              .where('user_id', '=', userId)
-              .execute()
-          : []
+      // For 'my_team' scope, find agents that belong to the user's teams
+      let myTeamAgentIds: Set<string> | undefined
+      if (scope === 'my_team') {
+        const teamMemberships = await db
+          .selectFrom('team_members')
+          .select(['team_id'])
+          .where('user_id', '=', userId)
+          .execute()
+        const teamIds = teamMemberships.map((m) => m.team_id)
+        if (teamIds.length > 0) {
+          const agentTeams = await db
+            .selectFrom('agent_teams')
+            .select(['agent_id'])
+            .where('team_id', 'in', teamIds)
+            .execute()
+          myTeamAgentIds = new Set(agentTeams.map((at) => at.agent_id))
+        } else {
+          myTeamAgentIds = new Set()
+        }
+      }
 
       let tickets = await listTickets({
         statuses: input?.statuses ?? ['inbox', 'ready', 'in_progress', 'blocked', 'done'],
         q: input?.q,
         goalId: input?.goalId,
-        assigneeKind:
-          scope === 'mine' ? 'user' : scope === 'my_team' ? 'team' : input?.assigneeKind,
+        assigneeKind: scope === 'mine' ? 'user' : input?.assigneeKind,
         assigneeRef: scope === 'mine' ? userId : scope === 'all' ? input?.assigneeRef : undefined,
-        assigneeRefs:
-          scope === 'my_team' ? teamMemberships.map((membership) => membership.team_id) : undefined,
         includeArchived: input?.includeArchived,
         limit: input?.limit ?? 100,
         staleBefore,
@@ -1455,18 +1686,18 @@ export const workRouter = router({
         sortDirection: input?.sort?.direction,
       })
 
-      if (scope === 'my_team') {
-        const teamIds = new Set(teamMemberships.map((membership) => membership.team_id))
+      if (scope === 'my_team' && myTeamAgentIds) {
         tickets = tickets.filter(
           (ticket) =>
-            ticket.assignee_kind === 'team' &&
-            ticket.assignee_ref &&
-            teamIds.has(ticket.assignee_ref)
+            // Tickets assigned to agents on the user's teams
+            (ticket.assignee_kind === 'agent' &&
+              ticket.assignee_ref &&
+              myTeamAgentIds.has(ticket.assignee_ref)) ||
+            // Tickets assigned to the user themselves
+            (ticket.assignee_kind === 'user' && ticket.assignee_ref === userId)
         )
       } else if (scope === 'unclaimed') {
-        tickets = tickets.filter(
-          (ticket) => !ticket.assignee_kind || ticket.assignee_kind === 'team'
-        )
+        tickets = tickets.filter((ticket) => !ticket.assignee_kind)
       }
 
       return enrichTickets(tickets)
@@ -1481,7 +1712,8 @@ export const workRouter = router({
       }
 
       const ticketRow = requireFirst(await enrichTickets([ticket]), 'ticket')
-      const [updates, related, receiptSummary] = await Promise.all([
+      const db = getDb()
+      const [updates, related, receiptSummary, childTicketRows] = await Promise.all([
         listWorkUpdates({ ticketId: ticket.id, limit: 30 }),
         listRelatedTickets({
           text: `${ticket.title} ${ticket.body ?? ''}`,
@@ -1489,11 +1721,23 @@ export const workRouter = router({
           limit: 5,
         }),
         buildTicketReceiptSummary(ticket.id),
+        db
+          .selectFrom('tickets')
+          .select(['id', 'title', 'status'])
+          .where('parent_ticket_id', '=', ticket.id)
+          .where('archived_at', 'is', null)
+          .orderBy('created_at', 'asc')
+          .execute(),
       ])
 
       return {
         ...ticketRow,
         updates,
+        childTickets: childTicketRows.map((row) => ({
+          id: row.id,
+          title: row.title,
+          status: row.status,
+        })),
         relatedTickets: await enrichTickets(related.map((entry) => entry.ticket)),
         relatedScores: related.map((entry) => ({ ticketId: entry.ticket.id, score: entry.score })),
         receiptSummary,
@@ -1869,7 +2113,7 @@ export const workRouter = router({
       } else {
         const team = await db
           .selectFrom('teams')
-          .select(['id', 'name', 'description'])
+          .select(['id', 'name', 'charter'])
           .where('id', '=', input.targetId)
           .executeTakeFirst()
 
@@ -2097,5 +2341,75 @@ export const workRouter = router({
         ticket: requireFirst(await enrichTickets([ticket]), 'ticket'),
         created: true,
       }
+    }),
+
+  reorderGoal: protectedProcedure
+    .input(
+      z.object({
+        goalId: z.string().trim().min(1),
+        newParentGoalId: z.string().trim().nullable(),
+        sortOrder: z.number().int().min(0),
+      })
+    )
+    .mutation(async ({ input }) => {
+      // Cycle detection: walk ancestors of newParentGoalId to ensure goalId is not among them
+      if (input.newParentGoalId) {
+        const visited = new Set<string>()
+        let currentId: string | null = input.newParentGoalId
+        while (currentId) {
+          if (currentId === input.goalId) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Cannot move a goal under itself or one of its descendants.',
+            })
+          }
+          if (visited.has(currentId)) break
+          visited.add(currentId)
+          const parent = await findGoalById(currentId)
+          currentId = parent?.parent_goal_id ?? null
+        }
+      }
+
+      const updated = await reorderGoal(input.goalId, input.newParentGoalId, input.sortOrder)
+      if (!updated) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Goal not found.' })
+      }
+
+      return requireFirst(await enrichGoals([updated]), 'goal')
+    }),
+
+  reorderTicket: protectedProcedure
+    .input(
+      z.object({
+        ticketId: z.string().trim().min(1),
+        newParentTicketId: z.string().trim().nullable(),
+        sortOrder: z.number().int().min(0),
+      })
+    )
+    .mutation(async ({ input }) => {
+      // Cycle detection: walk ancestors of newParentTicketId to ensure ticketId is not among them
+      if (input.newParentTicketId) {
+        const visited = new Set<string>()
+        let currentId: string | null = input.newParentTicketId
+        while (currentId) {
+          if (currentId === input.ticketId) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Cannot move a ticket under itself or one of its descendants.',
+            })
+          }
+          if (visited.has(currentId)) break
+          visited.add(currentId)
+          const parent = await findTicketById(currentId)
+          currentId = parent?.parent_ticket_id ?? null
+        }
+      }
+
+      const updated = await reorderTicket(input.ticketId, input.newParentTicketId, input.sortOrder)
+      if (!updated) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Ticket not found.' })
+      }
+
+      return requireFirst(await enrichTickets([updated]), 'ticket')
     }),
 })

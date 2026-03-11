@@ -1,0 +1,372 @@
+'use client'
+
+import { useEffect, useRef, useState } from 'react'
+import { Plus } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export type ActorKind = 'user' | 'agent'
+export type GoalStatus = 'draft' | 'active' | 'at_risk' | 'blocked' | 'done' | 'archived'
+export type TicketStatus = 'inbox' | 'ready' | 'in_progress' | 'blocked' | 'done' | 'canceled'
+export type SortField = 'updated_at' | 'created_at' | 'title' | 'status'
+export type SortDirection = 'asc' | 'desc'
+export type ItemType = 'goal' | 'ticket'
+
+export type GoalListInput = {
+  scope?: 'mine' | 'my_team' | 'all'
+  statuses?: GoalStatus[]
+  q?: string
+  ownerKind?: ActorKind
+  ownerRef?: string
+  teamId?: string
+  initiativeId?: string
+  staleOnly?: boolean
+  includeArchived?: boolean
+  limit?: number
+  sort?: { field: SortField; direction: SortDirection }
+}
+
+export type TicketListInput = {
+  scope?: 'mine' | 'my_team' | 'unclaimed' | 'all'
+  statuses?: TicketStatus[]
+  q?: string
+  goalId?: string | null
+  assigneeKind?: ActorKind
+  assigneeRef?: string
+  staleOnly?: boolean
+  includeArchived?: boolean
+  limit?: number
+  sort?: { field: SortField; direction: SortDirection }
+}
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+export const ALL_GOAL_STATUSES: GoalStatus[] = [
+  'draft',
+  'active',
+  'at_risk',
+  'blocked',
+  'done',
+  'archived',
+]
+export const ALL_TICKET_STATUSES: TicketStatus[] = [
+  'inbox',
+  'ready',
+  'in_progress',
+  'blocked',
+  'done',
+  'canceled',
+]
+
+export const OPEN_GOAL_STATUSES: GoalStatus[] = ['active', 'at_risk', 'blocked']
+export const OPEN_TICKET_STATUSES: TicketStatus[] = ['inbox', 'ready', 'in_progress', 'blocked']
+
+export const DEFAULT_SORT = {
+  field: 'updated_at' as SortField,
+  direction: 'desc' as SortDirection,
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+export function statusColor(status: string): string {
+  switch (status) {
+    case 'in_progress':
+    case 'active':
+      return 'bg-blue-500'
+    case 'blocked':
+    case 'at_risk':
+      return 'bg-red-500'
+    case 'ready':
+      return 'bg-zinc-400'
+    case 'done':
+      return 'bg-emerald-500'
+    case 'inbox':
+    case 'draft':
+      return 'bg-zinc-600'
+    case 'canceled':
+    case 'archived':
+      return 'bg-zinc-700'
+    default:
+      return 'bg-zinc-500'
+  }
+}
+
+export function healthColor(health: string): string {
+  switch (health) {
+    case 'healthy':
+      return 'bg-emerald-500'
+    case 'at_risk':
+      return 'bg-amber-500'
+    case 'blocked':
+      return 'bg-red-500'
+    default:
+      return 'bg-zinc-500'
+  }
+}
+
+export function statusLabel(status: string): string {
+  return status.replace(/_/g, ' ')
+}
+
+export function isGoalStatus(value: unknown): value is GoalStatus {
+  return ALL_GOAL_STATUSES.includes(value as GoalStatus)
+}
+
+export function isTicketStatus(value: unknown): value is TicketStatus {
+  return ALL_TICKET_STATUSES.includes(value as TicketStatus)
+}
+
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
+
+export function StatusDot({ status, className }: { status: string; className?: string }) {
+  return (
+    <span
+      className={cn('inline-block h-2 w-2 shrink-0 rounded-full', statusColor(status), className)}
+    />
+  )
+}
+
+export function HealthDot({ health, className }: { health: string; className?: string }) {
+  return (
+    <span
+      className={cn('inline-block h-2 w-2 shrink-0 rounded-full', healthColor(health), className)}
+    />
+  )
+}
+
+export function InlineStatusPicker({
+  currentStatus,
+  statuses,
+  onStatusChange,
+  showLabel,
+}: {
+  currentStatus: string
+  statuses: readonly string[]
+  onStatusChange: (status: string) => void
+  showLabel?: boolean
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger
+        className={cn(
+          'group/status inline-flex items-center gap-1.5 rounded p-0.5 transition hover:bg-white/10',
+          showLabel && 'pr-1.5'
+        )}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <StatusDot status={currentStatus} />
+        {showLabel && (
+          <span className="text-xs text-zinc-300 capitalize">{statusLabel(currentStatus)}</span>
+        )}
+      </PopoverTrigger>
+      <PopoverContent className="w-36 p-1" align="start" onClick={(e) => e.stopPropagation()}>
+        {statuses.map((s) => (
+          <button
+            key={s}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onStatusChange(s)
+            }}
+            className={cn(
+              'flex w-full items-center gap-2 rounded px-2 py-1 text-xs transition',
+              s === currentStatus
+                ? 'bg-white/10 text-white'
+                : 'text-zinc-400 hover:bg-white/[0.06] hover:text-white'
+            )}
+          >
+            <StatusDot status={s} className="h-1.5 w-1.5" />
+            {statusLabel(s)}
+          </button>
+        ))}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+export function AvatarCircle({ name, className }: { name?: string | null; className?: string }) {
+  const letter = name ? (name[0]?.toUpperCase() ?? '?') : '?'
+  return (
+    <span
+      className={cn(
+        'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-zinc-700 text-[10px] font-medium text-zinc-300',
+        className
+      )}
+      title={name ?? undefined}
+    >
+      {letter}
+    </span>
+  )
+}
+
+export function ProgressRing({
+  percent,
+  health,
+  size = 18,
+  strokeWidth = 2.5,
+}: {
+  percent: number
+  health: string
+  size?: number
+  strokeWidth?: number
+}) {
+  const radius = (size - strokeWidth) / 2
+  const circumference = 2 * Math.PI * radius
+  const filled = Math.max(0, Math.min(100, percent))
+  const strokeDashoffset = circumference - (filled / 100) * circumference
+
+  const ringColor =
+    health === 'blocked'
+      ? 'stroke-red-500'
+      : health === 'at_risk'
+        ? 'stroke-amber-500'
+        : health === 'done'
+          ? 'stroke-emerald-500'
+          : filled > 0
+            ? 'stroke-blue-500'
+            : 'stroke-zinc-600'
+
+  return (
+    <svg width={size} height={size} className="shrink-0 -rotate-90">
+      {/* Background track */}
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={strokeWidth}
+        className="text-zinc-800"
+      />
+      {/* Progress arc */}
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeDasharray={circumference}
+        strokeDashoffset={strokeDashoffset}
+        className={ringColor}
+        style={{ transition: 'stroke-dashoffset 600ms ease-out' }}
+      />
+    </svg>
+  )
+}
+
+export function formatMetricValue(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`
+  return value.toFixed(value % 1 === 0 ? 0 : 1)
+}
+
+export function TicketProgress({ done, total }: { done: number; total: number }) {
+  if (total === 0) return null
+  const pct = Math.round((done / total) * 100)
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs text-zinc-500 tabular-nums">
+      <span className="relative h-1 w-10 overflow-hidden rounded-full bg-zinc-800">
+        <span
+          className="absolute inset-y-0 left-0 rounded-full bg-zinc-500 transition-[width] duration-300 ease-out"
+          style={{ width: `${pct}%` }}
+        />
+      </span>
+      {done}/{total}
+    </span>
+  )
+}
+
+export function InlineCreateRow({
+  placeholder,
+  indented,
+  depth = 0,
+  isPending,
+  autoFocus,
+  onSubmit,
+  onCancel,
+}: {
+  placeholder: string
+  indented?: boolean
+  depth?: number
+  isPending: boolean
+  autoFocus?: boolean
+  onSubmit: (title: string) => void
+  onCancel?: () => void
+}) {
+  const [editing, setEditing] = useState(!!autoFocus)
+  const [value, setValue] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus()
+  }, [editing])
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter' && value.trim()) {
+      e.preventDefault()
+      onSubmit(value.trim())
+      setValue('')
+      // Keep editing open for rapid entry
+    } else if (e.key === 'Escape') {
+      setValue('')
+      setEditing(false)
+      onCancel?.()
+    }
+  }
+
+  function handleBlur() {
+    if (!value.trim()) {
+      setEditing(false)
+      onCancel?.()
+    }
+  }
+
+  // Compute left padding: base indented padding (pl-12 = 48px) + depth * 24px
+  const paddingLeft = indented ? 48 + depth * 24 : 12 + depth * 24
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        style={{ paddingLeft }}
+        className="flex h-9 w-full items-center gap-2 border-b border-zinc-800/40 pr-3 text-left text-sm text-zinc-500 transition hover:bg-white/[0.03] hover:text-zinc-400"
+      >
+        <Plus className="h-3 w-3 shrink-0" />
+        <span>{placeholder}</span>
+      </button>
+    )
+  }
+
+  return (
+    <div
+      style={{ paddingLeft }}
+      className="flex h-9 w-full items-center gap-2 border-b border-zinc-800/40 pr-3"
+    >
+      <Plus className="h-3 w-3 shrink-0 text-zinc-600" />
+      <input
+        ref={inputRef}
+        type="text"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={handleKeyDown}
+        onBlur={handleBlur}
+        disabled={isPending}
+        placeholder={placeholder}
+        className="min-w-0 flex-1 bg-transparent text-sm text-zinc-200 placeholder:text-zinc-600 outline-none"
+      />
+      {isPending && <span className="text-[10px] text-zinc-600">Saving...</span>}
+    </div>
+  )
+}

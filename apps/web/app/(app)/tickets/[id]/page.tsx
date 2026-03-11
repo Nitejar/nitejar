@@ -12,7 +12,11 @@ export default async function TicketDetailPage({ params }: Props) {
 
   return (
     <div className="space-y-6">
-      <PageHeader category="Work" title="Ticket" backLink={{ href: '/work', label: 'Work' }} />
+      <PageHeader
+        category="Tickets"
+        title="Ticket"
+        backLink={{ href: '/tickets', label: 'Tickets' }}
+      />
       <TicketDetailClient ticketId={id} />
     </div>
   )

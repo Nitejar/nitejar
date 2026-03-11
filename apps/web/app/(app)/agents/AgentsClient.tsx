@@ -57,7 +57,7 @@ function SummaryCard({
   detail?: string
 }) {
   return (
-    <div className="bg-white/[0.03] px-4 py-4">
+    <div className="px-4 py-3">
       <p className="text-[0.6rem] uppercase tracking-[0.25em] text-muted-foreground">{label}</p>
       <p className="mt-2 text-2xl font-semibold tabular-nums">{value}</p>
       {detail ? <p className="mt-1 text-xs text-muted-foreground">{detail}</p> : null}
@@ -76,6 +76,7 @@ export async function AgentsClient() {
     evalStats,
     workloadRollups,
     teamRows,
+    allTeams,
   ] = await Promise.all([
     listAgents(),
     getAgentIdsWithActiveJobs(),
@@ -91,6 +92,11 @@ export async function AgentsClient() {
         'teams.name as team_name',
         'agent_teams.is_primary as is_primary',
       ])
+      .orderBy('teams.name', 'asc')
+      .execute(),
+    db
+      .selectFrom('teams')
+      .select(['teams.id', 'teams.name'])
       .orderBy('teams.name', 'asc')
       .execute(),
   ])
@@ -161,7 +167,7 @@ export async function AgentsClient() {
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 lg:grid-cols-4">
+      <div className="grid divide-x divide-zinc-800 overflow-hidden border border-zinc-800 lg:grid-cols-4">
         <SummaryCard label="Agents" value={agentData.length} detail="Rostered in this fleet" />
         <SummaryCard label="Busy Now" value={busyCount} detail="Agents with active dispatches" />
         <SummaryCard
@@ -180,7 +186,7 @@ export async function AgentsClient() {
         />
       </div>
 
-      <AgentsTable agents={agentData} />
+      <AgentsTable agents={agentData} teams={allTeams} />
     </div>
   )
 }

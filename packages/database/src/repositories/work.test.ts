@@ -42,7 +42,7 @@ async function createSchema(database: ReturnType<typeof getDb>): Promise<void> {
     .ifNotExists()
     .addColumn('id', 'text', (col) => col.primaryKey())
     .addColumn('name', 'text', (col) => col.notNull())
-    .addColumn('description', 'text')
+    .addColumn('charter', 'text')
     .addColumn('slug', 'text')
     .addColumn('created_at', 'integer', (col) => col.notNull())
     .addColumn('updated_at', 'integer', (col) => col.notNull())
@@ -354,11 +354,11 @@ describe('work repository', () => {
     })
     await createTicket({
       goal_id: goal.id,
-      title: 'Queued for team',
+      title: 'Queued for agent-2',
       body: null,
       status: 'inbox',
-      assignee_kind: 'team',
-      assignee_ref: 'team-1',
+      assignee_kind: 'agent',
+      assignee_ref: 'agent-2',
       created_by_user_id: 'user-1',
       claimed_by_kind: null,
       claimed_by_ref: null,
@@ -381,11 +381,11 @@ describe('work repository', () => {
 
     const workload = await listTicketWorkloadRollups()
     const agentQueue = workload.find((entry) => entry.assignee_ref === 'agent-1')
-    const teamQueue = workload.find((entry) => entry.assignee_ref === 'team-1')
+    const agent2Queue = workload.find((entry) => entry.assignee_ref === 'agent-2')
 
     expect(agentQueue?.open_count).toBe(3)
     expect(agentQueue?.blocked_count).toBe(1)
-    expect(teamQueue?.inbox_count).toBe(1)
+    expect(agent2Queue?.inbox_count).toBe(1)
 
     const agentRollups = await listAgentWorkloadRollups({
       agentIds: ['agent-1'],
@@ -466,7 +466,7 @@ describe('work repository', () => {
         {
           id: 'team-ops',
           name: 'Ops',
-          description: 'Keep the company moving.',
+          charter: 'Keep the company moving.',
           slug: 'ops',
           created_at: 1,
           updated_at: 1,
@@ -474,7 +474,7 @@ describe('work repository', () => {
         {
           id: 'team-eng',
           name: 'Engineering',
-          description: 'Build the product.',
+          charter: 'Build the product.',
           slug: 'engineering',
           created_at: 1,
           updated_at: 1,
@@ -505,8 +505,8 @@ describe('work repository', () => {
       title: 'Handle support queue',
       outcome: 'Support stays under control.',
       status: 'active',
-      owner_kind: 'team',
-      owner_ref: 'team-ops',
+      owner_kind: 'agent',
+      owner_ref: 'agent-3',
       created_by_user_id: 'user-1',
       archived_at: null,
     })
@@ -550,8 +550,8 @@ describe('work repository', () => {
       title: 'Queue work for Ops',
       body: null,
       status: 'ready',
-      assignee_kind: 'team',
-      assignee_ref: 'team-ops',
+      assignee_kind: 'agent',
+      assignee_ref: 'agent-3',
       created_by_user_id: 'user-1',
       claimed_by_kind: null,
       claimed_by_ref: null,
@@ -608,7 +608,7 @@ describe('work repository', () => {
       .values({
         id: 'team-ops',
         name: 'Ops',
-        description: 'Keep the company moving.',
+        charter: 'Keep the company moving.',
         slug: 'ops',
         created_at: 1,
         updated_at: 1,
@@ -638,8 +638,8 @@ describe('work repository', () => {
       title: 'Operate the queue',
       outcome: 'Ops covers daily work.',
       status: 'active',
-      owner_kind: 'team',
-      owner_ref: 'team-ops',
+      owner_kind: 'agent',
+      owner_ref: 'agent-1',
       created_by_user_id: 'user-1',
       archived_at: null,
     })
@@ -648,8 +648,8 @@ describe('work repository', () => {
       title: 'Respond to approvals',
       outcome: 'Approvals do not back up.',
       status: 'active',
-      owner_kind: 'team',
-      owner_ref: 'team-ops',
+      owner_kind: 'agent',
+      owner_ref: 'agent-2',
       created_by_user_id: 'user-1',
       archived_at: null,
     })
@@ -672,8 +672,8 @@ describe('work repository', () => {
       title: 'Wait for Ops claim',
       body: null,
       status: 'blocked',
-      assignee_kind: 'team',
-      assignee_ref: 'team-ops',
+      assignee_kind: 'agent',
+      assignee_ref: 'agent-2',
       created_by_user_id: 'user-1',
       claimed_by_kind: null,
       claimed_by_ref: null,

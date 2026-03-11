@@ -5,6 +5,7 @@ import {
   createAgentSandbox,
   createCostLimit,
   createMemory,
+  deleteAgent,
   findAgentByHandle,
   findAgentById,
   getPluginInstancesForAgent,
@@ -266,7 +267,7 @@ export const orgRouter = router({
     .input(
       z.object({
         name: z.string().trim().min(2),
-        description: z.string().trim().optional().nullable(),
+        charter: z.string().trim().optional().nullable(),
         slug: z.string().trim().optional().nullable(),
       })
     )
@@ -286,7 +287,7 @@ export const orgRouter = router({
         .values({
           id,
           name: input.name,
-          description: input.description ?? null,
+          charter: input.charter ?? null,
           slug,
           created_at: timestamp,
           updated_at: timestamp,
@@ -455,6 +456,38 @@ export const orgRouter = router({
         .where('team_id', '=', input.teamId)
         .where('agent_id', '=', input.agentId)
         .execute()
+      return { ok: true }
+    }),
+
+  unassignAgentFromAllTeams: protectedProcedure
+    .input(z.object({ agentId: z.string() }))
+    .mutation(async ({ input }) => {
+      const db = getDb()
+      await db.deleteFrom('agent_teams').where('agent_id', '=', input.agentId).execute()
+      return { ok: true }
+    }),
+
+  deleteAgentPermanently: protectedProcedure
+    .input(z.object({ agentId: z.string() }))
+    .mutation(async ({ input }) => {
+      const agent = await findAgentById(input.agentId)
+      if (!agent) throw new Error('Agent not found')
+
+      const db = getDb()
+
+      // Clean up related data
+      await db.deleteFrom('agent_memories').where('agent_id', '=', agent.id).execute()
+      await db.deleteFrom('agent_sandboxes').where('agent_id', '=', agent.id).execute()
+      await db.deleteFrom('agent_teams').where('agent_id', '=', agent.id).execute()
+      await db.deleteFrom('agent_plugin_instances').where('agent_id', '=', agent.id).execute()
+      await db.deleteFrom('cost_limits').where('agent_id', '=', agent.id).execute()
+      await db
+        .deleteFrom('skill_assignments')
+        .where('scope', '=', 'agent')
+        .where('scope_id', '=', agent.id)
+        .execute()
+
+      await deleteAgent(agent.id)
       return { ok: true }
     }),
 

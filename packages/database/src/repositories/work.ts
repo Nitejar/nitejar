@@ -2,6 +2,7 @@ import { sql, type Kysely } from 'kysely'
 import { generateUuidV7 } from '@nitejar/core'
 import { getDb } from '../db'
 import type {
+  AgentTeam,
   Database,
   Goal,
   GoalAgentAllocation,
@@ -11,14 +12,14 @@ import type {
   NewGoal,
   NewGoalAgentAllocation,
   NewInitiative,
-  NewOrgUnit,
+  NewTeam,
   NewTicket,
   NewTicketLink,
   NewTicketRelation,
   NewWorkView,
   NewWorkUpdate,
-  OrgUnit,
-  OrgUnitUpdate,
+  Team,
+  TeamUpdate,
   Ticket,
   TicketLink,
   TicketRelation,
@@ -41,20 +42,18 @@ export const WORK_TICKET_STALE_AFTER_SECONDS = 48 * 60 * 60
 export const WORK_GOAL_ACTIVITY_STALE_AFTER_SECONDS = 72 * 60 * 60
 export const WORK_GOAL_HEARTBEAT_STALE_AFTER_SECONDS = 7 * 24 * 60 * 60
 
-export interface ListOrgUnitsOptions {
-  parentOrgUnitId?: string | null
-  kinds?: string[]
-  includeChildren?: boolean
-}
+// ---------------------------------------------------------------------------
+// Teams
+// ---------------------------------------------------------------------------
 
-export async function createOrgUnit(
-  data: Omit<NewOrgUnit, 'id' | 'created_at' | 'updated_at'>,
+export async function createTeam(
+  data: Omit<NewTeam, 'id' | 'created_at' | 'updated_at'>,
   trx?: Kysely<Database>
-): Promise<OrgUnit> {
+): Promise<Team> {
   const db = trx ?? getDb()
   const timestamp = now()
   return db
-    .insertInto('org_units')
+    .insertInto('teams')
     .values({
       id: uuid(),
       ...data,
@@ -65,14 +64,14 @@ export async function createOrgUnit(
     .executeTakeFirstOrThrow()
 }
 
-export async function updateOrgUnit(
+export async function updateTeam(
   id: string,
-  data: Omit<OrgUnitUpdate, 'id' | 'created_at'>,
+  data: Omit<TeamUpdate, 'id' | 'created_at'>,
   trx?: Kysely<Database>
-): Promise<OrgUnit | null> {
+): Promise<Team | null> {
   const db = trx ?? getDb()
   const row = await db
-    .updateTable('org_units')
+    .updateTable('teams')
     .set({
       ...data,
       updated_at: now(),
@@ -80,31 +79,54 @@ export async function updateOrgUnit(
     .where('id', '=', id)
     .returningAll()
     .executeTakeFirst()
-
   return row ?? null
 }
 
-export async function findOrgUnitById(id: string): Promise<OrgUnit | null> {
+export async function findTeamById(id: string): Promise<Team | null> {
   const db = getDb()
-  const row = await db.selectFrom('org_units').selectAll().where('id', '=', id).executeTakeFirst()
+  const row = await db.selectFrom('teams').selectAll().where('id', '=', id).executeTakeFirst()
   return row ?? null
 }
 
-export async function listOrgUnits(opts: ListOrgUnitsOptions = {}): Promise<OrgUnit[]> {
-  const db = getDb()
-  let query = db.selectFrom('org_units').selectAll()
+export async function deleteTeam(id: string, trx?: Kysely<Database>): Promise<boolean> {
+  const db = trx ?? getDb()
+  const result = await db.deleteFrom('teams').where('id', '=', id).executeTakeFirst()
+  return (result?.numDeletedRows ?? 0n) > 0n
+}
 
-  if (opts.parentOrgUnitId === null) {
-    query = query.where('parent_org_unit_id', 'is', null)
-  } else if (opts.parentOrgUnitId) {
-    query = query.where('parent_org_unit_id', '=', opts.parentOrgUnitId)
-  }
+// ---------------------------------------------------------------------------
+// Agent Team Assignments
+// ---------------------------------------------------------------------------
 
-  if (opts.kinds && opts.kinds.length > 0) {
-    query = query.where('kind', 'in', opts.kinds)
-  }
+export async function addAgentToTeam(
+  data: { agent_id: string; team_id: string; is_primary?: number },
+  trx?: Kysely<Database>
+): Promise<AgentTeam> {
+  const db = trx ?? getDb()
+  return db
+    .insertInto('agent_teams')
+    .values({
+      agent_id: data.agent_id,
+      team_id: data.team_id,
+      is_primary: data.is_primary ?? 0,
+      created_at: now(),
+    })
+    .returningAll()
+    .executeTakeFirstOrThrow()
+}
 
-  return query.orderBy('sort_order', 'asc').orderBy('name', 'asc').execute()
+export async function removeAgentFromTeam(
+  agentId: string,
+  teamId: string,
+  trx?: Kysely<Database>
+): Promise<boolean> {
+  const db = trx ?? getDb()
+  const result = await db
+    .deleteFrom('agent_teams')
+    .where('agent_id', '=', agentId)
+    .where('team_id', '=', teamId)
+    .executeTakeFirst()
+  return (result?.numDeletedRows ?? 0n) > 0n
 }
 
 export interface ListInitiativesOptions {
@@ -379,12 +401,17 @@ export async function listGoals(opts: ListGoalsOptions = {}): Promise<Goal[]> {
     )
   }
 
-  const sortDirection = opts.sortDirection === 'asc' ? 'asc' : 'desc'
   const sortBy = opts.sortBy ?? 'updated_at'
-  if (sortBy === 'title' || sortBy === 'status') {
-    query = query.orderBy(sortBy, sortDirection).orderBy('updated_at', 'desc')
+  if (sortBy === 'updated_at' && !opts.sortDirection) {
+    // Default sort: sort_order asc, created_at asc
+    query = query.orderBy('sort_order', 'asc').orderBy('created_at', 'asc')
   } else {
-    query = query.orderBy(sortBy, sortDirection).orderBy('created_at', 'desc')
+    const sortDirection = opts.sortDirection === 'asc' ? 'asc' : 'desc'
+    if (sortBy === 'title' || sortBy === 'status') {
+      query = query.orderBy(sortBy, sortDirection).orderBy('updated_at', 'desc')
+    } else {
+      query = query.orderBy(sortBy, sortDirection).orderBy('created_at', 'desc')
+    }
   }
 
   if (opts.limit) {
@@ -535,12 +562,17 @@ export async function listTickets(opts: ListTicketsOptions = {}): Promise<Ticket
     )
   }
 
-  const sortDirection = opts.sortDirection === 'asc' ? 'asc' : 'desc'
   const sortBy = opts.sortBy ?? 'updated_at'
-  if (sortBy === 'title' || sortBy === 'status') {
-    query = query.orderBy(sortBy, sortDirection).orderBy('updated_at', 'desc')
+  if (sortBy === 'updated_at' && !opts.sortDirection) {
+    // Default sort: sort_order asc, created_at asc
+    query = query.orderBy('sort_order', 'asc').orderBy('created_at', 'asc')
   } else {
-    query = query.orderBy(sortBy, sortDirection).orderBy('created_at', 'desc')
+    const sortDirection = opts.sortDirection === 'asc' ? 'asc' : 'desc'
+    if (sortBy === 'title' || sortBy === 'status') {
+      query = query.orderBy(sortBy, sortDirection).orderBy('updated_at', 'desc')
+    } else {
+      query = query.orderBy(sortBy, sortDirection).orderBy('created_at', 'desc')
+    }
   }
 
   if (opts.limit) {
@@ -548,6 +580,86 @@ export async function listTickets(opts: ListTicketsOptions = {}): Promise<Ticket
   }
 
   return query.execute()
+}
+
+export async function reorderGoal(
+  goalId: string,
+  newParentGoalId: string | null,
+  newSortOrder: number
+): Promise<Goal | undefined> {
+  const db = getDb()
+  const timestamp = now()
+
+  // Shift siblings: increment sort_order for all goals in the target parent at or after newSortOrder
+  if (newParentGoalId === null) {
+    await db
+      .updateTable('goals')
+      .set((eb) => ({ sort_order: eb('sort_order', '+', 1) }))
+      .where('parent_goal_id', 'is', null)
+      .where('sort_order', '>=', newSortOrder)
+      .where('id', '!=', goalId)
+      .execute()
+  } else {
+    await db
+      .updateTable('goals')
+      .set((eb) => ({ sort_order: eb('sort_order', '+', 1) }))
+      .where('parent_goal_id', '=', newParentGoalId)
+      .where('sort_order', '>=', newSortOrder)
+      .where('id', '!=', goalId)
+      .execute()
+  }
+
+  // Update the goal's parent and sort_order
+  return db
+    .updateTable('goals')
+    .set({
+      parent_goal_id: newParentGoalId,
+      sort_order: newSortOrder,
+      updated_at: timestamp,
+    })
+    .where('id', '=', goalId)
+    .returningAll()
+    .executeTakeFirst()
+}
+
+export async function reorderTicket(
+  ticketId: string,
+  newParentTicketId: string | null,
+  newSortOrder: number
+): Promise<Ticket | undefined> {
+  const db = getDb()
+  const timestamp = now()
+
+  // Shift siblings: increment sort_order for all tickets in the target parent at or after newSortOrder
+  if (newParentTicketId === null) {
+    await db
+      .updateTable('tickets')
+      .set((eb) => ({ sort_order: eb('sort_order', '+', 1) }))
+      .where('parent_ticket_id', 'is', null)
+      .where('sort_order', '>=', newSortOrder)
+      .where('id', '!=', ticketId)
+      .execute()
+  } else {
+    await db
+      .updateTable('tickets')
+      .set((eb) => ({ sort_order: eb('sort_order', '+', 1) }))
+      .where('parent_ticket_id', '=', newParentTicketId)
+      .where('sort_order', '>=', newSortOrder)
+      .where('id', '!=', ticketId)
+      .execute()
+  }
+
+  // Update the ticket's parent and sort_order
+  return db
+    .updateTable('tickets')
+    .set({
+      parent_ticket_id: newParentTicketId,
+      sort_order: newSortOrder,
+      updated_at: timestamp,
+    })
+    .where('id', '=', ticketId)
+    .returningAll()
+    .executeTakeFirst()
 }
 
 export async function createTicketRelation(
@@ -1583,11 +1695,6 @@ export async function listGoalCoverageRollups(opts?: {
       if (primaryTeamId) current.activeTeams.add(primaryTeamId)
     }
 
-    if (goal.owner_kind === 'team' && goal.owner_ref) {
-      current.staffedTeams.add(goal.owner_ref)
-      current.activeTeams.add(goal.owner_ref)
-    }
-
     staffingByGoal.set(goal.id, current)
   }
 
@@ -1627,11 +1734,6 @@ export async function listGoalCoverageRollups(opts?: {
       }
     }
 
-    if (ticket.assignee_kind === 'team' && ticket.assignee_ref) {
-      current.staffedTeams.add(ticket.assignee_ref)
-      current.activeTeams.add(ticket.assignee_ref)
-    }
-
     staffingByGoal.set(ticket.goal_id, current)
   }
 
@@ -1658,8 +1760,6 @@ export async function listGoalCoverageRollups(opts?: {
       let primaryTeamId: string | null = null
       if (goal.team_id) {
         primaryTeamId = goal.team_id
-      } else if (goal.owner_kind === 'team' && goal.owner_ref) {
-        primaryTeamId = goal.owner_ref
       } else if (goal.owner_kind === 'agent' && goal.owner_ref) {
         primaryTeamId = primaryTeamByAgent.get(goal.owner_ref) ?? null
       } else if (activeTeamIds.length === 1) {
@@ -1709,7 +1809,7 @@ export async function listGoalCoverageRollups(opts?: {
 export interface TeamPortfolioRollup {
   team_id: string
   name: string
-  description: string | null
+  charter: string | null
   member_count: number
   agent_count: number
   primary_agent_count: number
@@ -1730,7 +1830,7 @@ export async function listTeamPortfolioRollups(opts?: {
   teamIds?: string[]
 }): Promise<TeamPortfolioRollup[]> {
   const db = getDb()
-  let teamsQuery = db.selectFrom('teams').select(['id', 'name', 'description'])
+  let teamsQuery = db.selectFrom('teams').select(['id', 'name', 'charter'])
 
   if (opts?.teamIds && opts.teamIds.length > 0) {
     teamsQuery = teamsQuery.where('id', 'in', opts.teamIds)
@@ -1883,7 +1983,7 @@ export async function listTeamPortfolioRollups(opts?: {
       return {
         team_id: team.id,
         name: team.name,
-        description: team.description,
+        charter: team.charter,
         member_count: memberCountByTeam.get(team.id) ?? 0,
         agent_count: agentCountByTeam.get(team.id) ?? 0,
         primary_agent_count: primaryAgentCountByTeam.get(team.id) ?? 0,

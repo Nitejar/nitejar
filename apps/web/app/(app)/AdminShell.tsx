@@ -14,7 +14,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
       {/* Decorative gradient */}
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.08),transparent_50%),radial-gradient(ellipse_at_bottom_right,rgba(14,165,233,0.06),transparent_50%)]" />
 
-      <main className="relative mx-auto max-w-7xl px-6 py-8">{children}</main>
+      <main className="relative px-6 pt-4 pb-6">{children}</main>
     </div>
   )
 }

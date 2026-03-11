@@ -1,26 +1,32 @@
+import { Suspense } from 'react'
 import { AgentsClient } from './AgentsClient'
 import { AgentListActions } from './AgentListActions'
 import { ClientErrorBoundary } from '../components/ClientErrorBoundary'
+import { SkeletonSummaryCards, SkeletonTable } from '../work/skeletons'
 
 export const dynamic = 'force-dynamic'
 
-export default function AgentsPage() {
+function AgentsSkeleton() {
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-[0.65rem] uppercase tracking-[0.35em] text-muted-foreground">Agents</p>
-          <h2 className="text-2xl font-semibold">Agents</h2>
-          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Fleet health first, then the full roster. Configure identities, manage capabilities, and
-            monitor agent readiness in one place.
-          </p>
-        </div>
+      <SkeletonSummaryCards count={4} />
+      <SkeletonTable rows={5} columns={5} />
+    </div>
+  )
+}
+
+export default function AgentsPage() {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h1 className="text-sm font-medium text-zinc-100">Agents</h1>
         <AgentListActions />
       </div>
 
       <ClientErrorBoundary label="Agents">
-        <AgentsClient />
+        <Suspense fallback={<AgentsSkeleton />}>
+          <AgentsClient />
+        </Suspense>
       </ClientErrorBoundary>
     </div>
   )

@@ -29,7 +29,6 @@ export interface Database {
   oauth_access_token: OAuthAccessTokenTable
   oauth_consent: OAuthConsentTable
   invitations: InvitationTable
-  org_units: OrgUnitTable
   teams: TeamTable
   team_members: TeamMemberTable
   agent_teams: AgentTeamTable
@@ -526,37 +525,18 @@ export type NewInvitation = Insertable<InvitationTable>
 export type InvitationUpdate = Updateable<InvitationTable>
 
 // ============================================================================
-// Org Units
-// ============================================================================
-
-export interface OrgUnitTable {
-  id: Generated<string>
-  parent_org_unit_id: string | null
-  name: string
-  slug: string | null
-  description: string | null
-  kind: Generated<string> // 'company' | 'function' | 'department' | 'team'
-  owner_kind: string | null // 'user' | 'agent' | 'team'
-  owner_ref: string | null
-  sort_order: Generated<number>
-  created_at: Generated<number>
-  updated_at: Generated<number>
-}
-
-export type OrgUnit = Selectable<OrgUnitTable>
-export type NewOrgUnit = Insertable<OrgUnitTable>
-export type OrgUnitUpdate = Updateable<OrgUnitTable>
-
-// ============================================================================
-// Teams
+// Teams (unified — replaces former org_units + teams split)
 // ============================================================================
 
 export interface TeamTable {
   id: Generated<string>
-  org_unit_id: string | null
+  parent_team_id: string | null
   name: string
-  description: string | null
+  charter: string | null
   slug: string | null
+  sort_order: Generated<number>
+  lead_kind: string | null // 'user' | 'agent'
+  lead_ref: string | null // FK to users.id or agents.id
   created_at: Generated<number>
   updated_at: Generated<number>
 }
@@ -572,7 +552,7 @@ export type TeamUpdate = Updateable<TeamTable>
 export interface TeamMemberTable {
   team_id: string
   user_id: string
-  role: Generated<string> // 'member' (future: 'lead', etc.)
+  role: Generated<string> // 'member' | 'lead'
   created_at: Generated<number>
 }
 
@@ -586,7 +566,7 @@ export type TeamMemberUpdate = Updateable<TeamMemberTable>
 
 export interface AgentTeamTable {
   team_id: string
-  agent_id: string
+  agent_id: string // unique — one team per agent
   is_primary: Generated<number> // 0/1 for SQLite
   created_at: Generated<number>
 }
@@ -631,9 +611,14 @@ export interface GoalTable {
   title: string
   outcome: string
   status: Generated<string> // 'draft' | 'active' | 'at_risk' | 'blocked' | 'done' | 'archived'
-  owner_kind: string | null // 'user' | 'agent' | 'team'
+  owner_kind: string | null // 'user' | 'agent'
   owner_ref: string | null
   team_id: string | null
+  progress_source: Generated<string> // 'ticket_rollup' | 'sub_goal_rollup' | 'number' | 'currency' | 'percentage' | 'boolean'
+  progress_current: number | null
+  progress_target: number | null
+  progress_unit: string | null // label for number/currency metrics (e.g. "engineers", "USD", "ms")
+  sort_order: Generated<number>
   created_by_user_id: string | null
   created_at: Generated<number>
   updated_at: Generated<number>
@@ -663,12 +648,13 @@ export interface TicketTable {
   title: string
   body: string | null
   status: Generated<string> // 'inbox' | 'ready' | 'in_progress' | 'blocked' | 'done' | 'canceled'
-  assignee_kind: string | null // 'user' | 'agent' | 'team'
+  assignee_kind: string | null // 'user' | 'agent'
   assignee_ref: string | null
   created_by_user_id: string | null
   claimed_by_kind: string | null
   claimed_by_ref: string | null
   claimed_at: number | null
+  sort_order: Generated<number>
   created_at: Generated<number>
   updated_at: Generated<number>
   archived_at: number | null

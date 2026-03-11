@@ -12,7 +12,7 @@ export default async function GoalDetailPage({ params }: Props) {
 
   return (
     <div className="space-y-6">
-      <PageHeader category="Work" title="Goal" backLink={{ href: '/work', label: 'Work' }} />
+      <PageHeader category="Goals" title="Goal" backLink={{ href: '/goals', label: 'Goals' }} />
       <GoalDetailClient goalId={id} />
     </div>
   )

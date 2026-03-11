@@ -1,19 +1,27 @@
 import { TRPCError } from '@trpc/server'
 import { parseAgentConfig } from '@nitejar/agent/config'
 import {
+  addAgentToTeam,
+  createTeam,
   createWorkUpdate,
   createWorkView,
   deleteGoalAgentAllocation,
+  deleteTeam,
   deleteWorkView,
   findGoalById,
+  findTeamById,
   findWorkViewById,
   getCompanyOverviewRollup,
   getDb,
+  getTeamSpendInWindow,
+  sql,
   listAgentAllocationRollups,
   listGoalCoverageRollups,
   listTeamPortfolioRollups,
   listWorkViews,
+  removeAgentFromTeam,
   updateGoal,
+  updateTeam,
   updateWorkView,
   upsertGoalAgentAllocation,
 } from '@nitejar/database'
@@ -299,7 +307,7 @@ function classifyManagementEvent(args: { kind: string; body: string; teamId: str
 
 async function buildCompanyOverview() {
   const db = getDb()
-  const [summary, goalCoverage, teamRollups, agentRollups, recentUpdates, orgUnits, initiatives] =
+  const [summary, goalCoverage, teamRollups, agentRollups, recentUpdates, allTeams, initiatives] =
     await Promise.all([
       getCompanyOverviewRollup(),
       listGoalCoverageRollups(),
@@ -322,8 +330,8 @@ async function buildCompanyOverview() {
         .limit(40)
         .execute(),
       db
-        .selectFrom('org_units')
-        .selectAll()
+        .selectFrom('teams')
+        .select(['id', 'name', 'charter', 'parent_team_id', 'sort_order', 'lead_kind', 'lead_ref'])
         .orderBy('sort_order', 'asc')
         .orderBy('name', 'asc')
         .execute(),
@@ -359,16 +367,13 @@ async function buildCompanyOverview() {
     ]),
   ]
 
-  const [goals, teamsMeta, teamMembers, teamAgents, actors] = await Promise.all([
+  const [goals, teamMembers, teamAgents, actors] = await Promise.all([
     goalIds.length > 0
       ? db
           .selectFrom('goals')
           .select(['id', 'initiative_id', 'parent_goal_id', 'title', 'outcome'])
           .where('id', 'in', goalIds)
           .execute()
-      : Promise.resolve([]),
-    teamIds.length > 0
-      ? db.selectFrom('teams').select(['id', 'org_unit_id']).where('id', 'in', teamIds).execute()
       : Promise.resolve([]),
     teamIds.length > 0
       ? db
@@ -408,7 +413,6 @@ async function buildCompanyOverview() {
       ...goalCoverage.flatMap((goal) =>
         goal.active_team_ids.map((teamId) => ({ kind: 'team', ref: teamId }))
       ),
-      ...orgUnits.map((unit) => ({ kind: unit.owner_kind, ref: unit.owner_ref })),
       ...initiatives.map((initiative) => ({
         kind: initiative.owner_kind,
         ref: initiative.owner_ref,
@@ -422,7 +426,7 @@ async function buildCompanyOverview() {
 
   const goalMap = new Map(goals.map((goal) => [goal.id, goal]))
   const initiativeMap = new Map(initiatives.map((initiative) => [initiative.id, initiative]))
-  const teamsMetaMap = new Map(teamsMeta.map((team) => [team.id, team]))
+  const allTeamsMap = new Map(allTeams.map((team) => [team.id, team]))
 
   const goalsInProgress = goalCoverage
     .filter((goal) => goal.goal_status !== 'done' && goal.goal_status !== 'archived')
@@ -483,8 +487,8 @@ async function buildCompanyOverview() {
         lastActivityAt: goal.last_activity_at,
         isStale: goal.is_stale,
         receiptLinks: {
-          goal: `/work/goals/${goal.goal_id}`,
-          work: `/work`,
+          goal: `/goals/${goal.goal_id}`,
+          work: `/tickets`,
           agents: `/agents`,
           activity: `/activity`,
           costs: `/costs`,
@@ -545,9 +549,9 @@ async function buildCompanyOverview() {
 
   const teams = teamRollups.map((team) => ({
     id: team.team_id,
-    orgUnitId: teamsMetaMap.get(team.team_id)?.org_unit_id ?? null,
+    parentTeamId: allTeamsMap.get(team.team_id)?.parent_team_id ?? null,
     name: team.name,
-    description: team.description,
+    charter: team.charter,
     memberCount: team.member_count,
     agentCount: team.agent_count,
     primaryAgentCount: team.primary_agent_count,
@@ -725,44 +729,38 @@ async function buildCompanyOverview() {
     }
   })
 
-  const organization = orgUnits.map((unit) => {
-    const childUnits = orgUnits
-      .filter((candidate) => candidate.parent_org_unit_id === unit.id)
-      .map((candidate) => ({
-        id: candidate.id,
-        name: candidate.name,
-        kind: candidate.kind,
-      }))
-    const unitTeams = teams
-      .filter((team) => team.orgUnitId === unit.id)
-      .map((team) => ({
-        id: team.id,
-        name: team.name,
-        heartbeatPosture: team.heartbeatPosture,
-        activeGoalCount: team.activeGoalCount,
-        queuedTicketCount: team.queuedTicketCount,
-        goalsNeedingStaffingCount: team.goalsNeedingStaffingCount,
-        overloadedAgentCount: team.overloadedAgentCount,
-      }))
+  // Resolve leads for ALL teams using lead_kind/lead_ref on teams table
+  const allTeamIds = allTeams.map((t) => t.id)
+  const leadActorRefs = allTeams
+    .filter((t) => t.lead_kind && t.lead_ref)
+    .map((t) => ({ kind: t.lead_kind, ref: t.lead_ref }))
+  const leadActors = await resolveActors(leadActorRefs)
 
-    const goalCount = unitTeams.reduce((sum, team) => sum + team.activeGoalCount, 0)
-    const initiativeCount = initiativeRows.filter(
-      (initiative) =>
-        initiative.team?.ref && unitTeams.some((team) => team.id === initiative.team?.ref)
-    ).length
+  // Count agents per team
+  const allAgentCounts =
+    allTeamIds.length > 0
+      ? await db
+          .selectFrom('agent_teams')
+          .select(['team_id', sql<number>`count(*)`.as('count')])
+          .where('team_id', 'in', allTeamIds)
+          .groupBy('team_id')
+          .execute()
+      : []
+  const agentCountByTeamId = new Map(allAgentCounts.map((r) => [r.team_id, r.count]))
 
+  const organization = allTeams.map((team) => {
+    const lead =
+      team.lead_kind && team.lead_ref
+        ? presentActor(team.lead_kind, team.lead_ref, leadActors)
+        : null
     return {
-      id: unit.id,
-      parentOrgUnitId: unit.parent_org_unit_id,
-      name: unit.name,
-      description: unit.description,
-      kind: unit.kind,
-      owner: presentActor(unit.owner_kind, unit.owner_ref, actors),
-      childUnits,
-      teams: unitTeams,
-      teamCount: unitTeams.length,
-      goalCount,
-      initiativeCount,
+      id: team.id,
+      parentTeamId: team.parent_team_id,
+      name: team.name,
+      charter: team.charter,
+      sortOrder: team.sort_order,
+      agentCount: agentCountByTeamId.get(team.id) ?? 0,
+      lead,
     }
   })
 
@@ -772,7 +770,7 @@ async function buildCompanyOverview() {
       ownership_open_count: ownershipOpenCount,
       idle_agent_count: idleAgentCount,
       overloaded_team_count: overloadedTeamCount,
-      org_unit_count: organization.length,
+      team_count: allTeams.length,
       initiative_count: initiativeRows.length,
       staffed_agent_count: new Set(
         goalsInProgress.flatMap((goal) => goal.staffedAgents.map((agent) => agent.ref))
@@ -927,7 +925,7 @@ export const companyRouter = router({
     .input(
       z.object({
         goalId: z.string().trim().min(1),
-        ownerKind: z.enum(['user', 'agent', 'team']).optional().nullable(),
+        ownerKind: z.enum(['user', 'agent']).optional().nullable(),
         ownerRef: z.string().trim().optional().nullable(),
       })
     )
@@ -1031,4 +1029,655 @@ export const companyRouter = router({
 
       return { ok: true }
     }),
+
+  getTeamDetail: protectedProcedure
+    .input(z.object({ teamId: z.string().trim().min(1) }))
+    .query(async ({ input }) => {
+      const db = getDb()
+      const { teamId } = input
+
+      // --- 1. Team row ---
+      const teamRow = await db
+        .selectFrom('teams')
+        .selectAll()
+        .where('id', '=', teamId)
+        .executeTakeFirst()
+      if (!teamRow) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Team not found.' })
+      }
+
+      // Resolve parent team name if present
+      let parentTeamName: string | null = null
+      if (teamRow.parent_team_id) {
+        const parentTeam = await db
+          .selectFrom('teams')
+          .select(['name'])
+          .where('id', '=', teamRow.parent_team_id)
+          .executeTakeFirst()
+        parentTeamName = parentTeam?.name ?? null
+      }
+
+      // --- 2. Members ---
+      const memberRows = await db
+        .selectFrom('team_members')
+        .innerJoin('users', 'users.id', 'team_members.user_id')
+        .select([
+          'users.id as id',
+          'users.name as name',
+          'users.avatar_url as avatar_url',
+          'team_members.role as role',
+        ])
+        .where('team_members.team_id', '=', teamId)
+        .execute()
+
+      const members = memberRows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        avatarUrl: row.avatar_url,
+        role: row.role,
+      }))
+
+      // --- 3. Agents with workload stats ---
+      const agentRows = await db
+        .selectFrom('agent_teams')
+        .innerJoin('agents', 'agents.id', 'agent_teams.agent_id')
+        .select([
+          'agents.id as id',
+          'agents.name as name',
+          'agents.handle as handle',
+          'agents.config as config',
+          'agent_teams.is_primary as is_primary',
+        ])
+        .where('agent_teams.team_id', '=', teamId)
+        .execute()
+
+      const agentIds = agentRows.map((row) => row.id)
+
+      // Get per-agent ticket counts
+      const agentTicketCounts =
+        agentIds.length > 0
+          ? await db
+              .selectFrom('tickets')
+              .select([
+                'assignee_ref as agent_id',
+                sql<number>`sum(case when status in ('inbox', 'ready', 'in_progress', 'blocked') then 1 else 0 end)`.as(
+                  'open_count'
+                ),
+                sql<number>`sum(case when status = 'blocked' then 1 else 0 end)`.as(
+                  'blocked_count'
+                ),
+              ])
+              .where('archived_at', 'is', null)
+              .where('assignee_kind', '=', 'agent')
+              .where('assignee_ref', 'in', agentIds)
+              .groupBy('assignee_ref')
+              .execute()
+          : []
+
+      const ticketCountByAgent = new Map(
+        agentTicketCounts
+          .filter((row): row is typeof row & { agent_id: string } => !!row.agent_id)
+          .map((row) => [row.agent_id, { open: row.open_count, blocked: row.blocked_count }])
+      )
+
+      const agents = agentRows.map((row) => {
+        const parsed = parseAgentConfig(row.config)
+        const counts = ticketCountByAgent.get(row.id) ?? { open: 0, blocked: 0 }
+        return {
+          id: row.id,
+          name: row.name,
+          handle: row.handle,
+          emoji: parsed.emoji ?? null,
+          avatarUrl: parsed.avatarUrl ?? null,
+          title: parsed.title ?? null,
+          isPrimary: row.is_primary === 1,
+          openTicketCount: counts.open,
+          blockedTicketCount: counts.blocked,
+        }
+      })
+
+      // --- 4. Portfolio rollup ---
+      const teamRollups = await listTeamPortfolioRollups({ teamIds: [teamId] })
+      const rollup = teamRollups[0]
+      const portfolio = rollup
+        ? {
+            ownedGoalCount: rollup.owned_goal_count,
+            activeGoalCount: rollup.active_goal_count,
+            atRiskGoalCount: rollup.at_risk_goal_count,
+            blockedGoalCount: rollup.blocked_goal_count,
+            goalsNeedingStaffingCount: rollup.goals_needing_staffing_count,
+            queuedTicketCount: rollup.queued_ticket_count,
+            blockedTicketCount: rollup.blocked_ticket_count,
+          }
+        : {
+            ownedGoalCount: 0,
+            activeGoalCount: 0,
+            atRiskGoalCount: 0,
+            blockedGoalCount: 0,
+            goalsNeedingStaffingCount: 0,
+            queuedTicketCount: 0,
+            blockedTicketCount: 0,
+          }
+
+      // --- 5. Goals ---
+      const goalRows = await db
+        .selectFrom('goals')
+        .selectAll()
+        .where((eb) =>
+          eb.or([
+            eb('team_id', '=', teamId),
+            ...(rollup?.goal_ids?.length ? [eb('id', 'in', rollup.goal_ids)] : []),
+          ])
+        )
+        .where('archived_at', 'is', null)
+        .orderBy('updated_at', 'desc')
+        .execute()
+
+      const goalIds = goalRows.map((g) => g.id)
+
+      // Get ticket counts per goal
+      const goalTicketCounts =
+        goalIds.length > 0
+          ? await db
+              .selectFrom('tickets')
+              .select([
+                'goal_id',
+                sql<number>`count(*)`.as('total'),
+                sql<number>`sum(case when status = 'blocked' then 1 else 0 end)`.as('blocked'),
+                sql<number>`sum(case when status = 'done' then 1 else 0 end)`.as('done'),
+              ])
+              .where('goal_id', 'in', goalIds)
+              .where('archived_at', 'is', null)
+              .groupBy('goal_id')
+              .execute()
+          : []
+
+      const ticketCountByGoal = new Map(
+        goalTicketCounts
+          .filter((row): row is typeof row & { goal_id: string } => !!row.goal_id)
+          .map((row) => [row.goal_id, { total: row.total, blocked: row.blocked, done: row.done }])
+      )
+
+      // Get goal coverage rollups for health info
+      const goalCoverage = await listGoalCoverageRollups()
+      const coverageByGoalId = new Map(goalCoverage.map((gc) => [gc.goal_id, gc]))
+
+      // Resolve actors for goal owners
+      const goalActorRefs = goalRows.flatMap((g) => [{ kind: g.owner_kind, ref: g.owner_ref }])
+      const actorsResolved = await resolveActors(goalActorRefs)
+
+      const goals = goalRows.map((g) => {
+        const coverage = coverageByGoalId.get(g.id)
+        const counts = ticketCountByGoal.get(g.id) ?? { total: 0, blocked: 0, done: 0 }
+        return {
+          id: g.id,
+          title: g.title,
+          status: g.status,
+          health: coverage?.health ?? g.status,
+          owner: presentActor(g.owner_kind, g.owner_ref, actorsResolved),
+          ticketCounts: {
+            total: counts.total,
+            blocked: counts.blocked,
+            done: counts.done,
+          },
+        }
+      })
+
+      // --- 6. Tickets assigned to agents on this team ---
+      const teamAgentRows = await db
+        .selectFrom('agent_teams')
+        .select(['agent_id'])
+        .where('team_id', '=', teamId)
+        .execute()
+      const teamAgentIds = teamAgentRows.map((row) => row.agent_id)
+
+      const ticketRows =
+        teamAgentIds.length > 0
+          ? await db
+              .selectFrom('tickets')
+              .leftJoin('goals', 'goals.id', 'tickets.goal_id')
+              .select([
+                'tickets.id as id',
+                'tickets.title as title',
+                'tickets.status as status',
+                'tickets.assignee_kind as assignee_kind',
+                'tickets.assignee_ref as assignee_ref',
+                'goals.title as goal_title',
+              ])
+              .where('tickets.archived_at', 'is', null)
+              .where('tickets.assignee_kind', '=', 'agent')
+              .where('tickets.assignee_ref', 'in', teamAgentIds)
+              .where('tickets.status', 'in', ['inbox', 'ready', 'in_progress', 'blocked'])
+              .orderBy('tickets.updated_at', 'desc')
+              .limit(50)
+              .execute()
+          : []
+
+      // Resolve ticket assignees
+      const ticketActorRefs = ticketRows.map((t) => ({
+        kind: t.assignee_kind,
+        ref: t.assignee_ref,
+      }))
+      const ticketActors = await resolveActors(ticketActorRefs)
+
+      const tickets = ticketRows.map((t) => ({
+        id: t.id,
+        title: t.title,
+        status: t.status,
+        assignee: presentActor(t.assignee_kind, t.assignee_ref, ticketActors),
+        goalTitle: t.goal_title ?? null,
+      }))
+
+      // --- 7. Recent updates ---
+      const updateRows = await db
+        .selectFrom('work_updates')
+        .leftJoin('goals', 'goals.id', 'work_updates.goal_id')
+        .select([
+          'work_updates.id as id',
+          'work_updates.kind as kind',
+          'work_updates.body as body',
+          'work_updates.created_at as created_at',
+          'goals.title as goal_title',
+        ])
+        .where('work_updates.team_id', '=', teamId)
+        .orderBy('work_updates.created_at', 'desc')
+        .limit(10)
+        .execute()
+
+      const recentUpdates = updateRows.map((row) => ({
+        id: row.id,
+        kind: row.kind,
+        body: row.body,
+        createdAt: row.created_at,
+        goalTitle: row.goal_title ?? null,
+      }))
+
+      // --- 8. Spend ---
+      const nowTs = now()
+      const [spend7d, spend30d] = await Promise.all([
+        getTeamSpendInWindow(teamId, nowTs - 7 * 24 * 3600),
+        getTeamSpendInWindow(teamId, nowTs - 30 * 24 * 3600),
+      ])
+
+      // --- 9. Heartbeat posture ---
+      const heartbeatRow = await db
+        .selectFrom('work_updates')
+        .select(sql<number>`max(created_at)`.as('latest'))
+        .where('team_id', '=', teamId)
+        .where('kind', '=', 'heartbeat')
+        .executeTakeFirst()
+
+      const hbPosture = heartbeatPosture(heartbeatRow?.latest ?? null)
+
+      return {
+        team: {
+          id: teamRow.id,
+          name: teamRow.name,
+          charter: teamRow.charter ?? null,
+          parentTeamId: teamRow.parent_team_id ?? null,
+          parentTeamName,
+        },
+        members,
+        agents,
+        portfolio,
+        goals,
+        tickets,
+        recentUpdates,
+        spend: {
+          last7d: spend7d,
+          last30d: spend30d,
+        },
+        heartbeatPosture: hbPosture,
+      }
+    }),
+
+  // ---------------------------------------------------------------------------
+  // Team CRUD
+  // ---------------------------------------------------------------------------
+
+  createTeam: protectedProcedure
+    .input(
+      z.object({
+        name: z.string().trim().min(1).max(120),
+        parentTeamId: z.string().trim().optional(),
+        charter: z.string().trim().max(500).optional(),
+        leadUserId: z.string().trim().min(1).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const userId = requireUserId(ctx.session)
+      const leadId = input.leadUserId ?? userId
+      const team = await createTeam({
+        name: input.name,
+        parent_team_id: input.parentTeamId ?? null,
+        charter: input.charter ?? null,
+        slug: null,
+      })
+
+      // Insert the lead as the first team member (defaults to current user)
+      const db = getDb()
+      await db
+        .insertInto('team_members')
+        .values({
+          team_id: team.id,
+          user_id: leadId,
+          role: 'lead',
+        })
+        .execute()
+
+      return { id: team.id, name: team.name }
+    }),
+
+  updateTeam: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().trim().min(1),
+        name: z.string().trim().min(1).max(120).optional(),
+        charter: z.string().trim().max(2000).optional().nullable(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const existing = await findTeamById(input.id)
+      if (!existing) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Team not found.' })
+      }
+      const updated = await updateTeam(input.id, {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.charter !== undefined ? { charter: input.charter } : {}),
+      })
+      if (!updated) {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to update team.' })
+      }
+      return { id: updated.id, name: updated.name }
+    }),
+
+  deleteTeam: protectedProcedure
+    .input(z.object({ id: z.string().trim().min(1) }))
+    .mutation(async ({ input }) => {
+      const existing = await findTeamById(input.id)
+      if (!existing) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Team not found.' })
+      }
+      const db = getDb()
+      const parentId = existing.parent_team_id ?? null
+
+      await db.transaction().execute(async (trx) => {
+        // Reparent child teams up one level
+        await trx
+          .updateTable('teams')
+          .set({ parent_team_id: parentId })
+          .where('parent_team_id', '=', input.id)
+          .execute()
+
+        // Move agent and user assignments up to parent team
+        if (parentId) {
+          // Agents: unique on agent_id, so just re-point to parent
+          await trx
+            .updateTable('agent_teams')
+            .set({ team_id: parentId })
+            .where('team_id', '=', input.id)
+            .execute()
+
+          // Users: composite PK (team_id, user_id) — skip if already in parent
+          const memberRows = await trx
+            .selectFrom('team_members')
+            .select(['user_id', 'role'])
+            .where('team_id', '=', input.id)
+            .execute()
+          const existingMembers = new Set(
+            (
+              await trx
+                .selectFrom('team_members')
+                .select('user_id')
+                .where('team_id', '=', parentId)
+                .execute()
+            ).map((r) => r.user_id)
+          )
+          for (const row of memberRows) {
+            if (!existingMembers.has(row.user_id)) {
+              await trx
+                .insertInto('team_members')
+                .values({ team_id: parentId, user_id: row.user_id, role: row.role })
+                .execute()
+            }
+          }
+          // Delete old memberships before deleting team
+          await trx.deleteFrom('team_members').where('team_id', '=', input.id).execute()
+        }
+
+        // Delete agent_teams for this team if no parent (nowhere to move them)
+        if (!parentId) {
+          await trx.deleteFrom('agent_teams').where('team_id', '=', input.id).execute()
+          await trx.deleteFrom('team_members').where('team_id', '=', input.id).execute()
+        }
+
+        // Move goals and initiatives up to parent team (or null if root)
+        await trx
+          .updateTable('goals')
+          .set({ team_id: parentId })
+          .where('team_id', '=', input.id)
+          .execute()
+        await trx
+          .updateTable('initiatives')
+          .set({ team_id: parentId })
+          .where('team_id', '=', input.id)
+          .execute()
+        // Work updates are historical — just detach
+        await trx
+          .updateTable('work_updates')
+          .set({ team_id: null })
+          .where('team_id', '=', input.id)
+          .execute()
+
+        // Delete the team itself
+        const result = await trx.deleteFrom('teams').where('id', '=', input.id).executeTakeFirst()
+        if ((result?.numDeletedRows ?? 0n) === 0n) {
+          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to delete team.' })
+        }
+      })
+
+      return { ok: true }
+    }),
+
+  moveTeam: protectedProcedure
+    .input(
+      z.object({
+        teamId: z.string().trim().min(1),
+        newParentTeamId: z.string().trim().nullable(),
+        sortOrder: z.number().int().min(0).optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const db = getDb()
+      const existing = await findTeamById(input.teamId)
+      if (!existing) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Team not found.' })
+      }
+      // Prevent moving a team under itself or its own descendant
+      if (input.newParentTeamId) {
+        let cursor = input.newParentTeamId
+        while (cursor) {
+          if (cursor === input.teamId) {
+            throw new TRPCError({
+              code: 'PRECONDITION_FAILED',
+              message: 'Cannot move a team under itself or its descendant.',
+            })
+          }
+          const parent = await db
+            .selectFrom('teams')
+            .select('parent_team_id')
+            .where('id', '=', cursor)
+            .executeTakeFirst()
+          cursor = parent?.parent_team_id ?? ''
+          if (!cursor) break
+        }
+      }
+
+      const sortOrder = input.sortOrder ?? 0
+
+      // Shift siblings in target parent to make room
+      if (input.newParentTeamId === null) {
+        await db
+          .updateTable('teams')
+          .set((eb) => ({ sort_order: eb('sort_order', '+', 1) }))
+          .where('parent_team_id', 'is', null)
+          .where('sort_order', '>=', sortOrder)
+          .where('id', '!=', input.teamId)
+          .execute()
+      } else {
+        await db
+          .updateTable('teams')
+          .set((eb) => ({ sort_order: eb('sort_order', '+', 1) }))
+          .where('parent_team_id', '=', input.newParentTeamId)
+          .where('sort_order', '>=', sortOrder)
+          .where('id', '!=', input.teamId)
+          .execute()
+      }
+
+      const updated = await updateTeam(input.teamId, {
+        parent_team_id: input.newParentTeamId,
+        sort_order: sortOrder,
+      })
+      if (!updated) {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to move team.' })
+      }
+      return { ok: true }
+    }),
+
+  setTeamLead: protectedProcedure
+    .input(
+      z.object({
+        teamId: z.string().trim().min(1),
+        leadKind: z.enum(['user', 'agent']),
+        leadRef: z.string().trim().min(1),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const team = await findTeamById(input.teamId)
+      if (!team) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Team not found.' })
+      }
+
+      const db = getDb()
+
+      // Update the teams table with lead_kind and lead_ref
+      await updateTeam(input.teamId, {
+        lead_kind: input.leadKind,
+        lead_ref: input.leadRef,
+      })
+
+      // For user leads, also manage team_members role
+      if (input.leadKind === 'user') {
+        // Demote any existing lead to member
+        await db
+          .updateTable('team_members')
+          .set({ role: 'member' })
+          .where('team_id', '=', input.teamId)
+          .where('role', '=', 'lead')
+          .execute()
+
+        // Check if user is already a team member
+        const existing = await db
+          .selectFrom('team_members')
+          .select(['team_id', 'user_id', 'role'])
+          .where('team_id', '=', input.teamId)
+          .where('user_id', '=', input.leadRef)
+          .executeTakeFirst()
+
+        if (existing) {
+          // Promote to lead
+          await db
+            .updateTable('team_members')
+            .set({ role: 'lead' })
+            .where('team_id', '=', input.teamId)
+            .where('user_id', '=', input.leadRef)
+            .execute()
+        } else {
+          // Insert as lead
+          await db
+            .insertInto('team_members')
+            .values({
+              team_id: input.teamId,
+              user_id: input.leadRef,
+              role: 'lead',
+            })
+            .execute()
+        }
+      }
+
+      return { ok: true }
+    }),
+
+  // ---------------------------------------------------------------------------
+  // Agent ↔ Team assignments
+  // ---------------------------------------------------------------------------
+
+  addAgentToTeam: protectedProcedure
+    .input(
+      z.object({
+        agentId: z.string().trim().min(1),
+        teamId: z.string().trim().min(1),
+        isPrimary: z.boolean().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      await addAgentToTeam({
+        agent_id: input.agentId,
+        team_id: input.teamId,
+        is_primary: input.isPrimary ? 1 : 0,
+      })
+      return { ok: true }
+    }),
+
+  removeAgentFromTeam: protectedProcedure
+    .input(
+      z.object({
+        agentId: z.string().trim().min(1),
+        teamId: z.string().trim().min(1),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const removed = await removeAgentFromTeam(input.agentId, input.teamId)
+      if (!removed) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Agent-team assignment not found.' })
+      }
+      return { ok: true }
+    }),
+
+  // ---------------------------------------------------------------------------
+  // Agent list (for assignment combobox)
+  // ---------------------------------------------------------------------------
+
+  listAgents: protectedProcedure.query(async () => {
+    const db = getDb()
+    const agents = await db
+      .selectFrom('agents')
+      .select(['id', 'name', 'handle', 'config'])
+      .orderBy('name', 'asc')
+      .execute()
+    return agents.map((agent) => {
+      const parsed = parseAgentConfig(agent.config)
+      return {
+        id: agent.id,
+        name: agent.name,
+        handle: agent.handle,
+        emoji: parsed.emoji ?? null,
+      }
+    })
+  }),
+
+  listUsers: protectedProcedure.query(async () => {
+    const db = getDb()
+    const users = await db
+      .selectFrom('users')
+      .select(['id', 'name', 'email', 'avatar_url'])
+      .orderBy('name', 'asc')
+      .execute()
+    return users.map((u) => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      avatarUrl: u.avatar_url,
+    }))
+  }),
 })

@@ -16,6 +16,7 @@ import {
   IconHome,
   IconInbox,
   IconKey,
+  IconListCheck,
   IconLogout,
   IconMenu2,
   IconLayoutSidebarLeftCollapse,
@@ -26,6 +27,7 @@ import {
   IconRobot,
   IconServer,
   IconSettings,
+  IconTarget,
   IconUsers,
   IconWand,
 } from '@tabler/icons-react'
@@ -57,32 +59,30 @@ interface NavGroup {
 
 const navGroups: NavGroup[] = [
   {
-    label: 'Interact',
+    label: 'Operate',
     items: [
       { label: 'Command Center', href: '/', icon: IconHome, exact: true },
       { label: 'Company', href: '/company', icon: IconHierarchy },
-      { label: 'Work', href: '/work', icon: IconInbox },
+      { label: 'Goals', href: '/goals', icon: IconTarget },
+      { label: 'Tickets', href: '/tickets', icon: IconListCheck },
+      { label: 'Agents', href: '/agents', icon: IconRobot },
     ],
   },
   {
-    label: 'Observe',
+    label: 'Verify',
     items: [
-      { label: 'Agents', href: '/agents', icon: IconRobot },
       { label: 'Activity', href: '/activity', icon: IconActivity },
       { label: 'Costs', href: '/costs', icon: IconCurrencyDollar },
+      { label: 'Evals', href: '/evals', icon: IconReportAnalytics },
     ],
   },
   {
-    label: 'Configure',
+    label: 'Build',
     items: [
       { label: 'Plugins', href: '/plugins', icon: IconPlug },
       { label: 'Skills', href: '/skills', icon: IconBook2 },
       { label: 'Collections', href: '/collections', icon: IconDatabase },
     ],
-  },
-  {
-    label: 'Evaluate',
-    items: [{ label: 'Evals', href: '/evals', icon: IconReportAnalytics }],
   },
 ]
 

@@ -98,7 +98,7 @@ export async function WorkSection({ agentId }: { agentId: string }) {
               activeTickets.map((ticket) => (
                 <Link
                   key={ticket.id}
-                  href={`/work/tickets/${ticket.id}`}
+                  href={`/tickets/${ticket.id}`}
                   className="block rounded-lg border border-white/10 bg-white/[0.02] p-3 transition hover:border-white/20 hover:bg-white/[0.04]"
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -127,7 +127,7 @@ export async function WorkSection({ agentId }: { agentId: string }) {
                 ownedGoals.map((goal) => (
                   <Link
                     key={goal.id}
-                    href={`/work/goals/${goal.id}`}
+                    href={`/goals/${goal.id}`}
                     className="block rounded-lg border border-white/10 bg-white/[0.02] p-3 transition hover:border-white/20 hover:bg-white/[0.04]"
                   >
                     <div className="flex items-center justify-between gap-3">
@@ -151,7 +151,7 @@ export async function WorkSection({ agentId }: { agentId: string }) {
                 recentCompleted.map((ticket) => (
                   <Link
                     key={ticket.id}
-                    href={`/work/tickets/${ticket.id}`}
+                    href={`/tickets/${ticket.id}`}
                     className="block rounded-lg border border-white/10 bg-white/[0.02] p-3 transition hover:border-white/20 hover:bg-white/[0.04]"
                   >
                     <p className="truncate text-sm font-medium">{ticket.title}</p>

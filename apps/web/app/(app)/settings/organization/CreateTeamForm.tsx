@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react'
 import { useForm } from 'react-hook-form'
+import { toast } from 'sonner'
 import { trpc } from '@/lib/trpc'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,7 +10,7 @@ import { Label } from '@/components/ui/label'
 
 type TeamFormValues = {
   name: string
-  description?: string
+  charter?: string
   slug?: string
 }
 
@@ -23,13 +24,16 @@ export function CreateTeamForm({ onSuccess }: CreateTeamFormProps) {
   const createTeam = trpc.org.createTeam.useMutation({
     onSuccess: () => {
       void utils.org.listTeams.invalidate()
-      teamForm.reset({ name: '', description: '', slug: '' })
+      teamForm.reset({ name: '', charter: '', slug: '' })
       onSuccess?.()
+    },
+    onError: () => {
+      toast.error('Failed to create team')
     },
   })
 
   const teamForm = useForm<TeamFormValues>({
-    defaultValues: { name: '', description: '', slug: '' },
+    defaultValues: { name: '', charter: '', slug: '' },
   })
   const { setValue, watch, formState } = teamForm
   const nameValue = watch('name')
@@ -47,7 +51,7 @@ export function CreateTeamForm({ onSuccess }: CreateTeamFormProps) {
   const handleCreateTeam = teamForm.handleSubmit((values: TeamFormValues) => {
     createTeam.mutate({
       name: values.name.trim(),
-      description: values.description?.trim() || null,
+      charter: values.charter?.trim() || null,
       slug: values.slug?.trim() || null,
     })
   })
@@ -59,8 +63,8 @@ export function CreateTeamForm({ onSuccess }: CreateTeamFormProps) {
         <Input {...teamForm.register('name', { required: true })} placeholder="Core Operators" />
       </div>
       <div className="space-y-1.5">
-        <Label className="text-[0.65rem] uppercase tracking-[0.2em]">Description</Label>
-        <Input {...teamForm.register('description')} placeholder="What this team owns" />
+        <Label className="text-[0.65rem] uppercase tracking-[0.2em]">Charter</Label>
+        <Input {...teamForm.register('charter')} placeholder="What this team owns" />
       </div>
       <div className="space-y-1.5">
         <Label className="text-[0.65rem] uppercase tracking-[0.2em]">Slug</Label>

@@ -10,6 +10,7 @@ import {
   IconRobot,
   IconX,
 } from '@tabler/icons-react'
+import { toast } from 'sonner'
 import { trpc } from '@/lib/trpc'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -48,7 +49,7 @@ type TeamAgent = {
 type Team = {
   id: string
   name: string
-  description: string | null
+  charter: string | null
   members: TeamMember[]
   agents: TeamAgent[]
 }
@@ -165,15 +166,27 @@ function TeamRow({
 
   const addMember = trpc.org.addTeamMember.useMutation({
     onSuccess: () => void utils.org.listTeams.invalidate(),
+    onError: () => {
+      toast.error('Failed to add member')
+    },
   })
   const removeMember = trpc.org.removeTeamMember.useMutation({
     onSuccess: () => void utils.org.listTeams.invalidate(),
+    onError: () => {
+      toast.error('Failed to remove member')
+    },
   })
   const addAgent = trpc.org.assignAgentToTeam.useMutation({
     onSuccess: () => void utils.org.listTeams.invalidate(),
+    onError: () => {
+      toast.error('Failed to add agent to team')
+    },
   })
   const removeAgent = trpc.org.removeAgentFromTeam.useMutation({
     onSuccess: () => void utils.org.listTeams.invalidate(),
+    onError: () => {
+      toast.error('Failed to remove agent from team')
+    },
   })
   const heartbeatQuery = trpc.work.getHeartbeatConfig.useQuery(
     { targetKind: 'team', targetId: team.id },
@@ -190,6 +203,9 @@ function TeamRow({
         utils.work.listUpdates.invalidate(),
         utils.work.getDashboard.invalidate(),
       ])
+    },
+    onError: () => {
+      toast.error('Failed to save heartbeat')
     },
   })
 
@@ -241,7 +257,7 @@ function TeamRow({
             <p className="truncate text-sm font-semibold text-white/90 group-hover:text-white">
               {team.name}
             </p>
-            <p className="truncate text-xs text-white/40">{team.description || 'No description'}</p>
+            <p className="truncate text-xs text-white/40">{team.charter || 'No charter'}</p>
           </div>
 
           <div className="hidden w-32 shrink-0 items-center gap-2 sm:flex">
@@ -425,7 +441,7 @@ function TeamRow({
                   ownedGoals.slice(0, 4).map((goal) => (
                     <Link
                       key={goal.id}
-                      href={`/work/goals/${goal.id}`}
+                      href={`/goals/${goal.id}`}
                       className="block rounded px-2 py-1 text-xs text-white/70 transition hover:bg-white/5 hover:text-white"
                     >
                       {goal.title}
@@ -442,7 +458,7 @@ function TeamRow({
                   queuedTickets.slice(0, 4).map((ticket) => (
                     <Link
                       key={ticket.id}
-                      href={`/work/tickets/${ticket.id}`}
+                      href={`/tickets/${ticket.id}`}
                       className="block rounded px-2 py-1 text-xs text-white/70 transition hover:bg-white/5 hover:text-white"
                     >
                       {ticket.title}
@@ -602,7 +618,7 @@ export function TeamsSection() {
     return teams.filter(
       (team) =>
         team.name.toLowerCase().includes(searchLower) ||
-        team.description?.toLowerCase().includes(searchLower)
+        team.charter?.toLowerCase().includes(searchLower)
     )
   }, [teams, search])
 

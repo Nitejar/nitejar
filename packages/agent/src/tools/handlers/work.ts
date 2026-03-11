@@ -24,14 +24,6 @@ async function resolveActorLabel(kind: string | null, ref: string | null): Promi
       .executeTakeFirst()
     return user?.name ?? ref
   }
-  if (kind === 'team') {
-    const team = await db
-      .selectFrom('teams')
-      .select(['name'])
-      .where('id', '=', ref)
-      .executeTakeFirst()
-    return team?.name ?? ref
-  }
   if (kind === 'agent') {
     const agent = await db
       .selectFrom('agents')
@@ -69,7 +61,7 @@ export const searchGoalsDefinition: Anthropic.Tool = {
       query: { type: 'string', description: 'Text to search for.' },
       owner_kind: {
         type: 'string',
-        enum: ['user', 'agent', 'team'],
+        enum: ['user', 'agent'],
         description: 'Optional owner kind filter.',
       },
       owner_ref: { type: 'string', description: 'Optional owner ID filter.' },
@@ -134,7 +126,7 @@ export const searchTicketsDefinition: Anthropic.Tool = {
       goal_id: { type: 'string', description: 'Optional goal ID filter.' },
       assignee_kind: {
         type: 'string',
-        enum: ['user', 'agent', 'team'],
+        enum: ['user', 'agent'],
         description: 'Optional assignee kind filter.',
       },
       assignee_ref: { type: 'string', description: 'Optional assignee ID filter.' },

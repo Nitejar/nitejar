@@ -7,14 +7,15 @@ import {
   IconArrowUp,
   IconLoader2,
   IconPlayerPlay,
+  IconPlus,
   IconRefresh,
-  IconUserPlus,
+  IconTicket,
 } from '@tabler/icons-react'
+import { ChevronRight } from 'lucide-react'
 import { trpc, type RouterOutputs } from '@/lib/trpc'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import {
   Avatar,
@@ -24,7 +25,10 @@ import {
   AvatarImage,
 } from '@/components/ui/avatar'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { toast } from 'sonner'
 import { RelativeTime } from '@/app/(app)/components/RelativeTime'
+import { SkeletonSessionDetail } from '@/app/(app)/work/skeletons'
 
 type SessionDetail = RouterOutputs['sessions']['get']
 type SessionParticipant = SessionDetail['participants'][number]
@@ -141,6 +145,9 @@ export function SessionDetailClient({ sessionKey }: { sessionKey: string }) {
       ])
       setAgentToAdd('')
     },
+    onError: () => {
+      toast.error('Failed to add participant')
+    },
   })
 
   const sendMessageMutation = trpc.sessions.sendMessage.useMutation({
@@ -153,6 +160,9 @@ export function SessionDetailClient({ sessionKey }: { sessionKey: string }) {
     onSuccess: async () => {
       await utils.sessions.timeline.invalidate({ sessionKey, limit: 30 })
     },
+    onError: () => {
+      toast.error('Failed to retry message')
+    },
   })
   const linkTicketMutation = trpc.work.linkTicket.useMutation({
     onSuccess: async () => {
@@ -163,6 +173,9 @@ export function SessionDetailClient({ sessionKey }: { sessionKey: string }) {
         utils.work.listTickets.invalidate(),
       ])
     },
+    onError: () => {
+      toast.error('Failed to link ticket')
+    },
   })
   const promoteSessionMutation = trpc.work.promoteSession.useMutation({
     onSuccess: async ({ ticket }) => {
@@ -172,7 +185,10 @@ export function SessionDetailClient({ sessionKey }: { sessionKey: string }) {
         utils.work.listTickets.invalidate(),
       ])
       if (!ticket) return
-      router.push(`/work/tickets/${ticket.id}`)
+      router.push(`/tickets/${ticket.id}`)
+    },
+    onError: () => {
+      toast.error('Failed to promote session to ticket')
     },
   })
 
@@ -315,354 +331,376 @@ export function SessionDetailClient({ sessionKey }: { sessionKey: string }) {
   }
 
   if (sessionQuery.isLoading) {
-    return (
-      <Card className="border-dashed border-border/60 bg-card/60">
-        <CardContent className="py-10 text-sm text-muted-foreground">Loading session…</CardContent>
-      </Card>
-    )
+    return <SkeletonSessionDetail />
   }
 
   if (!sessionQuery.data) {
     return (
-      <Card className="border-dashed border-border/60 bg-card/60">
-        <CardContent className="py-10 text-sm text-muted-foreground">
-          Session not found.
-        </CardContent>
-      </Card>
+      <div className="rounded-lg border border-dashed border-border/60 bg-card/60 py-10 text-center text-sm text-muted-foreground">
+        Session not found.
+      </div>
     )
   }
 
   const isEmpty = allTurns.length === 0 && pendingTurns.length === 0
 
   return (
-    <div className="space-y-4">
-      <Card className="bg-card/70">
-        <CardContent className="space-y-4 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <AvatarGroup>
-                {participants.slice(0, 4).map((participant) => (
-                  <AgentAvatar key={participant.id} participant={participant} />
-                ))}
-                {participants.length > 4 ? (
-                  <AvatarGroupCount>+{participants.length - 4}</AvatarGroupCount>
-                ) : null}
-              </AvatarGroup>
-              <div className="text-xs text-muted-foreground">
-                <p className="font-medium text-foreground">
-                  {sessionQuery.data.title ?? 'Untitled session'}
-                </p>
-                <p>
-                  Started <RelativeTime timestamp={sessionQuery.data.createdAt} />
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <NativeSelect
-                value={agentToAdd}
-                onChange={(event) => setAgentToAdd(event.target.value)}
-                className="w-52"
-              >
-                <NativeSelectOption value="">Add participant…</NativeSelectOption>
-                {availableAgentsToAdd.map((agent) => (
-                  <NativeSelectOption key={agent.id} value={agent.id}>
-                    {agent.name} (@{agent.handle})
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  addParticipantsMutation.mutate({
-                    sessionKey,
-                    agentIds: [agentToAdd],
-                  })
-                }
-                disabled={!agentToAdd || addParticipantsMutation.isPending}
-              >
-                <IconUserPlus className="mr-1 h-3.5 w-3.5" />
-                Add
-              </Button>
-            </div>
-          </div>
-
+    <div className="flex flex-col gap-1.5">
+      {/* Breadcrumb + participants + controls in one row */}
+      <div className="flex items-center gap-2">
+        <nav className="flex items-center gap-1.5 text-xs text-white/40">
           {sessionQuery.data.linkedTicket ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2.5">
-              <div className="min-w-0 flex-1">
-                <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">
-                  Linked Ticket
-                </p>
-                <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <Link
-                    href={`/work/tickets/${sessionQuery.data.linkedTicket.id}`}
-                    className="truncate text-sm font-medium hover:text-primary"
-                  >
-                    {sessionQuery.data.linkedTicket.title}
-                  </Link>
-                  <Badge variant="outline">{sessionQuery.data.linkedTicket.status}</Badge>
-                  {sessionQuery.data.linkedTicket.goalTitle ? (
-                    <Link
-                      href={`/work/goals/${sessionQuery.data.linkedTicket.goalId}`}
-                      className="text-xs text-muted-foreground hover:text-foreground"
-                    >
-                      {sessionQuery.data.linkedTicket.goalTitle}
-                    </Link>
-                  ) : null}
-                </div>
-              </div>
-              <Link
-                href={`/work/tickets/${sessionQuery.data.linkedTicket.id}`}
-                className={buttonVariants({ variant: 'outline', size: 'sm' })}
-              >
-                Open Ticket
+            <>
+              <Link href="/tickets" className="hover:text-white/70 transition-colors">
+                Tickets
               </Link>
-            </div>
+              <ChevronRight className="h-3 w-3" />
+              <Link
+                href={`/tickets/${sessionQuery.data.linkedTicket.id}`}
+                className="hover:text-white/70 transition-colors"
+              >
+                {sessionQuery.data.linkedTicket.title}
+              </Link>
+              <ChevronRight className="h-3 w-3" />
+              <span className="text-white/70">Session</span>
+            </>
           ) : (
-            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2.5">
-              <NativeSelect
-                value={attachTicketId}
-                onChange={(event) => setAttachTicketId(event.target.value)}
-                className="w-full min-w-[240px]"
-              >
-                <NativeSelectOption value="">Attach to an existing ticket…</NativeSelectOption>
-                {attachableTickets.map((ticket) => (
-                  <NativeSelectOption key={ticket.id} value={ticket.id}>
-                    {ticket.title}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  linkTicketMutation.mutate({
-                    ticketId: attachTicketId,
-                    kind: 'session',
-                    ref: sessionKey,
-                    label: sessionQuery.data.title ?? null,
-                  })
-                }
-                disabled={!attachTicketId || linkTicketMutation.isPending}
-              >
-                Attach
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => promoteSessionMutation.mutate({ sessionKey })}
-                disabled={promoteSessionMutation.isPending}
-              >
-                Promote to Ticket
-              </Button>
-            </div>
+            <>
+              <Link href="/sessions" className="hover:text-white/70 transition-colors">
+                Sessions
+              </Link>
+              <ChevronRight className="h-3 w-3" />
+              <span className="text-white/70">
+                {sessionQuery.data.title ?? headerPrimaryAgent?.name ?? 'Session'}
+              </span>
+            </>
           )}
+        </nav>
 
-          <div className="max-h-[62vh] space-y-4 overflow-y-auto rounded-md border border-border/60 bg-background/20 p-4">
-            {timelineQuery.hasNextPage ? (
-              <div className="flex justify-center">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => void timelineQuery.fetchNextPage()}
-                  disabled={timelineQuery.isFetchingNextPage}
+        <span className="text-xs text-muted-foreground">
+          · <RelativeTime timestamp={sessionQuery.data.createdAt} />
+        </span>
+
+        <div className="ml-auto flex items-center gap-1">
+          <AvatarGroup>
+            {participants.slice(0, 4).map((participant) => (
+              <AgentAvatar key={participant.id} participant={participant} />
+            ))}
+            {participants.length > 4 ? (
+              <AvatarGroupCount>+{participants.length - 4}</AvatarGroupCount>
+            ) : null}
+          </AvatarGroup>
+
+          {/* Add participant */}
+          <Popover>
+            <PopoverTrigger
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              title="Add participant"
+            >
+              <IconPlus className="h-3.5 w-3.5" />
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-64 space-y-2 p-3">
+              <p className="text-xs font-medium text-muted-foreground">Add participant</p>
+              <div className="flex items-center gap-1.5">
+                <NativeSelect
+                  value={agentToAdd}
+                  onChange={(event) => setAgentToAdd(event.target.value)}
+                  className="flex-1 text-xs"
                 >
-                  <IconArrowUp className="mr-1 h-3.5 w-3.5" />
-                  {timelineQuery.isFetchingNextPage ? 'Loading older…' : 'Load older messages'}
+                  <NativeSelectOption value="">Select agent…</NativeSelectOption>
+                  {availableAgentsToAdd.map((agent) => (
+                    <NativeSelectOption key={agent.id} value={agent.id}>
+                      {agent.name} (@{agent.handle})
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    addParticipantsMutation.mutate({
+                      sessionKey,
+                      agentIds: [agentToAdd],
+                    })
+                  }
+                  disabled={!agentToAdd || addParticipantsMutation.isPending}
+                >
+                  Add
                 </Button>
               </div>
-            ) : null}
+            </PopoverContent>
+          </Popover>
 
-            {isEmpty ? (
-              <div className="flex min-h-[280px] flex-col items-center justify-center gap-3 text-center">
-                {headerPrimaryAgent ? (
-                  <AgentAvatar participant={headerPrimaryAgent} size="lg" />
-                ) : null}
-                <div>
-                  <p className="text-sm font-medium text-foreground">
-                    {headerPrimaryAgent?.name ?? 'Agent'}
-                  </p>
-                  <p className="text-xs text-muted-foreground">{headerPrimaryAgent?.title ?? ''}</p>
+          <span className="mx-0.5 h-4 w-px bg-border/60" />
+
+          {/* Ticket actions */}
+          {sessionQuery.data.linkedTicket ? (
+            <Link
+              href={`/tickets/${sessionQuery.data.linkedTicket.id}`}
+              className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              title={sessionQuery.data.linkedTicket.title}
+            >
+              <IconTicket className="h-3 w-3 shrink-0" />
+              <span className="max-w-[140px] truncate">{sessionQuery.data.linkedTicket.title}</span>
+            </Link>
+          ) : (
+            <Popover>
+              <PopoverTrigger
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                title="Ticket actions"
+              >
+                <IconTicket className="h-3.5 w-3.5" />
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-72 space-y-2 p-3">
+                <p className="text-xs font-medium text-muted-foreground">Link to ticket</p>
+                <div className="flex items-center gap-1.5">
+                  <NativeSelect
+                    value={attachTicketId}
+                    onChange={(event) => setAttachTicketId(event.target.value)}
+                    className="flex-1 text-xs"
+                  >
+                    <NativeSelectOption value="">Select ticket…</NativeSelectOption>
+                    {attachableTickets.map((ticket) => (
+                      <NativeSelectOption key={ticket.id} value={ticket.id}>
+                        {ticket.title}
+                      </NativeSelectOption>
+                    ))}
+                  </NativeSelect>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      linkTicketMutation.mutate({
+                        ticketId: attachTicketId,
+                        kind: 'session',
+                        ref: sessionKey,
+                        label: sessionQuery.data?.title ?? null,
+                      })
+                    }
+                    disabled={!attachTicketId || linkTicketMutation.isPending}
+                  >
+                    Attach
+                  </Button>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Send a message below to start this conversation.
+                <div className="border-t border-border/60 pt-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => promoteSessionMutation.mutate({ sessionKey })}
+                    disabled={promoteSessionMutation.isPending}
+                  >
+                    Promote to Ticket
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+        </div>
+      </div>
+
+      {/* Chat timeline */}
+      <div className="flex flex-1 flex-col rounded-lg border border-zinc-800">
+        <div className="max-h-[70vh] space-y-4 overflow-y-auto p-4">
+          {timelineQuery.hasNextPage ? (
+            <div className="flex justify-center">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void timelineQuery.fetchNextPage()}
+                disabled={timelineQuery.isFetchingNextPage}
+              >
+                <IconArrowUp className="mr-1 h-3.5 w-3.5" />
+                {timelineQuery.isFetchingNextPage ? 'Loading older…' : 'Load older messages'}
+              </Button>
+            </div>
+          ) : null}
+
+          {isEmpty ? (
+            <div className="flex min-h-[280px] flex-col items-center justify-center gap-3 text-center">
+              {headerPrimaryAgent ? (
+                <AgentAvatar participant={headerPrimaryAgent} size="lg" />
+              ) : null}
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  {headerPrimaryAgent?.name ?? 'Agent'}
                 </p>
+                <p className="text-xs text-muted-foreground">{headerPrimaryAgent?.title ?? ''}</p>
               </div>
-            ) : (
-              <>
-                {allTurns.map((turn) => {
-                  const isRetryableFailedTurn =
-                    turn.status === 'failed' &&
-                    turn.workItemId === newestFailedTurnId &&
-                    turn.canRetry
-                  return (
-                    <div key={turn.workItemId} className="space-y-2">
-                      <div className="ml-auto max-w-[85%] rounded-lg border border-primary/30 bg-primary/10 px-3 py-2">
-                        <p className="whitespace-pre-wrap text-sm text-foreground">
-                          {turn.userMessage}
-                        </p>
-                      </div>
-                      {turn.agentReplies.map((reply) => (
-                        <div
-                          key={`${turn.workItemId}:${reply.agentId}:${reply.jobId ?? 'pending'}`}
-                          className="space-y-1"
-                        >
-                          {reply.message ? (
-                            <div className="max-w-[85%] rounded-lg border border-border/60 bg-card px-3 py-2">
-                              <div className="mb-1 flex items-center gap-2 text-[0.7rem] text-muted-foreground">
-                                <span className="font-medium text-foreground">
-                                  {reply.agentName}
-                                </span>
-                                <Link
-                                  href={reply.runLink}
-                                  className="underline-offset-2 hover:underline"
-                                >
-                                  View run
-                                </Link>
-                              </div>
-                              <p className="whitespace-pre-wrap text-sm text-foreground">
-                                {reply.message}
-                              </p>
-                            </div>
-                          ) : reply.status === 'queued' || reply.status === 'running' ? (
-                            <TypingRow name={reply.agentName} />
-                          ) : (
-                            <div className="max-w-[85%] rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                              {reply.agentName} could not respond.
+              <p className="text-xs text-muted-foreground">
+                Send a message below to start this conversation.
+              </p>
+            </div>
+          ) : (
+            <>
+              {allTurns.map((turn) => {
+                const isRetryableFailedTurn =
+                  turn.status === 'failed' &&
+                  turn.workItemId === newestFailedTurnId &&
+                  turn.canRetry
+                return (
+                  <div key={turn.workItemId} className="space-y-2">
+                    <div className="ml-auto max-w-[85%] rounded-lg border border-primary/30 bg-primary/10 px-3 py-2">
+                      <p className="whitespace-pre-wrap text-sm text-foreground">
+                        {turn.userMessage}
+                      </p>
+                    </div>
+                    {turn.agentReplies.map((reply) => (
+                      <div
+                        key={`${turn.workItemId}:${reply.agentId}:${reply.jobId ?? 'pending'}`}
+                        className="space-y-1"
+                      >
+                        {reply.message ? (
+                          <div className="max-w-[85%] animate-in fade-in duration-200 rounded-lg border border-border/60 bg-card px-3 py-2">
+                            <div className="mb-1 flex items-center gap-2 text-[0.7rem] text-muted-foreground">
+                              <span className="font-medium text-foreground">{reply.agentName}</span>
                               <Link
                                 href={reply.runLink}
-                                className="ml-2 underline underline-offset-2"
+                                className="underline-offset-2 hover:underline"
                               >
                                 View run
                               </Link>
                             </div>
-                          )}
-                        </div>
-                      ))}
+                            <p className="whitespace-pre-wrap text-sm text-foreground">
+                              {reply.message}
+                            </p>
+                          </div>
+                        ) : reply.status === 'queued' || reply.status === 'running' ? (
+                          <TypingRow name={reply.agentName} />
+                        ) : (
+                          <div className="max-w-[85%] rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                            {reply.agentName} could not respond.
+                            <Link
+                              href={reply.runLink}
+                              className="ml-2 underline underline-offset-2"
+                            >
+                              View run
+                            </Link>
+                          </div>
+                        )}
+                      </div>
+                    ))}
 
-                      {isRetryableFailedTurn ? (
-                        <div className="flex gap-2">
-                          <Link
-                            href={`/work-items/${turn.workItemId}`}
-                            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                          >
-                            View run
-                          </Link>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => retryMutation.mutate({ sessionKey })}
-                            disabled={retryMutation.isPending}
-                          >
-                            <IconRefresh className="mr-1 h-3.5 w-3.5" />
-                            {retryMutation.isPending ? 'Retrying…' : 'Retry'}
-                          </Button>
-                        </div>
-                      ) : null}
-                    </div>
-                  )
-                })}
-
-                {pendingTurns.map((pending) => (
-                  <div key={pending.id} className="space-y-2">
-                    <div className="ml-auto max-w-[85%] rounded-lg border border-primary/30 bg-primary/10 px-3 py-2">
-                      <p className="whitespace-pre-wrap text-sm text-foreground">
-                        {pending.message}
-                      </p>
-                      <p className="mt-1 text-[0.7rem] text-muted-foreground">
-                        {pending.phase === 'sending'
-                          ? 'Sending…'
-                          : pending.phase === 'thinking'
-                            ? 'Queued'
-                            : 'Failed to send'}
-                      </p>
-                    </div>
-                    {pending.phase === 'thinking'
-                      ? pending.targetParticipants.map((participant) => (
-                          <TypingRow
-                            key={`${pending.id}:${participant.id}`}
-                            name={participant.name}
-                          />
-                        ))
-                      : null}
-                    {pending.phase === 'failed' ? (
-                      <div className="max-w-[85%] rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                        {pending.error ?? 'Message failed to send.'}
+                    {isRetryableFailedTurn ? (
+                      <div className="flex gap-2">
+                        <Link
+                          href={`/work-items/${turn.workItemId}`}
+                          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                        >
+                          View run
+                        </Link>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => retryMutation.mutate({ sessionKey })}
+                          disabled={retryMutation.isPending}
+                        >
+                          <IconRefresh className="mr-1 h-3.5 w-3.5" />
+                          {retryMutation.isPending ? 'Retrying…' : 'Retry'}
+                        </Button>
                       </div>
                     ) : null}
                   </div>
-                ))}
-              </>
-            )}
-          </div>
+                )
+              })}
 
-          <div className="space-y-2">
-            <div className="relative">
-              <Textarea
-                ref={composerRef}
-                value={composerValue}
-                onChange={(event) => {
-                  setComposerValue(event.target.value)
-                  setComposerCursor(event.target.selectionStart ?? event.target.value.length)
-                }}
-                onClick={(event) =>
-                  setComposerCursor((event.target as HTMLTextAreaElement).selectionStart ?? 0)
-                }
-                onKeyUp={(event) =>
-                  setComposerCursor((event.target as HTMLTextAreaElement).selectionStart ?? 0)
-                }
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && !event.shiftKey) {
-                    event.preventDefault()
-                    void submitMessage()
-                  }
-                }}
-                placeholder="Message the agent… (use @handle to target participants)"
-                className="min-h-[84px] pr-12"
-              />
-
-              {mentionContext ? (
-                <div className="absolute bottom-full left-0 z-20 mb-2 w-64 rounded-md border border-border bg-popover p-1 shadow-lg">
-                  {mentionContext.matches.slice(0, 6).map((participant) => (
-                    <button
-                      key={participant.id}
-                      type="button"
-                      className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs hover:bg-accent"
-                      onClick={() => handleInsertMention(participant.handle)}
-                    >
-                      <AgentAvatar participant={participant} size="sm" />
-                      <span className="font-medium">{participant.name}</span>
-                      <span className="text-muted-foreground">@{participant.handle}</span>
-                    </button>
-                  ))}
+              {pendingTurns.map((pending) => (
+                <div key={pending.id} className="space-y-2">
+                  <div className="ml-auto max-w-[85%] rounded-lg border border-primary/30 bg-primary/10 px-3 py-2">
+                    <p className="whitespace-pre-wrap text-sm text-foreground">{pending.message}</p>
+                    <p className="mt-1 text-[0.7rem] text-muted-foreground">
+                      {pending.phase === 'sending'
+                        ? 'Sending…'
+                        : pending.phase === 'thinking'
+                          ? 'Queued'
+                          : 'Failed to send'}
+                    </p>
+                  </div>
+                  {pending.phase === 'thinking'
+                    ? pending.targetParticipants.map((participant) => (
+                        <TypingRow
+                          key={`${pending.id}:${participant.id}`}
+                          name={participant.name}
+                        />
+                      ))
+                    : null}
+                  {pending.phase === 'failed' ? (
+                    <div className="max-w-[85%] rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                      {pending.error ?? 'Message failed to send.'}
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
+              ))}
+            </>
+          )}
+        </div>
 
-              <Button
-                size="icon-sm"
-                className="absolute bottom-2 right-2"
-                onClick={() => void submitMessage()}
-                disabled={sendMessageMutation.isPending || !composerValue.trim()}
-              >
-                {sendMessageMutation.isPending ? (
-                  <IconLoader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <IconPlayerPlay className="h-3.5 w-3.5" />
-                )}
-              </Button>
-            </div>
+        <div className="space-y-2 border-t border-zinc-800 p-4 pt-3">
+          <div className="relative">
+            <Textarea
+              ref={composerRef}
+              value={composerValue}
+              onChange={(event) => {
+                setComposerValue(event.target.value)
+                setComposerCursor(event.target.selectionStart ?? event.target.value.length)
+              }}
+              onClick={(event) =>
+                setComposerCursor((event.target as HTMLTextAreaElement).selectionStart ?? 0)
+              }
+              onKeyUp={(event) =>
+                setComposerCursor((event.target as HTMLTextAreaElement).selectionStart ?? 0)
+              }
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  void submitMessage()
+                }
+              }}
+              placeholder="Message the agent… (use @handle to target participants)"
+              className="min-h-[84px] pr-12"
+            />
 
-            <div className="flex flex-wrap gap-2 text-[0.7rem]">
-              <Badge variant="outline" className={cn('border-border/60 text-muted-foreground')}>
-                Enter to send
-              </Badge>
-              <Badge variant="outline" className={cn('border-border/60 text-muted-foreground')}>
-                Shift+Enter for newline
-              </Badge>
-            </div>
+            {mentionContext ? (
+              <div className="absolute bottom-full left-0 z-20 mb-2 w-64 rounded-md border border-border bg-popover p-1 shadow-lg">
+                {mentionContext.matches.slice(0, 6).map((participant) => (
+                  <button
+                    key={participant.id}
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs hover:bg-accent"
+                    onClick={() => handleInsertMention(participant.handle)}
+                  >
+                    <AgentAvatar participant={participant} size="sm" />
+                    <span className="font-medium">{participant.name}</span>
+                    <span className="text-muted-foreground">@{participant.handle}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            <Button
+              size="icon-sm"
+              className="absolute bottom-2 right-2"
+              onClick={() => void submitMessage()}
+              disabled={sendMessageMutation.isPending || !composerValue.trim()}
+            >
+              {sendMessageMutation.isPending ? (
+                <IconLoader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <IconPlayerPlay className="h-3.5 w-3.5" />
+              )}
+            </Button>
           </div>
-        </CardContent>
-      </Card>
+
+          <div className="flex flex-wrap gap-2 text-[0.7rem]">
+            <Badge variant="outline" className={cn('border-border/60 text-muted-foreground')}>
+              Enter to send
+            </Badge>
+            <Badge variant="outline" className={cn('border-border/60 text-muted-foreground')}>
+              Shift+Enter for newline
+            </Badge>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

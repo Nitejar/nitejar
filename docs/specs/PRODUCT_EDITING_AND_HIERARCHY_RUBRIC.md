@@ -175,6 +175,12 @@ Before shipping a UI change, ask:
 - Is any section visually equal when it should be subordinate?
 - Did the implementation fall back to repeated cards where a stronger organizing structure was needed?
 - Would removing one section improve the page?
+- Do all mutations surface errors to the user when they fail?
+- Are destructive actions (delete, remove, disconnect) clear about consequences?
+- Can every dropdown, picker, and popover be dismissed by clicking outside?
+- Are loading and disabled states visible during async operations?
+- Do lists and detail panels show skeleton/shimmer placeholders while loading, not bare "Loading..." text or blank space?
+- Are empty states, no-data states, and partial failures handled visibly?
 
 If several answers are "no", the screen needs another editing pass.
 
@@ -188,6 +194,9 @@ Treat these as product-smell warnings, not hard bans.
 - sessions or runs presented as peers to goals, tickets, or company structure
 - top-level tabs that are really alternative visualizations of the same underlying object
 - "overview" pages that are only collections of unrelated modules
+- mutations that fail silently (no `onError`, no toast, no alert — the user clicks and nothing happens)
+- dropdowns or pickers that can only be closed via Escape, not by clicking outside
+- destructive actions with no explanation of consequences (e.g. "Delete?" with no mention of what happens to children, members, or work)
 
 ## What Good Looks Like
 
