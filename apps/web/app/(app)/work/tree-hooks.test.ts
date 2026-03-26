@@ -4,6 +4,7 @@ import {
   computeDropResult,
   isInvalidDropTarget,
   applyOptimisticReorder,
+  shouldIgnoreTreeKeyboardTarget,
   type SiblingEntry,
 } from './tree-hooks'
 
@@ -68,6 +69,10 @@ const descendantMap = new Map<string, Set<string>>([
   ['B1a', new Set()],
 ])
 
+function asEventTarget<T extends object>(value: T): EventTarget {
+  return value as unknown as EventTarget
+}
+
 // ---------------------------------------------------------------------------
 // computeDropZone
 // ---------------------------------------------------------------------------
@@ -97,6 +102,35 @@ describe('computeDropZone', () => {
   it('handles exact boundaries', () => {
     expect(computeDropZone(110, TOP, HEIGHT)).toBe('on') // ratio = 0.25
     expect(computeDropZone(130, TOP, HEIGHT)).toBe('on') // ratio = 0.75
+  })
+})
+
+describe('shouldIgnoreTreeKeyboardTarget', () => {
+  it('ignores standard form controls', () => {
+    expect(shouldIgnoreTreeKeyboardTarget(asEventTarget({ tagName: 'INPUT' }))).toBe(true)
+    expect(shouldIgnoreTreeKeyboardTarget(asEventTarget({ tagName: 'TEXTAREA' }))).toBe(true)
+    expect(shouldIgnoreTreeKeyboardTarget(asEventTarget({ tagName: 'SELECT' }))).toBe(true)
+  })
+
+  it('ignores contenteditable elements and descendants', () => {
+    expect(shouldIgnoreTreeKeyboardTarget(asEventTarget({ isContentEditable: true }))).toBe(true)
+    expect(
+      shouldIgnoreTreeKeyboardTarget(asEventTarget({
+        isContentEditable: false,
+        closest: (selector: string) => (selector === '[contenteditable="true"]' ? {} : null),
+      }))
+    ).toBe(true)
+  })
+
+  it('does not ignore plain non-editable elements', () => {
+    expect(
+      shouldIgnoreTreeKeyboardTarget(asEventTarget({
+        tagName: 'DIV',
+        isContentEditable: false,
+        closest: () => null,
+      }))
+    ).toBe(false)
+    expect(shouldIgnoreTreeKeyboardTarget(null)).toBe(false)
   })
 })
 

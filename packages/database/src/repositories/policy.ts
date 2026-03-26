@@ -117,6 +117,12 @@ export async function updateRole(id: string, data: Omit<RoleUpdate, 'id' | 'crea
     .executeTakeFirst()
 }
 
+export async function deleteRole(id: string): Promise<boolean> {
+  const db = getDb()
+  const result = await db.deleteFrom('roles').where('id', '=', id).executeTakeFirst()
+  return (result?.numDeletedRows ?? 0n) > 0n
+}
+
 export async function findRoleById(id: string): Promise<Role | null> {
   const db = getDb()
   return (await db.selectFrom('roles').selectAll().where('id', '=', id).executeTakeFirst()) ?? null

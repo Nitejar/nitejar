@@ -640,6 +640,23 @@ export function RolesView({ search, onCreateRole }: { search: string; onCreateRo
     onError: (error) => toast.error(error.message),
   })
 
+  const deleteRole = trpc.company.deleteRole.useMutation({
+    onSuccess: async (_, input) => {
+      await utils.company.listRoles.invalidate()
+      setSelectedRoleId((current) => {
+        if (current !== input.roleId) return current
+        const remainingRoles = utils.company
+          .listRoles
+          .getData()
+          ?.filter((role) => role.id !== input.roleId)
+        return remainingRoles?.[0]?.id ?? null
+      })
+      await utils.company.getRole.invalidate()
+      toast.success('Role deleted')
+    },
+    onError: (error) => toast.error(error.message),
+  })
+
   // Auto-save role fields
   const patchRole = useCallback(
     (patch: Record<string, unknown>) => {
@@ -782,6 +799,13 @@ export function RolesView({ search, onCreateRole }: { search: string; onCreateRo
     })
   }
 
+  const handleDeleteRole = useCallback(() => {
+    if (!selectedRole) return
+    const confirmation = window.confirm(`Delete "${selectedRole.name}"? This removes the role, its grants, and its assignments.`)
+    if (!confirmation) return
+    deleteRole.mutate({ roleId: selectedRole.id })
+  }, [deleteRole, selectedRole])
+
   // Picker items
   const assignedAgentIds = new Set(roleDetail?.assignedAgents.map((a) => a.id) ?? [])
   const availableAgents: InlinePickerItem[] = agents
@@ -900,6 +924,14 @@ export function RolesView({ search, onCreateRole }: { search: string; onCreateRo
                   )}
                 >
                   {roleDetail.active ? 'Active' : 'Inactive'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteRole}
+                  disabled={deleteRole.isPending}
+                  className="mt-1 shrink-0 rounded-md border border-rose-500/30 px-2.5 py-1 text-[11px] font-medium text-rose-200 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {deleteRole.isPending ? 'Deleting...' : 'Delete'}
                 </button>
               </div>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pl-8 text-xs text-white/30">

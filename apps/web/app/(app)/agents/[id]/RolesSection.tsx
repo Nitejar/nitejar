@@ -174,17 +174,22 @@ export function RolesSection({ agentId }: RolesSectionProps) {
               {data.effectiveRoles.map((role) => (
                 <div
                   key={`${role.id}-${role.sourceType}`}
-                  className="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2"
+                  className="flex items-start justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2"
                 >
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <Link
                       href="/company/roles"
-                      className="text-sm font-medium hover:text-primary hover:underline"
+                      className="block truncate text-sm font-medium hover:text-primary hover:underline"
                     >
                       {role.name}
                     </Link>
                     {role.charter && (
-                      <p className="truncate text-[10px] text-muted-foreground">{role.charter}</p>
+                      <p
+                        className="mt-0.5 line-clamp-2 text-[10px] leading-relaxed text-muted-foreground [overflow-wrap:anywhere]"
+                        title={role.charter}
+                      >
+                        {role.charter}
+                      </p>
                     )}
                   </div>
                   <span className="shrink-0 rounded-full bg-white/5 px-2 py-0.5 text-[9px] text-muted-foreground">

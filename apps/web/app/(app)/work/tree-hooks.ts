@@ -33,6 +33,29 @@ export function useTreeSelection<T extends string = string>() {
   return { selectedId, setSelectedId, clearSelection } as const
 }
 
+export function shouldIgnoreTreeKeyboardTarget(target: EventTarget | null): boolean {
+  if (!target || typeof target !== 'object') {
+    return false
+  }
+
+  const candidate = target as {
+    tagName?: unknown
+    isContentEditable?: unknown
+    closest?: (selector: string) => unknown
+  }
+
+  const tag = typeof candidate.tagName === 'string' ? candidate.tagName : null
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+    return true
+  }
+
+  if (candidate.isContentEditable === true) {
+    return true
+  }
+
+  return Boolean(candidate.closest?.('[contenteditable="true"]'))
+}
+
 /**
  * Auto-select the first item in a list on desktop when nothing is selected.
  * Call after data loads. Only fires once.
@@ -417,8 +440,7 @@ export function useTreeKeyboardNav(options: {
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement)?.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      if (shouldIgnoreTreeKeyboardTarget(e.target)) return
 
       if (e.key === 'j' || e.key === 'k') {
         e.preventDefault()

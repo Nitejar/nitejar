@@ -8,6 +8,7 @@ import {
   createTeam,
   createWorkUpdate,
   createWorkView,
+  deleteRole as deleteRoleRecord,
   deleteGoalAgentAllocation,
   deleteWorkView,
   findAgentById,
@@ -2031,6 +2032,33 @@ export const companyRouter = router({
           roleId: role.id,
         },
       })
+      return { ok: true }
+    }),
+
+  deleteRole: protectedProcedure
+    .input(z.object({ roleId: z.string().trim().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const role = await findRoleById(input.roleId)
+      if (!role) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Role not found.' })
+      }
+
+      const deleted = await deleteRoleRecord(role.id)
+      if (!deleted) {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to delete role.' })
+      }
+
+      await writePolicyAuditLog({
+        eventType: 'POLICY_ROLE_DELETED',
+        capability: 'policy.write',
+        result: 'allowed',
+        metadata: {
+          actorUserId: requireUserId(ctx.session),
+          roleId: role.id,
+          roleSlug: role.slug,
+        },
+      })
+
       return { ok: true }
     }),
 
