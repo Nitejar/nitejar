@@ -15,7 +15,7 @@ vi.mock('@nitejar/database', () => ({
   setAgentPluginInstanceAssignment: vi.fn(),
 }))
 
-vi.mock('@nitejar/plugin-handlers', () => ({
+vi.mock('@nitejar/plugin-handlers/registry', () => ({
   pluginHandlerRegistry: {
     get: mockedRegistryGet,
   },

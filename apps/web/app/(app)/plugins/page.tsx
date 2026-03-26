@@ -1,13 +1,16 @@
+import { createPageMetadata } from '@/app/metadata'
 import { PageHeader } from '../components/PageHeader'
+import { PageScrollShell } from '../components/PageScrollShell'
 import { PluginCatalogClient } from './PluginCatalogClient'
 
 export const dynamic = 'force-dynamic'
+export const metadata = createPageMetadata('Plugins')
 
 export default function PluginsPage() {
   return (
-    <div className="space-y-6">
+    <PageScrollShell className="space-y-6">
       <PageHeader title="Plugins" description="Connect platforms and services to your agents." />
       <PluginCatalogClient />
-    </div>
+    </PageScrollShell>
   )
 }

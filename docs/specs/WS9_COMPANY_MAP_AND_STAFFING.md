@@ -408,7 +408,6 @@ Every team should surface:
 - blocked tickets
 - goals without direct agent staffing
 - overloaded agent count
-- latest team heartbeat
 
 ### Agent Allocation Model
 
@@ -468,7 +467,6 @@ For each team:
 - blocked tickets
 - goals needing staffing
 - overloaded agent count
-- latest heartbeat
 
 ### Agent Allocation Rollup
 
@@ -491,7 +489,6 @@ This should be a structured feed for company-level changes:
 - goal owner changed
 - staffing changed
 - goal heartbeat posted
-- team heartbeat posted
 
 Use existing work updates where possible.
 

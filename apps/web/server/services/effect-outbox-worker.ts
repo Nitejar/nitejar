@@ -13,11 +13,9 @@ import {
 } from '@nitejar/database'
 import { logSchemaMismatchOnce } from './schema-mismatch'
 import { parseAgentConfig } from '@nitejar/agent/config'
-import {
-  getPluginInstanceWithConfig,
-  pluginHandlerRegistry,
-  type InboundActorEnvelope,
-} from '@nitejar/plugin-handlers'
+import type { InboundActorEnvelope } from '@nitejar/plugin-handlers/types'
+import { pluginHandlerRegistry } from '@nitejar/plugin-handlers/registry'
+import { getPluginInstanceWithConfig } from '@nitejar/plugin-handlers/router'
 import { dispatchHook } from './plugins/hook-dispatch'
 import {
   extractQueueConfig,

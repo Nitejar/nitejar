@@ -1,5 +1,5 @@
 import type { PluginExport, PluginProvider } from '@nitejar/plugin-sdk'
-import type { IntegrationHandler } from '@nitejar/plugin-handlers'
+import type { IntegrationHandler } from '@nitejar/plugin-handlers/types'
 
 export type { PluginExport, PluginProvider }
 

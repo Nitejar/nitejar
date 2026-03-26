@@ -89,6 +89,39 @@ const FeaturesSchema = z.object({
   dangerouslyUnrestricted: z.boolean().optional(),
 })
 
+const PolicyGrantSchema = z.object({
+  action: z.string().min(1),
+  resourceType: z.string().optional().nullable(),
+  resourceId: z.string().optional().nullable(),
+})
+
+const PolicyDefaultEntrySchema = z.object({
+  key: z.string().min(1),
+  value: z.unknown(),
+})
+
+const PolicyRoleSchema = z.object({
+  slug: z.string().min(1),
+  name: z.string().min(1),
+  charter: z.string().optional().nullable(),
+  jobDescription: z.string().optional().nullable(),
+  escalationPosture: z.string().optional().nullable(),
+  active: z.boolean().optional(),
+  grants: z.array(PolicyGrantSchema).optional(),
+  defaults: z.array(PolicyDefaultEntrySchema).optional(),
+})
+
+const PolicySchema = z.object({
+  assignedRoleSlugs: z.array(z.string().min(1)).optional(),
+  roles: z.array(PolicyRoleSchema).optional(),
+  resolvedPolicy: z
+    .object({
+      grants: z.array(PolicyGrantSchema).optional(),
+      defaults: z.array(PolicyDefaultEntrySchema).optional(),
+    })
+    .optional(),
+})
+
 const PluginRequirementSchema = z.object({
   pluginId: z.string(),
   required: z.boolean(),
@@ -141,5 +174,35 @@ export const AgentProfileV1Schema = z
 
 export type AgentProfileV1 = z.infer<typeof AgentProfileV1Schema>
 
+export const AgentProfileV2Schema = z
+  .object({
+    $schema: z.string().optional(),
+    formatVersion: z.literal(2),
+    exportedAt: z.string().optional(),
+    exportedFrom: z.string().optional(),
+
+    identity: IdentitySchema,
+    soul: z.string().optional(),
+    model: ModelSchema.optional(),
+    memorySettings: MemorySettingsSchema.optional(),
+    sessionSettings: SessionSettingsSchema.optional(),
+    networkPolicy: NetworkPolicySchema.optional(),
+    triageSettings: TriageSettingsSchema.optional(),
+    queue: QueueSchema.optional(),
+    features: FeaturesSchema.optional(),
+
+    policy: PolicySchema.optional(),
+    pluginRequirements: z.array(PluginRequirementSchema).optional(),
+    costLimits: z.array(CostLimitSchema).optional(),
+    skillAttachments: z.array(SkillAttachmentSchema).optional(),
+    seedMemories: z.array(SeedMemorySchema).optional(),
+  })
+  .passthrough()
+
+export const AgentProfileSchema = z.union([AgentProfileV1Schema, AgentProfileV2Schema])
+
+export type AgentProfileV2 = z.infer<typeof AgentProfileV2Schema>
+export type AgentProfile = z.infer<typeof AgentProfileSchema>
+
 /** Maximum supported format version for import */
-export const MAX_SUPPORTED_FORMAT_VERSION = 1
+export const MAX_SUPPORTED_FORMAT_VERSION = 2

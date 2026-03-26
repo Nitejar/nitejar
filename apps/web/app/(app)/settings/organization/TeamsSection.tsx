@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
   IconSearch,
@@ -23,14 +23,6 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { RelativeTime } from '@/app/(app)/components/RelativeTime'
 import { CreateTeamForm } from './CreateTeamForm'
 
 type TeamMember = {
@@ -42,7 +34,7 @@ type TeamMember = {
 type TeamAgent = {
   id: string
   name: string
-  title: string | null
+  roleName: string | null
   emoji: string | null
   avatarUrl: string | null
 }
@@ -62,7 +54,7 @@ type Member = {
 type Agent = {
   id: string
   name: string
-  title: string | null
+  roleName: string | null
   emoji: string | null
   avatarUrl: string | null
 }
@@ -188,34 +180,9 @@ function TeamRow({
       toast.error('Failed to remove agent from team')
     },
   })
-  const heartbeatQuery = trpc.work.getHeartbeatConfig.useQuery(
-    { targetKind: 'team', targetId: team.id },
-    { enabled: isExpanded }
-  )
-  const heartbeatUpdatesQuery = trpc.work.listUpdates.useQuery(
-    { teamId: team.id, kinds: ['heartbeat'], limit: 4 },
-    { enabled: isExpanded }
-  )
-  const heartbeatMutation = trpc.work.upsertHeartbeat.useMutation({
-    onSuccess: async () => {
-      await Promise.all([
-        utils.work.getHeartbeatConfig.invalidate({ targetKind: 'team', targetId: team.id }),
-        utils.work.listUpdates.invalidate(),
-        utils.work.getDashboard.invalidate(),
-      ])
-    },
-    onError: () => {
-      toast.error('Failed to save heartbeat')
-    },
-  })
 
   const teamMemberIds = useMemo(() => new Set(team.members.map((m) => m.id)), [team.members])
   const teamAgentIds = useMemo(() => new Set(team.agents.map((a) => a.id)), [team.agents])
-  const [heartbeatAgentId, setHeartbeatAgentId] = useState('')
-  const [heartbeatCronExpr, setHeartbeatCronExpr] = useState('0 9 * * 1-5')
-  const [heartbeatTimezone, setHeartbeatTimezone] = useState(
-    () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-  )
 
   const availableMembers = useMemo(
     () => members.filter((m) => !teamMemberIds.has(m.id)),
@@ -225,17 +192,6 @@ function TeamRow({
     () => agents.filter((a) => !teamAgentIds.has(a.id)),
     [agents, teamAgentIds]
   )
-  const heartbeatConfig = heartbeatQuery.data
-
-  useEffect(() => {
-    const heartbeat = heartbeatQuery.data
-    if (!heartbeat) return
-    setHeartbeatAgentId(heartbeat.agentId)
-    setHeartbeatCronExpr(heartbeat.cronExpr ?? '0 9 * * 1-5')
-    setHeartbeatTimezone(
-      heartbeat.timezone ?? (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')
-    )
-  }, [heartbeatQuery.data])
 
   return (
     <div className="border-b border-white/5 last:border-0">
@@ -380,7 +336,7 @@ function TeamRow({
                         <p className="text-xs font-medium text-white/80 group-hover/item:text-primary">
                           {agent.name}
                         </p>
-                        <p className="text-[0.6rem] text-white/40">{agent.title || 'No title'}</p>
+                        <p className="text-[0.6rem] text-white/40">{agent.roleName || 'No role'}</p>
                       </div>
                     </Link>
                     <button
@@ -467,123 +423,6 @@ function TeamRow({
                 ) : (
                   <p className="px-2 py-1 text-[0.65rem] text-white/30">No queued tickets</p>
                 )}
-              </div>
-
-              <div className="space-y-3 rounded-lg border border-white/5 bg-white/[0.02] p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-[0.6rem] uppercase tracking-[0.2em] text-white/30">
-                    Heartbeat
-                  </p>
-                  {heartbeatConfig?.nextRunAt ? (
-                    <span className="text-[0.6rem] text-white/40">
-                      Next <RelativeTime timestamp={heartbeatConfig.nextRunAt} />
-                    </span>
-                  ) : null}
-                </div>
-
-                {heartbeatConfig ? (
-                  <p className="text-[0.7rem] text-white/50">
-                    {heartbeatConfig.enabled ? 'Running' : 'Paused'} with{' '}
-                    {heartbeatConfig.agentName ?? 'Unknown agent'} on{' '}
-                    <span className="font-mono text-[0.65rem]">{heartbeatConfig.cronExpr}</span>
-                  </p>
-                ) : (
-                  <p className="text-[0.7rem] text-white/40">
-                    No heartbeat yet. Add one to keep this team queue reviewed on a schedule.
-                  </p>
-                )}
-
-                <Select
-                  value={heartbeatAgentId}
-                  onValueChange={(value) => setHeartbeatAgentId(value ?? '')}
-                >
-                  <SelectTrigger className="h-8 border-white/10 bg-white/5 text-xs text-white/80">
-                    <SelectValue placeholder="Select agent" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {agents.map((agent) => (
-                      <SelectItem key={agent.id} value={agent.id}>
-                        {agent.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Input
-                  value={heartbeatCronExpr}
-                  onChange={(event) => setHeartbeatCronExpr(event.target.value)}
-                  placeholder="0 9 * * 1-5"
-                  className="h-8 border-white/10 bg-white/5 text-xs"
-                />
-                <Input
-                  value={heartbeatTimezone}
-                  onChange={(event) => setHeartbeatTimezone(event.target.value)}
-                  placeholder="America/Chicago"
-                  className="h-8 border-white/10 bg-white/5 text-xs"
-                />
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    className="flex-1"
-                    onClick={() =>
-                      heartbeatMutation.mutate({
-                        targetKind: 'team',
-                        targetId: team.id,
-                        agentId: heartbeatAgentId,
-                        cronExpr: heartbeatCronExpr,
-                        timezone: heartbeatTimezone,
-                        enabled: true,
-                      })
-                    }
-                    disabled={
-                      !heartbeatAgentId ||
-                      !heartbeatCronExpr.trim() ||
-                      !heartbeatTimezone.trim() ||
-                      heartbeatMutation.isPending
-                    }
-                  >
-                    {heartbeatConfig ? 'Save' : 'Create'}
-                  </Button>
-                  {heartbeatConfig?.enabled ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        heartbeatMutation.mutate({
-                          targetKind: 'team',
-                          targetId: team.id,
-                          agentId: heartbeatAgentId || heartbeatConfig.agentId,
-                          cronExpr: heartbeatCronExpr,
-                          timezone: heartbeatTimezone,
-                          enabled: false,
-                        })
-                      }
-                      disabled={heartbeatMutation.isPending}
-                    >
-                      Pause
-                    </Button>
-                  ) : null}
-                </div>
-
-                <div className="space-y-2 border-t border-white/5 pt-3">
-                  <p className="text-[0.6rem] uppercase tracking-[0.2em] text-white/30">
-                    Recent Heartbeats
-                  </p>
-                  {(heartbeatUpdatesQuery.data ?? []).length > 0 ? (
-                    (heartbeatUpdatesQuery.data ?? []).map((update) => (
-                      <div
-                        key={update.id}
-                        className="rounded-md border border-white/10 bg-white/[0.02] px-2 py-1.5"
-                      >
-                        <p className="text-[0.7rem] text-white/60">{update.body}</p>
-                        <p className="mt-1 text-[0.6rem] text-white/35">
-                          <RelativeTime timestamp={update.created_at} />
-                        </p>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-[0.65rem] text-white/30">No heartbeat updates yet</p>
-                  )}
-                </div>
               </div>
             </div>
           </div>

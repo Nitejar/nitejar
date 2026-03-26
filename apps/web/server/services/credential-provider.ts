@@ -1,9 +1,11 @@
 import {
   GitHubCredentialProvider,
   type GitHubCredentialRequest,
-  type CredentialEnvelope,
-  type ICredentialProvider,
-} from '@nitejar/plugin-handlers'
+} from '@nitejar/plugin-handlers/github/credential-provider'
+import type {
+  CredentialEnvelope,
+  ICredentialProvider,
+} from '@nitejar/plugin-handlers/credential-provider'
 import { getDb } from '@nitejar/database'
 import { CapabilityService } from './capability'
 

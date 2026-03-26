@@ -1,7 +1,8 @@
 import type Anthropic from '@anthropic-ai/sdk'
-import { getDb } from '@nitejar/database'
+import { assertAgentGrant, getDb } from '@nitejar/database'
 import { refreshSpriteNetworkPolicy, writeFile } from '@nitejar/sprites'
-import { getGitHubAppConfig, GitHubCredentialProvider } from '@nitejar/plugin-handlers'
+import { getGitHubAppConfig } from '@nitejar/plugin-handlers/github'
+import { GitHubCredentialProvider } from '@nitejar/plugin-handlers/github/credential-provider'
 import { runSpriteCommand } from '../helpers'
 import type { ToolHandler } from '../types'
 
@@ -156,6 +157,12 @@ export const configureGitHubCredentialsTool: ToolHandler = async (input, context
   if (!context.agentId) {
     return { success: false, error: 'Missing agent identity for credential configuration.' }
   }
+
+  await assertAgentGrant({
+    agentId: context.agentId,
+    action: 'github.repo.read',
+    resourceType: '*',
+  })
 
   const db = getDb()
   const { repoRecord, error: repoError } = await resolveRepoRecord(repoName, context.agentId)

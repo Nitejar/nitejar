@@ -1,14 +1,22 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import * as Integrations from '@nitejar/plugin-handlers'
+import * as TelegramRouter from '@nitejar/plugin-handlers/router'
+import * as TelegramModule from '@nitejar/plugin-handlers/telegram'
 import type { WorkItem } from '@nitejar/database'
 import type { WorkItemPayload } from './types'
 import type * as TelegramAttachments from './telegram-attachments'
 
-vi.mock('@nitejar/plugin-handlers', async () => {
-  const actual = await vi.importActual<typeof Integrations>('@nitejar/plugin-handlers')
+vi.mock('@nitejar/plugin-handlers/router', async () => {
+  const actual = await vi.importActual<typeof TelegramRouter>('@nitejar/plugin-handlers/router')
   return {
     ...actual,
     getPluginInstanceWithConfig: vi.fn(),
+  }
+})
+
+vi.mock('@nitejar/plugin-handlers/telegram', async () => {
+  const actual = await vi.importActual<typeof TelegramModule>('@nitejar/plugin-handlers/telegram')
+  return {
+    ...actual,
     getFile: vi.fn(),
     downloadTelegramFileAsDataUrl: vi.fn(),
   }
@@ -20,11 +28,11 @@ vi.mock('./agent-logger', () => ({
   agentError: vi.fn(),
 }))
 
-const mockedGetPluginInstance = vi.mocked(Integrations.getPluginInstanceWithConfig)
+const mockedGetPluginInstance = vi.mocked(TelegramRouter.getPluginInstanceWithConfig)
 const mockedGetFile = vi.mocked(
-  (Integrations as Record<string, unknown>).getFile as typeof Integrations.getFile
+  (TelegramModule as Record<string, unknown>).getFile as typeof TelegramModule.getFile
 )
-const mockedDownloadDataUrl = vi.mocked(Integrations.downloadTelegramFileAsDataUrl)
+const mockedDownloadDataUrl = vi.mocked(TelegramModule.downloadTelegramFileAsDataUrl)
 
 describe('safeParsePayload', () => {
   let safeParsePayload: typeof TelegramAttachments.safeParsePayload

@@ -4,6 +4,7 @@ import {
   getCostByWorkItems,
   listRecentWebhookIngressEvents,
 } from '@nitejar/database'
+import { createPageMetadata } from '@/app/metadata'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -15,9 +16,11 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { PageHeader } from '../components/PageHeader'
+import { PageScrollShell } from '../components/PageScrollShell'
 import { formatCost } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
+export const metadata = createPageMetadata('Event Log')
 
 const statusVariant = (status: string) => {
   switch (status) {
@@ -44,7 +47,7 @@ export default async function WorkItemsPage() {
   const costMap = new Map(costData.map((c) => [c.work_item_id, c]))
 
   return (
-    <div className="space-y-6">
+    <PageScrollShell className="space-y-6">
       <PageHeader
         category="Debug"
         title="Event Log"
@@ -163,6 +166,6 @@ export default async function WorkItemsPage() {
           </CardContent>
         </Card>
       )}
-    </div>
+    </PageScrollShell>
   )
 }

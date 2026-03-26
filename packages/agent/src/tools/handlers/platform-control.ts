@@ -1,5 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import {
+  assertAgentGrant,
   createAgent,
   createAgentSandbox,
   deleteAgent,
@@ -28,22 +29,21 @@ function cloneDefaultNetworkPolicy() {
   }
 }
 
-async function assertDangerousPlatformControl(agentId?: string): Promise<void> {
-  if (!agentId) {
+async function assertFleetGrant(input: {
+  actorAgentId?: string
+  action: string
+  targetAgentId?: string
+}) {
+  if (!input.actorAgentId) {
     throw new Error('Missing agent identity.')
   }
 
-  const actor = await findAgentById(agentId)
-  if (!actor) {
-    throw new Error('Agent not found.')
-  }
-
-  const config = parseAgentConfig(actor.config)
-  if (config.dangerouslyUnrestricted !== true) {
-    throw new Error(
-      'Dangerous platform control is disabled for this agent. Enable dangerously unrestricted mode first.'
-    )
-  }
+  await assertAgentGrant({
+    agentId: input.actorAgentId,
+    action: input.action,
+    resourceType: 'agent',
+    resourceId: input.targetAgentId ?? null,
+  })
 }
 
 function requireString(input: Record<string, unknown>, key: string): string {
@@ -193,7 +193,10 @@ export const platformControlDefinitions: Anthropic.Tool[] = [
 
 export const listAgentsTool: ToolHandler = async (_input, context) => {
   try {
-    await assertDangerousPlatformControl(context.agentId)
+    await assertFleetGrant({
+      actorAgentId: context.agentId,
+      action: 'fleet.agent.read',
+    })
     const agents = await listAgents()
     return {
       success: true,
@@ -206,8 +209,12 @@ export const listAgentsTool: ToolHandler = async (_input, context) => {
 
 export const getAgentConfigTool: ToolHandler = async (input, context) => {
   try {
-    await assertDangerousPlatformControl(context.agentId)
     const agentId = requireString(input, 'agent_id')
+    await assertFleetGrant({
+      actorAgentId: context.agentId,
+      action: 'fleet.agent.read',
+      targetAgentId: agentId,
+    })
     const agent = await findAgentById(agentId)
     if (!agent) {
       return { success: false, error: 'Agent not found.' }
@@ -229,8 +236,12 @@ export const getAgentConfigTool: ToolHandler = async (input, context) => {
 
 export const getAgentSoulTool: ToolHandler = async (input, context) => {
   try {
-    await assertDangerousPlatformControl(context.agentId)
     const agentId = requireString(input, 'agent_id')
+    await assertFleetGrant({
+      actorAgentId: context.agentId,
+      action: 'fleet.agent.read',
+      targetAgentId: agentId,
+    })
     const agent = await findAgentById(agentId)
     if (!agent) {
       return { success: false, error: 'Agent not found.' }
@@ -251,7 +262,10 @@ export const getAgentSoulTool: ToolHandler = async (input, context) => {
 
 export const createAgentTool: ToolHandler = async (input, context) => {
   try {
-    await assertDangerousPlatformControl(context.agentId)
+    await assertFleetGrant({
+      actorAgentId: context.agentId,
+      action: 'fleet.agent.create',
+    })
 
     const handle = requireString(input, 'handle')
     if (!HANDLE_PATTERN.test(handle)) {
@@ -312,8 +326,12 @@ export const createAgentTool: ToolHandler = async (input, context) => {
 
 export const setAgentStatusTool: ToolHandler = async (input, context) => {
   try {
-    await assertDangerousPlatformControl(context.agentId)
     const agentId = requireString(input, 'agent_id')
+    await assertFleetGrant({
+      actorAgentId: context.agentId,
+      action: 'fleet.agent.control',
+      targetAgentId: agentId,
+    })
     const status = parseStatus(input, 'status', 'idle')
 
     const updated = await updateAgent(agentId, { status })
@@ -334,8 +352,12 @@ export const setAgentStatusTool: ToolHandler = async (input, context) => {
 
 export const deleteAgentTool: ToolHandler = async (input, context) => {
   try {
-    await assertDangerousPlatformControl(context.agentId)
     const agentId = requireString(input, 'agent_id')
+    await assertFleetGrant({
+      actorAgentId: context.agentId,
+      action: 'fleet.agent.delete',
+      targetAgentId: agentId,
+    })
     const confirm = input.confirm === true
     if (!confirm) {
       return { success: false, error: 'Set confirm=true to delete an agent.' }
@@ -360,8 +382,12 @@ export const deleteAgentTool: ToolHandler = async (input, context) => {
 
 export const updateAgentConfigTool: ToolHandler = async (input, context) => {
   try {
-    await assertDangerousPlatformControl(context.agentId)
     const agentId = requireString(input, 'agent_id')
+    await assertFleetGrant({
+      actorAgentId: context.agentId,
+      action: 'fleet.agent.write',
+      targetAgentId: agentId,
+    })
     const updates = parseConfigUpdates(input)
     const agent = await findAgentById(agentId)
     if (!agent) {
@@ -389,8 +415,12 @@ export const updateAgentConfigTool: ToolHandler = async (input, context) => {
 
 export const updateAgentSoulTool: ToolHandler = async (input, context) => {
   try {
-    await assertDangerousPlatformControl(context.agentId)
     const agentId = requireString(input, 'agent_id')
+    await assertFleetGrant({
+      actorAgentId: context.agentId,
+      action: 'fleet.agent.write',
+      targetAgentId: agentId,
+    })
     const soul = requireString(input, 'soul')
     const agent = await findAgentById(agentId)
     if (!agent) {

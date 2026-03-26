@@ -44,7 +44,7 @@ import { toast } from 'sonner'
 interface WizardIdentity {
   name: string
   handle: string
-  title: string
+  roleId: string
   emoji: string
   avatarUrl: string
   teamId: string
@@ -148,7 +148,7 @@ function initialState(): WizardState {
     identity: {
       name: '',
       handle: '',
-      title: '',
+      roleId: '',
       emoji: getRandomEmoji(),
       avatarUrl: '',
       teamId: '',
@@ -233,6 +233,8 @@ export function AgentBuilderWizard() {
   // Queries
   const teamsQuery = trpc.org.listTeams.useQuery()
   const teams = (teamsQuery.data ?? []) as { id: string; name: string }[]
+  const rolesQuery = trpc.company.listRoles.useQuery()
+  const roles = (rolesQuery.data ?? []) as { id: string; name: string }[]
 
   // Mutations
   const createAgentMutation = trpc.org.createAgent.useMutation()
@@ -305,7 +307,6 @@ export function AgentBuilderWizard() {
           finalIdentity: {
             name: state.identity.name,
             handle: state.identity.handle,
-            title: state.identity.title || undefined,
             emoji: state.identity.emoji || undefined,
             avatarUrl: state.identity.avatarUrl || undefined,
           },
@@ -321,6 +322,7 @@ export function AgentBuilderWizard() {
             dangerouslyUnrestricted: state.features.dangerouslyUnrestricted,
           },
           teamId: state.identity.teamId || undefined,
+          roleId: state.identity.roleId || undefined,
           pluginAssignments: state.pluginAssignments.map((pa) => ({
             pluginInstanceId: pa.pluginInstanceId,
           })),
@@ -341,10 +343,10 @@ export function AgentBuilderWizard() {
         const result = await createAgentMutation.mutateAsync({
           handle: state.identity.handle,
           name: state.identity.name,
-          title: state.identity.title || null,
           emoji: state.identity.emoji || null,
           avatarUrl: state.identity.avatarUrl || null,
           teamId: state.identity.teamId || undefined,
+          roleId: state.identity.roleId || undefined,
         })
 
         // Now update the full config via the update route
@@ -423,7 +425,7 @@ export function AgentBuilderWizard() {
       {/* Step content */}
       <div className="min-h-[400px]">
         {state.currentStep === 0 && (
-          <IdentityStep state={state} dispatch={dispatch} teams={teams} />
+          <IdentityStep state={state} dispatch={dispatch} teams={teams} roles={roles} />
         )}
         {state.currentStep === 1 && <SoulStep state={state} dispatch={dispatch} />}
         {state.currentStep === 2 && <ModelBudgetStep state={state} dispatch={dispatch} />}
@@ -437,7 +439,7 @@ export function AgentBuilderWizard() {
             createTestAgentMutation={createTestAgentMutation}
           />
         )}
-        {state.currentStep === 7 && <ReviewStep state={state} dispatch={dispatch} />}
+        {state.currentStep === 7 && <ReviewStep state={state} dispatch={dispatch} roles={roles} />}
       </div>
 
       {/* Navigation buttons */}
@@ -499,10 +501,12 @@ function IdentityStep({
   state,
   dispatch,
   teams,
+  roles,
 }: {
   state: WizardState
   dispatch: React.Dispatch<WizardAction>
   teams: { id: string; name: string }[]
+  roles: { id: string; name: string }[]
 }) {
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
 
@@ -553,19 +557,27 @@ function IdentityStep({
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="builder-title">Title</Label>
-          <Input
-            id="builder-title"
-            value={state.identity.title}
+          <Label htmlFor="builder-role">Role</Label>
+          <NativeSelect
+            id="builder-role"
+            value={state.identity.roleId}
             onChange={(e) =>
               dispatch({
                 type: 'UPDATE_IDENTITY',
-                identity: { title: (e.target as HTMLInputElement).value },
+                identity: { roleId: (e.target as HTMLSelectElement).value },
               })
             }
-            placeholder="Sr Eng"
-          />
-          <p className="text-xs text-muted-foreground">Role or job description (optional).</p>
+          >
+            <NativeSelectOption value="">No role assigned</NativeSelectOption>
+            {roles.map((role) => (
+              <NativeSelectOption key={role.id} value={role.id}>
+                {role.name}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+          <p className="text-xs text-muted-foreground">
+            Defines permissions and policy (optional).
+          </p>
         </div>
 
         <div className="grid gap-6 sm:grid-cols-2">
@@ -1339,7 +1351,6 @@ function TestConversationStep({
         },
         identity: {
           name: state.identity.name,
-          title: state.identity.title || undefined,
           emoji: state.identity.emoji || undefined,
           avatarUrl: state.identity.avatarUrl || undefined,
         },
@@ -1361,7 +1372,6 @@ function TestConversationStep({
       },
       identity: {
         name: state.identity.name,
-        title: state.identity.title || undefined,
         emoji: state.identity.emoji || undefined,
         avatarUrl: state.identity.avatarUrl || undefined,
       },
@@ -1497,9 +1507,11 @@ function TestConversationStep({
 function ReviewStep({
   state,
   dispatch,
+  roles,
 }: {
   state: WizardState
   dispatch: React.Dispatch<WizardAction>
+  roles: { id: string; name: string }[]
 }) {
   return (
     <div className="space-y-4">
@@ -1528,10 +1540,12 @@ function ReviewStep({
                   {state.identity.handle ? `@${state.identity.handle}` : 'Not set'}
                 </span>
               </div>
-              {state.identity.title && (
+              {state.identity.roleId && (
                 <div>
-                  <span className="text-muted-foreground">Title: </span>
-                  <span>{state.identity.title}</span>
+                  <span className="text-muted-foreground">Role: </span>
+                  <span>
+                    {roles.find((r) => r.id === state.identity.roleId)?.name ?? 'Unknown'}
+                  </span>
                 </div>
               )}
               {state.identity.emoji && (

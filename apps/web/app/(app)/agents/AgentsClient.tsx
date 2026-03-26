@@ -19,7 +19,7 @@ export interface AgentData {
   name: string
   status: AgentStatus
   spriteId: string | null
-  title: string | null
+  roleName: string | null
   emoji: string | null
   avatarUrl: string | null
   policyStatus: {
@@ -77,6 +77,7 @@ export async function AgentsClient() {
     workloadRollups,
     teamRows,
     allTeams,
+    roleRows,
   ] = await Promise.all([
     listAgents(),
     getAgentIdsWithActiveJobs(),
@@ -87,11 +88,7 @@ export async function AgentsClient() {
     db
       .selectFrom('agent_teams')
       .innerJoin('teams', 'teams.id', 'agent_teams.team_id')
-      .select([
-        'agent_teams.agent_id as agent_id',
-        'teams.name as team_name',
-        'agent_teams.is_primary as is_primary',
-      ])
+      .select(['agent_teams.agent_id as agent_id', 'teams.name as team_name'])
       .orderBy('teams.name', 'asc')
       .execute(),
     db
@@ -99,21 +96,27 @@ export async function AgentsClient() {
       .select(['teams.id', 'teams.name'])
       .orderBy('teams.name', 'asc')
       .execute(),
+    db
+      .selectFrom('agent_role_assignments')
+      .innerJoin('roles', 'roles.id', 'agent_role_assignments.role_id')
+      .select(['agent_role_assignments.agent_id as agent_id', 'roles.name as role_name'])
+      .execute(),
   ])
 
   const metricsMap = new Map(rosterMetrics.map((row) => [row.agent_id, row]))
   const spendMap = new Map(spendByAgent.map((row) => [row.agent_id, row]))
   const evalMap = new Map(evalStats.map((row) => [row.agent_id, row]))
   const workloadMap = new Map(workloadRollups.map((row) => [row.agent_id, row]))
-  const teamMap = new Map<string, Array<{ name: string; isPrimary: boolean }>>()
-
+  const teamMap = new Map<string, string[]>()
   for (const row of teamRows) {
     const current = teamMap.get(row.agent_id) ?? []
-    current.push({
-      name: row.team_name,
-      isPrimary: row.is_primary === 1,
-    })
+    current.push(row.team_name)
     teamMap.set(row.agent_id, current)
+  }
+
+  const roleMap = new Map<string, string>()
+  for (const row of roleRows) {
+    roleMap.set(row.agent_id, row.role_name)
   }
 
   const agentData: AgentData[] = agents.map((agent) => {
@@ -126,7 +129,7 @@ export async function AgentsClient() {
     const evalSummary = evalMap.get(agent.id)
     const workload = workloadMap.get(agent.id)
     const teams = teamMap.get(agent.id) ?? []
-    const primaryTeam = teams.find((team) => team.isPrimary)?.name ?? teams[0]?.name ?? null
+    const primaryTeam = teams[0] ?? null
     const overloaded =
       (workload?.open_ticket_count ?? 0) >= 6 ||
       (workload?.blocked_ticket_count ?? 0) >= 2 ||
@@ -138,12 +141,12 @@ export async function AgentsClient() {
       name: agent.name,
       status: effectiveStatus,
       spriteId: agent.sprite_id,
-      title: config.title ?? null,
+      roleName: roleMap.get(agent.id) ?? null,
       emoji: config.emoji ?? null,
       avatarUrl: config.avatarUrl ?? null,
       policyStatus: getPolicyStatus(config.networkPolicy),
       primaryTeam,
-      teamNames: teams.map((team) => team.name),
+      teamNames: teams,
       openTicketCount: workload?.open_ticket_count ?? 0,
       blockedTicketCount: workload?.blocked_ticket_count ?? 0,
       inProgressTicketCount: workload?.in_progress_ticket_count ?? 0,

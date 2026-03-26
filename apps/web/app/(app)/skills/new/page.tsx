@@ -1,11 +1,14 @@
 import Link from 'next/link'
+import { createPageMetadata } from '@/app/metadata'
+import { PageScrollShell } from '../../components/PageScrollShell'
 import { SkillBuilderClient } from './SkillBuilderClient'
 
 export const dynamic = 'force-dynamic'
+export const metadata = createPageMetadata('New Skill')
 
 export default function NewSkillPage() {
   return (
-    <div className="space-y-6">
+    <PageScrollShell className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <Link href="/skills" className="text-xs text-muted-foreground hover:text-foreground">
@@ -20,6 +23,6 @@ export default function NewSkillPage() {
       </div>
 
       <SkillBuilderClient />
-    </div>
+    </PageScrollShell>
   )
 }

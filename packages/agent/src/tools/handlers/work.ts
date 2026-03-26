@@ -1,6 +1,9 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import {
+  assertAgentGrant,
   claimTicket,
+  createGoal,
+  createTicket,
   createWorkUpdate,
   findGoalById,
   findTicketById,
@@ -52,6 +55,13 @@ function parseStatuses(value: unknown, allowed: readonly string[]): string[] | u
   return filtered.length > 0 ? filtered : undefined
 }
 
+function requireAgentId(context: { agentId?: string }): string {
+  if (!context.agentId) {
+    throw new Error('Agent context is required.')
+  }
+  return context.agentId
+}
+
 export const searchGoalsDefinition: Anthropic.Tool = {
   name: 'search_goals',
   description: 'Search organization goals by title or outcome and return compact summaries.',
@@ -75,7 +85,9 @@ export const searchGoalsDefinition: Anthropic.Tool = {
   },
 }
 
-export const searchGoalsTool: ToolHandler = async (input) => {
+export const searchGoalsTool: ToolHandler = async (input, context) => {
+  const agentId = requireAgentId(context)
+  await assertAgentGrant({ agentId, action: 'work.goal.read', resourceType: 'goal' })
   const q = typeof input.query === 'string' ? input.query.trim() : ''
   const ownerKind = typeof input.owner_kind === 'string' ? input.owner_kind.trim() : undefined
   const ownerRef = typeof input.owner_ref === 'string' ? input.owner_ref.trim() : undefined
@@ -140,6 +152,8 @@ export const searchTicketsDefinition: Anthropic.Tool = {
 }
 
 export const searchTicketsTool: ToolHandler = async (input, context) => {
+  const agentId = requireAgentId(context)
+  await assertAgentGrant({ agentId, action: 'work.ticket.read', resourceType: 'ticket' })
   const q = typeof input.query === 'string' ? input.query.trim() : ''
   const goalId = typeof input.goal_id === 'string' ? input.goal_id.trim() : undefined
   const assigneeKind =
@@ -192,11 +206,18 @@ export const getTicketDefinition: Anthropic.Tool = {
   },
 }
 
-export const getTicketTool: ToolHandler = async (input) => {
+export const getTicketTool: ToolHandler = async (input, context) => {
+  const agentId = requireAgentId(context)
   const ticketId = typeof input.ticket_id === 'string' ? input.ticket_id.trim() : ''
   if (!ticketId) {
     return { success: false, error: 'ticket_id is required.' }
   }
+  await assertAgentGrant({
+    agentId,
+    action: 'work.ticket.read',
+    resourceType: 'ticket',
+    resourceId: ticketId,
+  })
 
   const ticket = await findTicketById(ticketId)
   if (!ticket) {
@@ -249,20 +270,24 @@ export const claimTicketDefinition: Anthropic.Tool = {
 }
 
 export const claimTicketTool: ToolHandler = async (input, context) => {
-  if (!context.agentId) {
-    return { success: false, error: 'Agent context is required.' }
-  }
+  const agentId = requireAgentId(context)
 
   const ticketId = typeof input.ticket_id === 'string' ? input.ticket_id.trim() : ''
   if (!ticketId) {
     return { success: false, error: 'ticket_id is required.' }
   }
+  await assertAgentGrant({
+    agentId,
+    action: 'work.ticket.write',
+    resourceType: 'ticket',
+    resourceId: ticketId,
+  })
 
   const updated = await claimTicket(ticketId, {
     assigneeKind: 'agent',
-    assigneeRef: context.agentId,
+    assigneeRef: agentId,
     claimedByKind: 'agent',
-    claimedByRef: context.agentId,
+    claimedByRef: agentId,
   })
   if (!updated) {
     return { success: false, error: `Ticket "${ticketId}" not found.` }
@@ -273,7 +298,7 @@ export const claimTicketTool: ToolHandler = async (input, context) => {
     ticket_id: updated.id,
     team_id: null,
     author_kind: 'agent',
-    author_ref: context.agentId,
+    author_ref: agentId,
     kind: 'status',
     body: `Claimed by this agent and moved to in_progress.`,
     metadata_json: null,
@@ -304,10 +329,17 @@ export const updateTicketDefinition: Anthropic.Tool = {
 }
 
 export const updateTicketTool: ToolHandler = async (input, context) => {
+  const agentId = requireAgentId(context)
   const ticketId = typeof input.ticket_id === 'string' ? input.ticket_id.trim() : ''
   if (!ticketId) {
     return { success: false, error: 'ticket_id is required.' }
   }
+  await assertAgentGrant({
+    agentId,
+    action: 'work.ticket.write',
+    resourceType: 'ticket',
+    resourceId: ticketId,
+  })
 
   const existing = await findTicketById(ticketId)
   if (!existing) {
@@ -327,13 +359,13 @@ export const updateTicketTool: ToolHandler = async (input, context) => {
     return { success: false, error: `Ticket "${ticketId}" update failed.` }
   }
 
-  if (context.agentId && nextStatus !== existing.status) {
+  if (nextStatus !== existing.status) {
     await createWorkUpdate({
       goal_id: updated.goal_id,
       ticket_id: updated.id,
       team_id: null,
       author_kind: 'agent',
-      author_ref: context.agentId,
+      author_ref: agentId,
       kind: 'status',
       body: `Status changed from ${existing.status} to ${updated.status}.`,
       metadata_json: null,
@@ -364,6 +396,7 @@ export const postWorkUpdateDefinition: Anthropic.Tool = {
 }
 
 export const postWorkUpdateTool: ToolHandler = async (input, context) => {
+  const agentId = requireAgentId(context)
   const goalId = typeof input.goal_id === 'string' ? input.goal_id.trim() : ''
   const ticketId = typeof input.ticket_id === 'string' ? input.ticket_id.trim() : ''
   const teamId = typeof input.team_id === 'string' ? input.team_id.trim() : ''
@@ -379,19 +412,266 @@ export const postWorkUpdateTool: ToolHandler = async (input, context) => {
   if (!body) {
     return { success: false, error: 'body is required.' }
   }
+  if (kind === 'heartbeat') {
+    if (!goalId) {
+      return { success: false, error: 'Heartbeat updates must target a goal.' }
+    }
+    if (teamId) {
+      return { success: false, error: 'Team heartbeat updates have been removed.' }
+    }
+  }
+
+  if (ticketId) {
+    await assertAgentGrant({
+      agentId,
+      action: 'work.ticket.write',
+      resourceType: 'ticket',
+      resourceId: ticketId,
+    })
+  } else {
+    await assertAgentGrant({
+      agentId,
+      action: 'work.goal.write',
+      resourceType: goalId ? 'goal' : 'team',
+      resourceId: goalId || teamId || null,
+    })
+  }
 
   await createWorkUpdate({
     goal_id: goalId || null,
     ticket_id: ticketId || null,
     team_id: teamId || null,
-    author_kind: context.agentId ? 'agent' : 'system',
-    author_ref: context.agentId ?? null,
+    author_kind: 'agent',
+    author_ref: agentId,
     kind,
     body,
     metadata_json: null,
   })
 
   return { success: true, output: 'Work update posted.' }
+}
+
+export const createGoalDefinition: Anthropic.Tool = {
+  name: 'create_goal',
+  description: 'Create a new organizational goal.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      title: { type: 'string', description: 'Goal title.' },
+      outcome: { type: 'string', description: 'Desired outcome (default: empty).' },
+      parent_goal_id: { type: 'string', description: 'Optional parent goal ID for nesting.' },
+      team_id: { type: 'string', description: 'Optional team ID to associate.' },
+      owner_agent_id: {
+        type: 'string',
+        description: 'Optional agent ID to set as owner.',
+      },
+      status: {
+        type: 'string',
+        enum: ['draft', 'active', 'at_risk', 'blocked', 'done', 'archived'],
+        description: 'Goal status (default: draft).',
+      },
+      progress_source: {
+        type: 'string',
+        description: 'Optional progress source.',
+      },
+    },
+    required: ['title'],
+  },
+}
+
+export const createGoalTool: ToolHandler = async (input, context) => {
+  const agentId = requireAgentId(context)
+  await assertAgentGrant({ agentId, action: 'work.goal.create', resourceType: 'goal' })
+
+  const title = typeof input.title === 'string' ? input.title.trim() : ''
+  if (!title) {
+    return { success: false, error: 'title is required.' }
+  }
+
+  const outcome = typeof input.outcome === 'string' ? input.outcome.trim() : ''
+  const parentGoalId = typeof input.parent_goal_id === 'string' ? input.parent_goal_id.trim() : null
+  const teamId = typeof input.team_id === 'string' ? input.team_id.trim() : null
+  const ownerAgentId = typeof input.owner_agent_id === 'string' ? input.owner_agent_id.trim() : null
+  const status =
+    typeof input.status === 'string' &&
+    ['draft', 'active', 'at_risk', 'blocked', 'done', 'archived'].includes(input.status)
+      ? input.status
+      : 'draft'
+  const progressSource =
+    typeof input.progress_source === 'string' ? input.progress_source.trim() : undefined
+
+  if (parentGoalId) {
+    const parent = await findGoalById(parentGoalId)
+    if (!parent) {
+      return { success: false, error: `Parent goal "${parentGoalId}" not found.` }
+    }
+  }
+
+  const goal = await createGoal({
+    parent_goal_id: parentGoalId || null,
+    title,
+    outcome,
+    status,
+    owner_kind: ownerAgentId ? 'agent' : null,
+    owner_ref: ownerAgentId || null,
+    team_id: teamId || null,
+    progress_source: progressSource as never,
+    progress_current: null,
+    progress_target: null,
+    progress_unit: null,
+    created_by_user_id: null,
+  })
+
+  return { success: true, output: `Created goal ${goal.id}: ${goal.title}` }
+}
+
+export const deleteGoalDefinition: Anthropic.Tool = {
+  name: 'delete_goal',
+  description: 'Delete a goal. Fails if the goal has child goals.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      goal_id: { type: 'string', description: 'The goal ID to delete.' },
+    },
+    required: ['goal_id'],
+  },
+}
+
+export const deleteGoalTool: ToolHandler = async (input, context) => {
+  const agentId = requireAgentId(context)
+  const goalId = typeof input.goal_id === 'string' ? input.goal_id.trim() : ''
+  if (!goalId) {
+    return { success: false, error: 'goal_id is required.' }
+  }
+  await assertAgentGrant({
+    agentId,
+    action: 'work.goal.delete',
+    resourceType: 'goal',
+    resourceId: goalId,
+  })
+
+  const goal = await findGoalById(goalId)
+  if (!goal) {
+    return { success: false, error: `Goal "${goalId}" not found.` }
+  }
+
+  const children = await listGoals({ parentGoalId: goalId, limit: 1 })
+  if (children.length > 0) {
+    return { success: false, error: `Goal "${goalId}" has child goals. Remove them first.` }
+  }
+
+  const db = getDb()
+  await db.deleteFrom('goals').where('id', '=', goalId).execute()
+
+  return { success: true, output: `Deleted goal ${goalId}.` }
+}
+
+export const createTicketDefinition: Anthropic.Tool = {
+  name: 'create_ticket',
+  description: 'Create a new ticket, optionally linked to a goal.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      title: { type: 'string', description: 'Ticket title.' },
+      body: { type: 'string', description: 'Optional ticket body/description.' },
+      goal_id: { type: 'string', description: 'Optional goal ID to link this ticket to.' },
+      parent_ticket_id: {
+        type: 'string',
+        description: 'Optional parent ticket ID for nesting.',
+      },
+      assignee_agent_id: {
+        type: 'string',
+        description: 'Optional agent ID to assign the ticket to.',
+      },
+      status: {
+        type: 'string',
+        enum: ['inbox', 'ready', 'in_progress', 'blocked', 'done', 'canceled'],
+        description: 'Ticket status (default: inbox).',
+      },
+    },
+    required: ['title'],
+  },
+}
+
+export const createTicketTool: ToolHandler = async (input, context) => {
+  const agentId = requireAgentId(context)
+  await assertAgentGrant({ agentId, action: 'work.ticket.create', resourceType: 'ticket' })
+
+  const title = typeof input.title === 'string' ? input.title.trim() : ''
+  if (!title) {
+    return { success: false, error: 'title is required.' }
+  }
+
+  const body = typeof input.body === 'string' ? input.body.trim() : null
+  const goalId = typeof input.goal_id === 'string' ? input.goal_id.trim() : null
+  const parentTicketId =
+    typeof input.parent_ticket_id === 'string' ? input.parent_ticket_id.trim() : null
+  const assigneeAgentId =
+    typeof input.assignee_agent_id === 'string' ? input.assignee_agent_id.trim() : null
+  const status =
+    typeof input.status === 'string' &&
+    ['inbox', 'ready', 'in_progress', 'blocked', 'done', 'canceled'].includes(input.status)
+      ? input.status
+      : 'inbox'
+
+  if (goalId) {
+    const goal = await findGoalById(goalId)
+    if (!goal) {
+      return { success: false, error: `Goal "${goalId}" not found.` }
+    }
+  }
+
+  const ticket = await createTicket({
+    goal_id: goalId || null,
+    parent_ticket_id: parentTicketId || null,
+    title,
+    body,
+    status,
+    assignee_kind: assigneeAgentId ? 'agent' : null,
+    assignee_ref: assigneeAgentId || null,
+    created_by_user_id: null,
+    claimed_by_kind: null,
+    claimed_by_ref: null,
+    claimed_at: null,
+  })
+
+  return { success: true, output: `Created ticket ${ticket.id}: ${ticket.title}` }
+}
+
+export const deleteTicketDefinition: Anthropic.Tool = {
+  name: 'delete_ticket',
+  description: 'Delete a ticket.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      ticket_id: { type: 'string', description: 'The ticket ID to delete.' },
+    },
+    required: ['ticket_id'],
+  },
+}
+
+export const deleteTicketTool: ToolHandler = async (input, context) => {
+  const agentId = requireAgentId(context)
+  const ticketId = typeof input.ticket_id === 'string' ? input.ticket_id.trim() : ''
+  if (!ticketId) {
+    return { success: false, error: 'ticket_id is required.' }
+  }
+  await assertAgentGrant({
+    agentId,
+    action: 'work.ticket.delete',
+    resourceType: 'ticket',
+    resourceId: ticketId,
+  })
+
+  const ticket = await findTicketById(ticketId)
+  if (!ticket) {
+    return { success: false, error: `Ticket "${ticketId}" not found.` }
+  }
+
+  const db = getDb()
+  await db.deleteFrom('tickets').where('id', '=', ticketId).execute()
+
+  return { success: true, output: `Deleted ticket ${ticketId}.` }
 }
 
 export const workDefinitions: Anthropic.Tool[] = [
@@ -401,4 +681,8 @@ export const workDefinitions: Anthropic.Tool[] = [
   claimTicketDefinition,
   updateTicketDefinition,
   postWorkUpdateDefinition,
+  createGoalDefinition,
+  deleteGoalDefinition,
+  createTicketDefinition,
+  deleteTicketDefinition,
 ]

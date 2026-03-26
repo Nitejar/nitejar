@@ -1,7 +1,8 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { runAgent } from '@nitejar/agent/runner'
 import { listAgents, listWorkItems, findWorkItemById, updateWorkItem } from '@nitejar/database'
-import { pluginHandlerRegistry, getPluginInstanceWithConfig } from '@nitejar/plugin-handlers'
+import { pluginHandlerRegistry } from '@nitejar/plugin-handlers/registry'
+import { getPluginInstanceWithConfig } from '@nitejar/plugin-handlers/router'
 import { devGuard } from '@/lib/dev-guard'
 
 /**

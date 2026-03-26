@@ -7,6 +7,7 @@ vi.mock('@nitejar/database', () => ({
   findSimilarActivityEntries: vi.fn().mockResolvedValue([]),
   serializeEmbedding: vi.fn(),
   appendActivityEntry: vi.fn(),
+  resolveActivityGoalSnapshot: vi.fn(),
 }))
 
 vi.mock('./embeddings', () => ({
@@ -62,6 +63,8 @@ describe('getRelevantActivity', () => {
       agent_handle: 'scout',
       job_id: 'job-1',
       session_key: null,
+      goal_id: null,
+      goal_snapshot_json: null,
       status: 'completed',
       summary: 'Triaging issue #42',
       final_summary: 'Resolved issue #42 by updating config',
@@ -94,6 +97,8 @@ describe('getRelevantActivity', () => {
       agent_handle: 'scout',
       job_id: 'job-2',
       session_key: null,
+      goal_id: null,
+      goal_snapshot_json: null,
       status: 'completed',
       summary: 'Triaging issue #99',
       final_summary: null,
@@ -125,6 +130,8 @@ describe('getRelevantActivity', () => {
       agent_handle: 'scout',
       job_id: 'job-3',
       session_key: null,
+      goal_id: null,
+      goal_snapshot_json: null,
       status: 'starting',
       summary: 'Working on PR #5',
       final_summary: 'Should not appear',

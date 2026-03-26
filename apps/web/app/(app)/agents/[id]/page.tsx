@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -6,6 +7,9 @@ import {
   getPluginInstancesForAgent,
   getAgentIdsWithActiveJobs,
   getDb,
+  listAgentRoleAssignments,
+  listRoles,
+  listRoleDefaults,
 } from '@nitejar/database'
 import {
   deprovisionSprite,
@@ -13,6 +17,8 @@ import {
   isSpritesExecutionAvailable,
 } from '@nitejar/sprites'
 import { getMemorySettings, parseAgentConfig } from '@nitejar/agent/config'
+import type { NetworkPolicy } from '@nitejar/agent/types'
+import { createPageMetadata } from '@/app/metadata'
 import { DeleteButton } from '../../components/DeleteButton'
 import { SoulSection } from './SoulSection'
 import { ModelSection } from './ModelSection'
@@ -27,6 +33,8 @@ import { StatusToggle } from './StatusToggle'
 import { ExportProfileButton } from './ExportProfileButton'
 import { ChatWithAgentButton } from './ChatWithAgentButton'
 import { CostSection } from './CostSection'
+import { RolesSection } from './RolesSection'
+import { PageScrollShell } from '../../components/PageScrollShell'
 import { SkillsSection } from './SkillsSection'
 import { EvalsSection } from './EvalsSection'
 import { WorkSection } from './WorkSection'
@@ -45,6 +53,32 @@ export const dynamic = 'force-dynamic'
 
 interface Props {
   params: Promise<{ id: string }>
+}
+
+function isNetworkPolicy(value: unknown): value is NetworkPolicy {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const candidate = value as { mode?: unknown; rules?: unknown }
+  return (
+    typeof candidate.mode === 'string' &&
+    Array.isArray(candidate.rules) &&
+    candidate.rules.every((rule) => {
+      if (!rule || typeof rule !== 'object') {
+        return false
+      }
+
+      const candidateRule = rule as { domain?: unknown; action?: unknown }
+      return typeof candidateRule.domain === 'string' && typeof candidateRule.action === 'string'
+    })
+  )
+}
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { id } = await params
+  const agent = await findAgentById(id)
+  return createPageMetadata(agent?.name ?? 'Agent')
 }
 
 async function deleteAgentAction(formData: FormData) {
@@ -73,12 +107,15 @@ export default async function AgentDetailPage({ params }: Props) {
   const { id } = await params
   const db = getDb()
 
-  const [agent, pluginInstances, allTeams, activeAgentIds] = await Promise.all([
-    findAgentById(id),
-    getPluginInstancesForAgent(id),
-    db.selectFrom('teams').select(['id', 'name']).orderBy('name', 'asc').execute(),
-    getAgentIdsWithActiveJobs(),
-  ])
+  const [agent, pluginInstances, allTeams, activeAgentIds, roleAssignments, allRoles] =
+    await Promise.all([
+      findAgentById(id),
+      getPluginInstancesForAgent(id),
+      db.selectFrom('teams').select(['id', 'name']).orderBy('name', 'asc').execute(),
+      getAgentIdsWithActiveJobs(),
+      listAgentRoleAssignments(id),
+      listRoles({ activeOnly: true }),
+    ])
 
   if (!agent) {
     notFound()
@@ -88,6 +125,33 @@ export default async function AgentDetailPage({ params }: Props) {
   const effectiveMemorySettings = getMemorySettings(config)
   const dbStatus = agent.status as 'idle' | 'busy' | 'offline'
   const effectiveStatus = dbStatus !== 'offline' && activeAgentIds.has(agent.id) ? 'busy' : dbStatus
+
+  const currentRole = roleAssignments[0]?.role ?? null
+
+  // Get role network defaults if a role is assigned
+  let roleNetworkDefaults: {
+    roleName: string
+    mode: string
+    rules: Array<{ domain: string; action: string }>
+  } | null = null
+  if (currentRole) {
+    const defaults = await listRoleDefaults(currentRole.id)
+    const npDefault = defaults.find((d) => d.key === 'networkPolicy')
+    if (npDefault?.value_json) {
+      try {
+        const parsed: unknown = JSON.parse(npDefault.value_json)
+        if (isNetworkPolicy(parsed)) {
+          roleNetworkDefaults = {
+            roleName: currentRole.name,
+            mode: parsed.mode ?? 'unrestricted',
+            rules: parsed.rules,
+          }
+        }
+      } catch {
+        // ignore malformed JSON
+      }
+    }
+  }
 
   // Get team assignments for this agent
   const teamAssignments = await db
@@ -110,7 +174,7 @@ export default async function AgentDetailPage({ params }: Props) {
     .toUpperCase()
 
   return (
-    <div className="space-y-6">
+    <PageScrollShell className="space-y-6">
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
@@ -136,9 +200,9 @@ export default async function AgentDetailPage({ params }: Props) {
             <div>
               <h2 className="text-2xl font-semibold">{agent.name}</h2>
               <p className="text-sm text-muted-foreground">
-                {config.title ? (
+                {currentRole ? (
                   <>
-                    {config.title} · <span className="font-mono">@{agent.handle}</span>
+                    {currentRole.name} · <span className="font-mono">@{agent.handle}</span>
                   </>
                 ) : (
                   <span className="font-mono">@{agent.handle}</span>
@@ -183,7 +247,8 @@ export default async function AgentDetailPage({ params }: Props) {
                 agentId={agent.id}
                 handle={agent.handle}
                 name={agent.name}
-                initialTitle={config.title}
+                currentRoleId={currentRole?.id ?? null}
+                availableRoles={allRoles.map((r) => ({ id: r.id, name: r.name }))}
                 initialEmoji={config.emoji}
                 initialAvatarUrl={config.avatarUrl}
                 currentTeamId={currentTeamId}
@@ -191,6 +256,9 @@ export default async function AgentDetailPage({ params }: Props) {
               />
             </CardContent>
           </Card>
+
+          {/* Roles & Policy Section */}
+          <RolesSection agentId={agent.id} />
 
           {/* Soul Section */}
           <SoulSection agentId={agent.id} initialSoul={config.soul} />
@@ -219,7 +287,7 @@ export default async function AgentDetailPage({ params }: Props) {
           {/* Evals Section */}
           <EvalsSection agentId={agent.id} />
 
-          <NetworkPolicySection agentId={agent.id} />
+          <NetworkPolicySection agentId={agent.id} roleNetworkDefaults={roleNetworkDefaults} />
 
           {/* Memory Section */}
           <MemorySection
@@ -340,6 +408,6 @@ export default async function AgentDetailPage({ params }: Props) {
           <SandboxesSection agentId={agent.id} />
         </div>
       </div>
-    </div>
+    </PageScrollShell>
   )
 }

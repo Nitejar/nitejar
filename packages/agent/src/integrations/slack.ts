@@ -17,7 +17,7 @@ import {
   type SlackMessagePage,
   type SlackResponseContext,
   type SlackWorkspaceSearchResult,
-} from '@nitejar/plugin-handlers'
+} from '@nitejar/plugin-handlers/slack'
 import type { ToolHandler } from '../tools/types'
 import { registerIntegrationProvider } from './registry'
 

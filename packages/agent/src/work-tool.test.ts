@@ -6,6 +6,17 @@ vi.mock('@nitejar/database', async () => {
   const actual = await vi.importActual<typeof Database>('@nitejar/database')
   return {
     ...actual,
+    assertAgentGrant: vi.fn(),
+    createWorkUpdate: vi.fn(),
+    getDb: vi.fn(() => ({
+      selectFrom: () => ({
+        select: () => ({
+          where: () => ({
+            executeTakeFirst: vi.fn().mockResolvedValue(null),
+          }),
+        }),
+      }),
+    })),
     listGoals: vi.fn(),
     listTickets: vi.fn(),
     findGoalById: vi.fn(),
@@ -15,6 +26,7 @@ vi.mock('@nitejar/database', async () => {
 const mockedListGoals = vi.mocked(Database.listGoals)
 const mockedListTickets = vi.mocked(Database.listTickets)
 const mockedFindGoalById = vi.mocked(Database.findGoalById)
+const mockedCreateWorkUpdate = vi.mocked(Database.createWorkUpdate)
 
 const context: ToolContext = {
   agentId: 'agent-1',
@@ -27,6 +39,7 @@ describe('work tools', () => {
     mockedListGoals.mockReset()
     mockedListTickets.mockReset()
     mockedFindGoalById.mockReset()
+    mockedCreateWorkUpdate.mockReset()
   })
 
   it('splits comma-delimited ticket statuses for search_tickets', async () => {
@@ -110,5 +123,21 @@ describe('work tools', () => {
       })
     )
     expect(result.output).toContain('Stabilize heartbeat search')
+  })
+
+  it('rejects team-scoped heartbeat updates for post_work_update', async () => {
+    const result = await executeTool(
+      'post_work_update',
+      {
+        team_id: 'team-ops',
+        kind: 'heartbeat',
+        body: 'Still moving.',
+      },
+      context
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('Heartbeat updates must target a goal')
+    expect(mockedCreateWorkUpdate).not.toHaveBeenCalled()
   })
 })

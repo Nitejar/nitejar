@@ -11,7 +11,7 @@ import {
   hashlineEditFileDefinition,
 } from './handlers/filesystem'
 import { serviceDefinitions } from './handlers/services'
-import { getSelfConfigDefinition } from './handlers/self-config'
+import { getSelfConfigDefinition, getSelfPolicyDefinition } from './handlers/self-config'
 import { scheduleDefinitions } from './handlers/schedule'
 import { runTodoDefinition } from './handlers/run-todo'
 import { backgroundTaskDefinitions } from './handlers/background-tasks'
@@ -29,6 +29,8 @@ import { routineDefinitions } from './handlers/routines'
 import { collectionDefinitions } from './handlers/collections'
 import { credentialDefinitions } from './handlers/credentials'
 import { platformControlDefinitions } from './handlers/platform-control'
+import { teamDefinitions } from './handlers/teams'
+import { policyToolDefinitions } from './handlers/policy'
 import { workDefinitions } from './handlers/work'
 
 const baseToolDefinitions: Anthropic.Tool[] = [
@@ -39,6 +41,7 @@ const baseToolDefinitions: Anthropic.Tool[] = [
   ...filesystemDefinitions,
   ...serviceDefinitions,
   getSelfConfigDefinition,
+  getSelfPolicyDefinition,
   ...sandboxDefinitions,
   ...scheduleDefinitions,
   ...routineDefinitions,
@@ -54,6 +57,8 @@ const baseToolDefinitions: Anthropic.Tool[] = [
   queryActivityDefinition,
   ...workDefinitions,
   ...platformControlDefinitions,
+  ...teamDefinitions,
+  ...policyToolDefinitions,
   // Intentionally disabled: private agent DMs are off while we stabilize
   // public-channel inter-agent communication and routing receipts.
   ...runHistoryDefinitions,

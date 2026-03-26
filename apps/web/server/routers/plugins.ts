@@ -19,7 +19,7 @@ import {
   upsertPluginVersion,
 } from '@nitejar/database'
 import { consumeUpload } from '../../app/api/admin/plugins/upload/cache'
-import { pluginHandlerRegistry } from '@nitejar/plugin-handlers'
+import { pluginHandlerRegistry } from '@nitejar/plugin-handlers/registry'
 import { providerRegistry } from '@nitejar/agent/integrations/registry'
 import {
   PluginInstaller,

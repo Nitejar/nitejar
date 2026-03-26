@@ -160,9 +160,13 @@ export async function isPortAvailable(port: number, host = '0.0.0.0'): Promise<b
   })
 }
 
-export async function resolveAutoPort(startPort = 3000, maxAttempts = 200): Promise<number> {
+export async function resolveAutoPort(
+  startPort = 3000,
+  maxAttempts = 200,
+  isAvailable: (port: number) => Promise<boolean> = isPortAvailable
+): Promise<number> {
   for (let port = startPort; port < startPort + maxAttempts; port += 1) {
-    if (await isPortAvailable(port)) {
+    if (await isAvailable(port)) {
       return port
     }
   }
@@ -171,8 +175,11 @@ export async function resolveAutoPort(startPort = 3000, maxAttempts = 200): Prom
   )
 }
 
-export async function ensurePortAvailable(port: number): Promise<void> {
-  const available = await isPortAvailable(port)
+export async function ensurePortAvailable(
+  port: number,
+  isAvailable: (port: number) => Promise<boolean> = isPortAvailable
+): Promise<void> {
+  const available = await isAvailable(port)
   if (!available) {
     throw new Error(`Port ${port} is already in use. Re-run with --port <number> or --port auto.`)
   }

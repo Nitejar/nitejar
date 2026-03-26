@@ -4,77 +4,98 @@
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./config": {
-      "types": "./src/config.ts",
-      "default": "./src/config.ts"
+      "types": "./dist/config.d.ts",
+      "import": "./dist/config.js",
+      "default": "./dist/config.js"
     },
     "./network-policy": {
-      "types": "./src/network-policy.ts",
-      "default": "./src/network-policy.ts"
+      "types": "./dist/network-policy.d.ts",
+      "import": "./dist/network-policy.js",
+      "default": "./dist/network-policy.js"
     },
     "./runner": {
-      "types": "./src/runner.ts",
-      "default": "./src/runner.ts"
+      "types": "./dist/runner.d.ts",
+      "import": "./dist/runner.js",
+      "default": "./dist/runner.js"
     },
     "./steer-arbiter": {
-      "types": "./src/steer-arbiter.ts",
-      "default": "./src/steer-arbiter.ts"
+      "types": "./dist/steer-arbiter.d.ts",
+      "import": "./dist/steer-arbiter.js",
+      "default": "./dist/steer-arbiter.js"
     },
     "./streaming": {
-      "types": "./src/streaming.ts",
-      "default": "./src/streaming.ts"
+      "types": "./dist/streaming.d.ts",
+      "import": "./dist/streaming.js",
+      "default": "./dist/streaming.js"
     },
     "./memory": {
-      "types": "./src/memory.ts",
-      "default": "./src/memory.ts"
+      "types": "./dist/memory.d.ts",
+      "import": "./dist/memory.js",
+      "default": "./dist/memory.js"
     },
     "./prompt-builder": {
-      "types": "./src/prompt-builder.ts",
-      "default": "./src/prompt-builder.ts"
+      "types": "./dist/prompt-builder.d.ts",
+      "import": "./dist/prompt-builder.js",
+      "default": "./dist/prompt-builder.js"
     },
     "./prompt-sanitize": {
-      "types": "./src/prompt-sanitize.ts",
-      "default": "./src/prompt-sanitize.ts"
+      "types": "./dist/prompt-sanitize.d.ts",
+      "import": "./dist/prompt-sanitize.js",
+      "default": "./dist/prompt-sanitize.js"
     },
     "./mention-parser": {
-      "types": "./src/mention-parser.ts",
-      "default": "./src/mention-parser.ts"
+      "types": "./dist/mention-parser.d.ts",
+      "import": "./dist/mention-parser.js",
+      "default": "./dist/mention-parser.js"
     },
     "./tracing": {
-      "types": "./src/tracing.ts",
-      "default": "./src/tracing.ts"
+      "types": "./dist/tracing.d.ts",
+      "import": "./dist/tracing.js",
+      "default": "./dist/tracing.js"
     },
     "./sandboxes": {
-      "types": "./src/sandboxes.ts",
-      "default": "./src/sandboxes.ts"
+      "types": "./dist/sandboxes.d.ts",
+      "import": "./dist/sandboxes.js",
+      "default": "./dist/sandboxes.js"
     },
     "./skill-sync": {
-      "types": "./src/skill-sync.ts",
-      "default": "./src/skill-sync.ts"
+      "types": "./dist/skill-sync.d.ts",
+      "import": "./dist/skill-sync.js",
+      "default": "./dist/skill-sync.js"
     },
     "./skill-materialize": {
-      "types": "./src/skill-materialize.ts",
-      "default": "./src/skill-materialize.ts"
+      "types": "./dist/skill-materialize.d.ts",
+      "import": "./dist/skill-materialize.js",
+      "default": "./dist/skill-materialize.js"
     },
     "./session": {
-      "types": "./src/session.ts",
-      "default": "./src/session.ts"
+      "types": "./dist/session.d.ts",
+      "import": "./dist/session.js",
+      "default": "./dist/session.js"
     },
     "./types": {
-      "types": "./src/types.ts",
-      "default": "./src/types.ts"
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js",
+      "default": "./dist/types.js"
     },
     "./integrations/registry": {
-      "types": "./src/integrations/registry.ts",
-      "default": "./src/integrations/registry.ts"
+      "types": "./dist/integrations/registry.d.ts",
+      "import": "./dist/integrations/registry.js",
+      "default": "./dist/integrations/registry.js"
     }
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
     "lint": "eslint src __tests__ --no-error-on-unmatched-pattern",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

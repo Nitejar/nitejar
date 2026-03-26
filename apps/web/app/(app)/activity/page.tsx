@@ -1,9 +1,12 @@
 import Link from 'next/link'
 import { listRecentActivity, type RecentActivityEntry } from '@nitejar/database'
 import { parseAgentConfig } from '@nitejar/agent/config'
+import { createPageMetadata } from '@/app/metadata'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader } from '../components/PageHeader'
+import { PageScrollShell } from '../components/PageScrollShell'
 import { formatCost } from '@/lib/utils'
+import { describeCron } from '../settings/routines/cron-describe'
 import {
   formatArbiterDecisionLabel,
   getArbiterDecisionTone,
@@ -11,6 +14,7 @@ import {
 } from '@/lib/arbiter-receipts'
 
 export const dynamic = 'force-dynamic'
+export const metadata = createPageMetadata('Activity')
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -109,6 +113,59 @@ function getDayLabel(timestamp: number): string {
   return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
+function formatGoalStatus(status: string | null | undefined): string | null {
+  const trimmed = status?.trim()
+  if (!trimmed) return null
+  return trimmed.replace(/_/g, ' ')
+}
+
+type GoalHeartbeatSnapshot = {
+  kind: 'goal_heartbeat'
+  goalId: string
+  goalTitle: string
+  goalStatus: string
+  goalOutcome: string
+  routineId: string | null
+  routineName: string | null
+  cronExpr: string | null
+  timezone: string | null
+}
+
+type GoalHeartbeatContext = GoalHeartbeatSnapshot & {
+  liveGoalId: string | null
+  cadenceLabel: string | null
+}
+
+function parseGoalHeartbeatContext(
+  goalSnapshotJson: string | null,
+  liveGoalId: string | null
+): GoalHeartbeatContext | null {
+  if (!goalSnapshotJson) return null
+
+  try {
+    const parsed = JSON.parse(goalSnapshotJson) as Partial<GoalHeartbeatSnapshot>
+    if (parsed.kind !== 'goal_heartbeat') return null
+    if (!parsed.goalId || !parsed.goalTitle || !parsed.goalStatus || !parsed.goalOutcome)
+      return null
+
+    return {
+      kind: 'goal_heartbeat',
+      goalId: parsed.goalId,
+      goalTitle: parsed.goalTitle,
+      goalStatus: parsed.goalStatus,
+      goalOutcome: parsed.goalOutcome,
+      routineId: parsed.routineId ?? null,
+      routineName: parsed.routineName ?? null,
+      cronExpr: parsed.cronExpr ?? null,
+      timezone: parsed.timezone ?? null,
+      liveGoalId,
+      cadenceLabel: describeCron(parsed.cronExpr) ?? parsed.cronExpr ?? null,
+    }
+  } catch {
+    return null
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Grouped event types
 // ---------------------------------------------------------------------------
@@ -126,6 +183,7 @@ interface AgentRun {
   completedAt: number | null
   triageSummary: string | null
   triageResources: string[] | null
+  goalContext: GoalHeartbeatContext | null
   dispatchStatus: string | null
   dispatchControlState: string | null
   dispatchControlReason: string | null
@@ -147,6 +205,7 @@ interface WorkItemEvent {
   queueIncludedCount: number
   queueDroppedCount: number
   queueCancelledCount: number
+  goalContext: GoalHeartbeatContext | null
   runs: AgentRun[]
   children: WorkItemEvent[] // agent-relay work items spawned from this one
 }
@@ -165,6 +224,7 @@ function groupByWorkItem(entries: RecentActivityEntry[]): WorkItemEvent[] {
       }
     }
 
+    const goalContext = parseGoalHeartbeatContext(entry.goal_snapshot_json, entry.live_goal_id)
     const run: AgentRun = {
       jobId: entry.job_id,
       agentId: entry.agent_id,
@@ -178,6 +238,7 @@ function groupByWorkItem(entries: RecentActivityEntry[]): WorkItemEvent[] {
       completedAt: entry.completed_at,
       triageSummary: entry.triage_summary,
       triageResources: resources,
+      goalContext,
       dispatchStatus: entry.dispatch_status,
       dispatchControlState: entry.dispatch_control_state,
       dispatchControlReason: entry.dispatch_control_reason,
@@ -199,6 +260,7 @@ function groupByWorkItem(entries: RecentActivityEntry[]): WorkItemEvent[] {
         existing.queueCancelledCount,
         entry.queue_cancelled_count
       )
+      existing.goalContext ??= goalContext
       existing.runs.push(run)
     } else {
       map.set(entry.work_item_id, {
@@ -213,6 +275,7 @@ function groupByWorkItem(entries: RecentActivityEntry[]): WorkItemEvent[] {
         queueIncludedCount: entry.queue_included_count,
         queueDroppedCount: entry.queue_dropped_count,
         queueCancelledCount: entry.queue_cancelled_count,
+        goalContext,
         runs: [run],
         children: [],
       })
@@ -353,6 +416,8 @@ function EventCard({ event }: { event: WorkItemEvent }) {
   const githubUrl = sourceKey === 'github' ? githubUrlFromSourceRef(event.sourceRef) : null
   const visibleRuns = event.runs.slice(0, MAX_VISIBLE_AVATARS)
   const overflowCount = event.runs.length - MAX_VISIBLE_AVATARS
+  const goalContext = event.goalContext
+  const goalStatusLabel = formatGoalStatus(goalContext?.goalStatus)
 
   const integrationHref = event.pluginInstanceId
     ? `/plugins/instances/${event.pluginInstanceId}`
@@ -407,9 +472,54 @@ function EventCard({ event }: { event: WorkItemEvent }) {
         </div>
 
         {/* Col 3: title (flex) — aligns with triage in run rows */}
-        <span className="relative min-w-0 flex-1 truncate text-[0.8rem] font-medium text-foreground/85 group-hover:text-foreground">
-          {event.title}
-        </span>
+        <div className="relative z-10 min-w-0 flex-1">
+          {goalContext ? (
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <span className="shrink-0 rounded bg-sky-500/12 px-1.5 py-0.5 text-[0.55rem] font-medium uppercase tracking-wide text-sky-300/85">
+                  Heartbeat
+                </span>
+                {goalContext.liveGoalId ? (
+                  <Link
+                    href={`/goals/${goalContext.liveGoalId}`}
+                    className="truncate text-[0.8rem] font-medium text-foreground/85 transition-colors hover:text-foreground"
+                    title={goalContext.goalOutcome}
+                  >
+                    {goalContext.goalTitle}
+                  </Link>
+                ) : (
+                  <span
+                    className="truncate text-[0.8rem] font-medium text-foreground/85"
+                    title={goalContext.goalOutcome}
+                  >
+                    {goalContext.goalTitle}
+                  </span>
+                )}
+              </div>
+              <div className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden text-[0.6rem] text-white/38">
+                {goalStatusLabel && <span className="shrink-0 capitalize">{goalStatusLabel}</span>}
+                {goalStatusLabel && goalContext.cadenceLabel && <span className="shrink-0">·</span>}
+                {goalContext.cadenceLabel && (
+                  <span
+                    className="truncate"
+                    title={
+                      goalContext.timezone
+                        ? `${goalContext.cadenceLabel} (${goalContext.timezone})`
+                        : goalContext.cadenceLabel
+                    }
+                  >
+                    {goalContext.cadenceLabel}
+                  </span>
+                )}
+                <span className="truncate text-white/28">{event.title}</span>
+              </div>
+            </div>
+          ) : (
+            <span className="block truncate text-[0.8rem] font-medium text-foreground/85 group-hover:text-foreground">
+              {event.title}
+            </span>
+          )}
+        </div>
 
         {/* Right side: avatars, run count, cost, status, time */}
         <div className="relative flex shrink-0 -space-x-1.5">
@@ -676,7 +786,7 @@ export default async function ActivityPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <PageScrollShell className="space-y-6">
       <PageHeader
         category="Home"
         title="Activity"
@@ -717,6 +827,6 @@ export default async function ActivityPage() {
           ))}
         </div>
       )}
-    </div>
+    </PageScrollShell>
   )
 }

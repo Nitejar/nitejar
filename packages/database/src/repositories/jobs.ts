@@ -179,6 +179,9 @@ export interface RecentActivityEntry {
   call_count: number
   triage_summary: string | null
   triage_resources: string | null
+  goal_id: string | null
+  goal_snapshot_json: string | null
+  live_goal_id: string | null
   dispatch_status: string | null
   dispatch_control_state: string | null
   dispatch_control_reason: string | null
@@ -216,6 +219,7 @@ export async function listRecentActivity(limit = 50): Promise<RecentActivityEntr
       'jobs.id'
     )
     .leftJoin('activity_log', 'activity_log.job_id', 'jobs.id')
+    .leftJoin('goals as activity_goal', 'activity_goal.id', 'activity_log.goal_id')
     .leftJoin(
       db
         .selectFrom('run_dispatches')
@@ -279,6 +283,9 @@ export async function listRecentActivity(limit = 50): Promise<RecentActivityEntr
       sql<number>`coalesce(ic.call_count, 0)`.as('call_count'),
       sql<string | null>`activity_log.summary`.as('triage_summary'),
       sql<string | null>`activity_log.resources`.as('triage_resources'),
+      sql<string | null>`activity_log.goal_id`.as('goal_id'),
+      sql<string | null>`activity_log.goal_snapshot_json`.as('goal_snapshot_json'),
+      sql<string | null>`activity_goal.id`.as('live_goal_id'),
       sql<string | null>`rd.status`.as('dispatch_status'),
       sql<string | null>`rd.control_state`.as('dispatch_control_state'),
       sql<string | null>`rd.control_reason`.as('dispatch_control_reason'),

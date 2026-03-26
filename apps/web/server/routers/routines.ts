@@ -18,6 +18,7 @@ import { getAlwaysTrueRuleForEnvelope, parseRoutineRule } from '../services/rout
 
 const triggerKindSchema = z.enum(['cron', 'event', 'condition', 'oneshot'])
 const createdByKindSchema = z.enum(['admin', 'agent', 'system'])
+const GOAL_HEARTBEAT_SESSION_KEY_RE = /^work:goal:(.+):heartbeat$/
 
 const createUpdateInputSchema = z.object({
   name: z.string().trim().min(1),
@@ -145,6 +146,12 @@ function normalizeRoutineRow(row: Awaited<ReturnType<typeof findRoutineById>>) {
   }
 }
 
+function extractGoalHeartbeatId(sessionKey: string | null | undefined): string | null {
+  if (!sessionKey) return null
+  const match = sessionKey.match(GOAL_HEARTBEAT_SESSION_KEY_RE)
+  return match?.[1] ?? null
+}
+
 export const routinesRouter = router({
   list: protectedProcedure
     .input(
@@ -163,6 +170,14 @@ export const routinesRouter = router({
 
       const db = getDb()
       const agentIds = [...new Set(rows.map((row) => row.agent_id))]
+      const routineIds = rows.map((row) => row.id)
+      const goalIds = [
+        ...new Set(
+          rows
+            .map((row) => extractGoalHeartbeatId(row.target_session_key))
+            .filter((goalId): goalId is string => !!goalId)
+        ),
+      ]
       const agents = agentIds.length
         ? await db
             .selectFrom('agents')
@@ -170,15 +185,65 @@ export const routinesRouter = router({
             .where('id', 'in', agentIds)
             .execute()
         : []
+      const goals = goalIds.length
+        ? await db
+            .selectFrom('goals')
+            .select(['id', 'title', 'status'])
+            .where('id', 'in', goalIds)
+            .execute()
+        : []
+      const recentRuns = routineIds.length
+        ? await db
+            .selectFrom('routine_runs')
+            .select(['routine_id', 'work_item_id', 'evaluated_at'])
+            .where('routine_id', 'in', routineIds)
+            .where('work_item_id', 'is not', null)
+            .orderBy('evaluated_at', 'desc')
+            .execute()
+        : []
       const agentMap = new Map(agents.map((agent) => [agent.id, agent]))
+      const goalMap = new Map(goals.map((goal) => [goal.id, goal]))
+      const latestRunByRoutine = new Map<
+        string,
+        {
+          workItemId: string
+          evaluatedAt: number
+        }
+      >()
+      for (const run of recentRuns) {
+        if (latestRunByRoutine.has(run.routine_id) || !run.work_item_id) continue
+        latestRunByRoutine.set(run.routine_id, {
+          workItemId: run.work_item_id,
+          evaluatedAt: run.evaluated_at,
+        })
+      }
 
       return rows.map((row) => {
         const normalized = normalizeRoutineRow(row)!
         const agent = agentMap.get(row.agent_id)
+        const linkedGoalId = extractGoalHeartbeatId(row.target_session_key)
+        const linkedGoal = linkedGoalId ? goalMap.get(linkedGoalId) : null
+        const latestRun = latestRunByRoutine.get(row.id) ?? null
         return {
           ...normalized,
           agentName: agent?.name ?? null,
           agentHandle: agent?.handle ?? null,
+          linkedGoal:
+            linkedGoalId !== null
+              ? {
+                  id: linkedGoalId,
+                  title: linkedGoal?.title ?? null,
+                  status: linkedGoal?.status ?? null,
+                  exists: linkedGoal ? true : false,
+                }
+              : null,
+          lastActivity:
+            latestRun !== null
+              ? {
+                  workItemId: latestRun.workItemId,
+                  evaluatedAt: latestRun.evaluatedAt,
+                }
+              : null,
         }
       })
     }),

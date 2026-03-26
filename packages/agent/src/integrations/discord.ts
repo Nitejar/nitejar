@@ -6,7 +6,7 @@ import {
   sendChannelMessage,
   splitDiscordMessage,
   type DiscordConfig,
-} from '@nitejar/plugin-handlers'
+} from '@nitejar/plugin-handlers/discord'
 import type { ToolHandler } from '../tools/types'
 import { registerIntegrationProvider, type PromptSection } from './registry'
 

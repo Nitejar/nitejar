@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { SetupField } from '@nitejar/plugin-handlers'
+import type { SetupField } from '@nitejar/plugin-handlers/types'
 
 interface DynamicFieldsProps {
   fields: SetupField[]

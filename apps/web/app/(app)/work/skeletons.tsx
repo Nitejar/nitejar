@@ -207,60 +207,85 @@ export function SkeletonCompanyTree({ className }: { className?: string } = {}) 
 }
 
 // ---------------------------------------------------------------------------
-// SkeletonGoalDetail — two-column goal detail layout
+// SkeletonGoalDetail — breadcrumb + tabs + two-column layout
 // ---------------------------------------------------------------------------
 
 export function SkeletonGoalDetail({ className }: { className?: string } = {}) {
   return (
-    <div className={cn('space-y-6', className)}>
-      {/* Header card */}
-      <div className="rounded-lg border border-white/10 bg-white/[0.02] p-6 space-y-3">
-        <div className="flex items-center gap-3">
-          <Bone className="h-5 w-[45%]" />
-          <Bone className="h-5 w-14 rounded-full" />
-        </div>
-        <Bone className="h-3 w-[60%]" />
-        <div className="flex items-center gap-3">
-          <Bone className="h-2.5 w-20" />
-          <Bone className="h-2.5 w-24" />
-        </div>
+    <div className={cn('mx-auto max-w-6xl space-y-3', className)}>
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2">
+        <Bone className="h-2.5 w-10" />
+        <Bone className="h-2.5 w-3" />
+        <Bone className="h-2.5 w-24" />
       </div>
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="space-y-6">
-          {/* Tickets section */}
-          <div className="rounded-lg border border-white/10 bg-white/[0.02] p-4 space-y-3">
-            <Bone className="h-3 w-16" />
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-3 rounded-lg border border-white/10 p-3"
-              >
-                <Bone className="h-3 w-[50%]" />
-                <div className="flex-1" />
-                <Bone className="h-3 w-12" />
-              </div>
-            ))}
+      {/* Tabs */}
+      <div className="flex items-center gap-3">
+        <Bone className="h-6 w-16 rounded" />
+        <Bone className="h-6 w-16 rounded" />
+        <Bone className="h-6 w-16 rounded" />
+      </div>
+      {/* Two-column content */}
+      <div className="flex gap-8">
+        {/* Main column */}
+        <div className="min-w-0 flex-1 space-y-6">
+          {/* Title + outcome */}
+          <div className="flex items-start gap-3">
+            <Bone className="h-7 w-7 shrink-0 rounded-full" />
+            <div className="flex-1 space-y-2">
+              <Bone className="h-6 w-[55%]" />
+              <Bone className="h-3.5 w-[75%]" />
+            </div>
           </div>
-          {/* Updates section */}
-          <div className="rounded-lg border border-white/10 bg-white/[0.02] p-4 space-y-3">
-            <Bone className="h-3 w-16" />
-            {Array.from({ length: 2 }).map((_, i) => (
-              <Bone key={i} className="h-16 w-full rounded-lg" />
-            ))}
+          {/* Properties bar */}
+          <div className="flex items-center gap-4">
+            <Bone className="h-5 w-16 rounded" />
+            <Bone className="h-4 w-20" />
+            <Bone className="h-4 w-16" />
+          </div>
+          {/* Write update CTA */}
+          <Bone className="h-11 w-full rounded-lg" />
+          {/* Sub-goals section */}
+          <div className="space-y-2">
+            <Bone className="h-3 w-20" />
+            <div className="rounded-lg border border-zinc-800/40">
+              {Array.from({ length: 2 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-3 border-t border-zinc-800/60 first:border-t-0 px-4 py-2.5"
+                >
+                  <Bone className="h-2.5 w-2.5 rounded-full" />
+                  <Bone className="h-3 w-[50%]" />
+                  <div className="flex-1" />
+                  <Bone className="h-3 w-4 rounded-full" />
+                </div>
+              ))}
+            </div>
           </div>
         </div>
-        <div className="space-y-4">
-          {/* Summary card */}
-          <div className="rounded-lg border border-white/10 bg-white/[0.02] p-4 space-y-3">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="flex items-center justify-between">
+        {/* Sidebar */}
+        <div className="hidden w-72 shrink-0 space-y-6 lg:block">
+          {/* Properties */}
+          <div className="space-y-2">
+            <Bone className="h-2.5 w-16" />
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 py-1">
                 <Bone className="h-3 w-16" />
-                <Bone className="h-3 w-10" />
+                <Bone className="h-3 w-20" />
               </div>
             ))}
           </div>
-          {/* Settings placeholder */}
-          <Bone className="h-9 w-full rounded-lg" />
+          {/* Progress */}
+          <div className="space-y-2">
+            <Bone className="h-2.5 w-14" />
+            <div className="flex items-center justify-between">
+              <Bone className="h-3 w-12" />
+              <Bone className="h-3 w-6" />
+            </div>
+            <Bone className="h-1.5 w-full rounded-full" />
+          </div>
+          {/* Settings */}
+          <Bone className="h-7 w-full rounded" />
         </div>
       </div>
     </div>

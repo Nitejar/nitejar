@@ -1,9 +1,11 @@
+import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import {
   findWorkItemById,
   listJobsByWorkItem,
   findAgentById,
+  findGoalById,
   listMessagesByJob,
   listInferenceCallsByJobWithPayloadsPaged,
   findPluginInstanceById,
@@ -18,14 +20,12 @@ import {
   listMediaArtifactsForWorkItem,
   listWebhookIngressEventsByWorkItem,
 } from '@nitejar/database'
-import {
-  parseAgentConfig,
-  getSessionSettings,
-  buildSessionContext,
-  formatSessionMessages,
-} from '@nitejar/agent'
+import { parseAgentConfig, getSessionSettings } from '@nitejar/agent/config'
+import { buildSessionContext, formatSessionMessages } from '@nitejar/agent/session'
+import { createPageMetadata } from '@/app/metadata'
 import { listModelCatalog } from '@/server/services/model-catalog'
 import { IdentityBadge } from '../../components/IdentityBadge'
+import { PageScrollShell } from '../../components/PageScrollShell'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { LiveRunView } from './LiveRunView'
@@ -39,6 +39,7 @@ import { RelativeTime } from './RelativeTime'
 import { RetryRunButton } from './RetryRunButton'
 import { WorkItemAutoRefresh } from './WorkItemAutoRefresh'
 import { parseArbiterControlReason } from '@/lib/arbiter-receipts'
+import { describeCron } from '../../settings/routines/cron-describe'
 import {
   IconBrandTelegram,
   IconBrandGithub,
@@ -50,6 +51,12 @@ export const dynamic = 'force-dynamic'
 
 interface PageProps {
   params: Promise<{ id: string }>
+}
+
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { id } = await params
+  const item = await findWorkItemById(id)
+  return createPageMetadata(item?.title ?? 'Event')
 }
 
 const workItemStatusVariant = (status: string) => {
@@ -127,6 +134,23 @@ type ModelCatalogEntry = {
   supportsTools: boolean
 }
 
+type GoalHeartbeatSnapshot = {
+  kind: 'goal_heartbeat'
+  goalId: string
+  goalTitle: string
+  goalStatus: string
+  goalOutcome: string
+  routineId: string | null
+  routineName: string | null
+  cronExpr: string | null
+  timezone: string | null
+}
+
+type GoalHeartbeatContext = GoalHeartbeatSnapshot & {
+  liveGoalId: string | null
+  cadenceLabel: string | null
+}
+
 function queueStatusClassName(status: string): string {
   switch (status) {
     case 'included':
@@ -148,6 +172,42 @@ function summarizeText(value: string | null, maxLength = 120): string | null {
   if (!normalized) return null
   if (normalized.length <= maxLength) return normalized
   return `${normalized.slice(0, maxLength - 1)}…`
+}
+
+function formatGoalStatus(status: string | null | undefined): string | null {
+  const trimmed = status?.trim()
+  if (!trimmed) return null
+  return trimmed.replace(/_/g, ' ')
+}
+
+function parseGoalHeartbeatContext(
+  goalSnapshotJson: string | null,
+  liveGoalId: string | null
+): GoalHeartbeatContext | null {
+  if (!goalSnapshotJson) return null
+
+  try {
+    const parsed = JSON.parse(goalSnapshotJson) as Partial<GoalHeartbeatSnapshot>
+    if (parsed.kind !== 'goal_heartbeat') return null
+    if (!parsed.goalId || !parsed.goalTitle || !parsed.goalStatus || !parsed.goalOutcome)
+      return null
+
+    return {
+      kind: 'goal_heartbeat',
+      goalId: parsed.goalId,
+      goalTitle: parsed.goalTitle,
+      goalStatus: parsed.goalStatus,
+      goalOutcome: parsed.goalOutcome,
+      routineId: parsed.routineId ?? null,
+      routineName: parsed.routineName ?? null,
+      cronExpr: parsed.cronExpr ?? null,
+      timezone: parsed.timezone ?? null,
+      liveGoalId,
+      cadenceLabel: describeCron(parsed.cronExpr) ?? parsed.cronExpr ?? null,
+    }
+  } catch {
+    return null
+  }
 }
 
 type SystemTimelineEvent = {
@@ -781,6 +841,28 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
   const activityByJob = new Map(
     activityLogEntries.filter((e) => e.job_id != null).map((e) => [e.job_id!, e])
   )
+  const heartbeatGoalIds = [
+    ...new Set(
+      activityLogEntries
+        .map((entry) => entry.goal_id)
+        .filter((goalId): goalId is string => !!goalId)
+    ),
+  ]
+  const liveGoals = await Promise.all(heartbeatGoalIds.map((goalId) => findGoalById(goalId)))
+  const liveGoalIdSet = new Set(
+    liveGoals
+      .filter((goal): goal is NonNullable<(typeof liveGoals)[number]> => !!goal)
+      .map((goal) => goal.id)
+  )
+  const workItemGoalContext = [...activityLogEntries]
+    .sort((a, b) => b.created_at - a.created_at)
+    .map((entry) =>
+      parseGoalHeartbeatContext(
+        entry.goal_snapshot_json,
+        entry.goal_id && liveGoalIdSet.has(entry.goal_id) ? entry.goal_id : null
+      )
+    )
+    .find((context): context is GoalHeartbeatContext => context !== null)
   const totalExternalCost = Array.from(externalCallsByJob.values())
     .flat()
     .reduce((sum, c) => sum + (c.cost_usd ?? 0), 0)
@@ -1052,9 +1134,10 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
   const PluginInstanceIcon = pluginInstance
     ? pluginInstanceIcons[pluginInstance.type] || IconPlugConnected
     : IconPlugConnected
+  const goalStatusLabel = formatGoalStatus(workItemGoalContext?.goalStatus)
 
   return (
-    <div className="space-y-6">
+    <PageScrollShell className="space-y-6">
       <WorkItemAutoRefresh enabled={hasLiveDispatch} />
       {/* Header */}
       <div className="space-y-2">
@@ -1076,6 +1159,39 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
               {item.status.replace('_', ' ')}
             </Badge>
           </div>
+          {workItemGoalContext ? (
+            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+              <span className="rounded bg-sky-500/10 px-1.5 py-0.5 text-[0.65rem] font-medium uppercase tracking-wide text-sky-300/85">
+                Goal heartbeat
+              </span>
+              {workItemGoalContext.liveGoalId ? (
+                <Link
+                  href={`/goals/${workItemGoalContext.liveGoalId}`}
+                  className="text-primary hover:underline"
+                  title={workItemGoalContext.goalOutcome}
+                >
+                  {workItemGoalContext.goalTitle}
+                </Link>
+              ) : (
+                <span title={workItemGoalContext.goalOutcome}>{workItemGoalContext.goalTitle}</span>
+              )}
+              {goalStatusLabel ? <span className="capitalize">{goalStatusLabel}</span> : null}
+              {goalStatusLabel && workItemGoalContext.cadenceLabel ? (
+                <span className="text-white/20">·</span>
+              ) : null}
+              {workItemGoalContext.cadenceLabel ? (
+                <span
+                  title={
+                    workItemGoalContext.timezone
+                      ? `${workItemGoalContext.cadenceLabel} (${workItemGoalContext.timezone})`
+                      : workItemGoalContext.cadenceLabel
+                  }
+                >
+                  {workItemGoalContext.cadenceLabel}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             {pluginInstance ? (
               <Link
@@ -1295,6 +1411,6 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
           </Card>
         </div>
       )}
-    </div>
+    </PageScrollShell>
   )
 }

@@ -1,4 +1,8 @@
+import type { Metadata } from 'next'
+import { findEvaluatorById } from '@nitejar/database'
+import { createPageMetadata } from '@/app/metadata'
 import { PageHeader } from '@/app/(app)/components/PageHeader'
+import { PageScrollShell } from '@/app/(app)/components/PageScrollShell'
 import { EvaluatorDetailClient } from './EvaluatorDetailClient'
 
 export const dynamic = 'force-dynamic'
@@ -7,17 +11,23 @@ interface Props {
   params: Promise<{ id: string }>
 }
 
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { id } = await params
+  const evaluator = await findEvaluatorById(id)
+  return createPageMetadata(evaluator?.name ?? 'Evaluator')
+}
+
 export default async function EvaluatorDetailPage({ params }: Props) {
   const { id } = await params
 
   return (
-    <div className="space-y-6">
+    <PageScrollShell className="space-y-6">
       <PageHeader
         category="Evals"
         title="Evaluator Detail"
         backLink={{ href: '/evals/evaluators', label: 'Evaluators' }}
       />
       <EvaluatorDetailClient evaluatorId={id} />
-    </div>
+    </PageScrollShell>
   )
 }

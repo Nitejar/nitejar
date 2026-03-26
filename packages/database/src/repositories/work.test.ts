@@ -62,7 +62,6 @@ async function createSchema(database: ReturnType<typeof getDb>): Promise<void> {
     .ifNotExists()
     .addColumn('team_id', 'text', (col) => col.notNull())
     .addColumn('agent_id', 'text', (col) => col.notNull())
-    .addColumn('is_primary', 'integer', (col) => col.notNull())
     .addColumn('created_at', 'integer', (col) => col.notNull())
     .execute()
 
@@ -485,8 +484,8 @@ describe('work repository', () => {
     await db
       .insertInto('agent_teams')
       .values([
-        { team_id: 'team-ops', agent_id: 'agent-1', is_primary: 1, created_at: 1 },
-        { team_id: 'team-eng', agent_id: 'agent-2', is_primary: 1, created_at: 1 },
+        { team_id: 'team-ops', agent_id: 'agent-1', created_at: 1 },
+        { team_id: 'team-eng', agent_id: 'agent-2', created_at: 1 },
       ])
       .execute()
 
@@ -586,7 +585,7 @@ describe('work repository', () => {
     const byId = new Map(coverage.map((row) => [row.goal_id, row]))
 
     expect(byId.get(coveredGoal.id)?.coverage_status).toBe('covered')
-    expect(byId.get(thinGoal.id)?.coverage_status).toBe('thin')
+    expect(byId.get(thinGoal.id)?.coverage_status).toBe('covered')
     expect(byId.get(overloadedGoal.id)?.coverage_status).toBe('overloaded')
     expect(byId.get(unstaffedGoal.id)?.coverage_status).toBe('unstaffed')
     expect(byId.get(coveredGoal.id)?.primary_team_id).toBe('team-ops')
@@ -596,7 +595,7 @@ describe('work repository', () => {
     expect(overview.active_goal_count).toBe(4)
     expect(overview.staffed_goal_count).toBe(3)
     expect(overview.unstaffed_goal_count).toBe(1)
-    expect(overview.thin_goal_count).toBe(1)
+    expect(overview.thin_goal_count).toBe(0)
     expect(overview.overloaded_goal_count).toBe(1)
     expect(overview.active_team_count).toBe(2)
     expect(overview.overloaded_agent_count).toBe(1)
@@ -628,8 +627,8 @@ describe('work repository', () => {
     await db
       .insertInto('agent_teams')
       .values([
-        { team_id: 'team-ops', agent_id: 'agent-1', is_primary: 1, created_at: 1 },
-        { team_id: 'team-ops', agent_id: 'agent-2', is_primary: 0, created_at: 1 },
+        { team_id: 'team-ops', agent_id: 'agent-1', created_at: 1 },
+        { team_id: 'team-ops', agent_id: 'agent-2', created_at: 1 },
       ])
       .execute()
 
@@ -681,29 +680,16 @@ describe('work repository', () => {
       archived_at: null,
     })
 
-    await createWorkUpdate({
-      goal_id: null,
-      ticket_id: null,
-      team_id: 'team-ops',
-      author_kind: 'agent',
-      author_ref: 'agent-1',
-      kind: 'heartbeat',
-      body: 'Ops is carrying the queue.',
-      metadata_json: null,
-    })
-
     const rollups = await listTeamPortfolioRollups()
 
     expect(rollups).toHaveLength(1)
     expect(rollups[0]?.team_id).toBe('team-ops')
     expect(rollups[0]?.member_count).toBe(1)
     expect(rollups[0]?.agent_count).toBe(2)
-    expect(rollups[0]?.primary_agent_count).toBe(1)
     expect(rollups[0]?.active_goal_count).toBe(2)
     expect(rollups[0]?.blocked_goal_count).toBe(1)
-    expect(rollups[0]?.queued_ticket_count).toBe(1)
-    expect(rollups[0]?.blocked_ticket_count).toBe(1)
-    expect(rollups[0]?.goals_needing_staffing_count).toBe(1)
-    expect(rollups[0]?.latest_heartbeat_at).toBeTruthy()
+    expect(rollups[0]?.queued_ticket_count).toBe(0)
+    expect(rollups[0]?.blocked_ticket_count).toBe(0)
+    expect(rollups[0]?.goals_needing_staffing_count).toBe(0)
   })
 })

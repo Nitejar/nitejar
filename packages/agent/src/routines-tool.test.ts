@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Agent, Routine } from '@nitejar/database'
+import type { Routine } from '@nitejar/database'
 import * as Database from '@nitejar/database'
 import type { ToolContext } from './tools'
 import { createRoutineTool } from './tools/handlers/routines'
@@ -8,30 +8,17 @@ vi.mock('@nitejar/database', async () => {
   const actual = await vi.importActual<typeof Database>('@nitejar/database')
   return {
     ...actual,
-    findAgentById: vi.fn(),
+    assertAgentGrant: vi.fn(),
     createRoutine: vi.fn(),
   }
 })
 
-const mockedFindAgentById = vi.mocked(Database.findAgentById)
+const mockedAssertAgentGrant = vi.mocked(Database.assertAgentGrant)
 const mockedCreateRoutine = vi.mocked(Database.createRoutine)
 
 const context: ToolContext = {
   spriteName: 'nitejar-agent-1',
   agentId: 'agent-1',
-}
-
-function agent(config: Record<string, unknown>): Agent {
-  return {
-    id: 'agent-1',
-    handle: 'agent',
-    name: 'Agent One',
-    sprite_id: null,
-    status: 'idle',
-    config: JSON.stringify(config),
-    created_at: 0,
-    updated_at: 0,
-  }
 }
 
 function routine(): Routine {
@@ -65,13 +52,15 @@ function routine(): Routine {
 }
 
 beforeEach(() => {
-  mockedFindAgentById.mockReset()
+  mockedAssertAgentGrant.mockReset()
   mockedCreateRoutine.mockReset()
 })
 
 describe('createRoutineTool', () => {
-  it('rejects writes when allowRoutineManagement is disabled', async () => {
-    mockedFindAgentById.mockResolvedValue(agent({ allowRoutineManagement: false }))
+  it('rejects writes when routine.self.manage grant is missing', async () => {
+    mockedAssertAgentGrant.mockRejectedValue(
+      new Error('Access denied: missing grant "routine.self.manage".')
+    )
 
     const result = await createRoutineTool(
       {
@@ -86,12 +75,12 @@ describe('createRoutineTool', () => {
     )
 
     expect(result.success).toBe(false)
-    expect(result.error).toContain('disabled')
+    expect(result.error).toContain('routine.self.manage')
     expect(mockedCreateRoutine).not.toHaveBeenCalled()
   })
 
-  it('creates routine when allowRoutineManagement is enabled', async () => {
-    mockedFindAgentById.mockResolvedValue(agent({ allowRoutineManagement: true }))
+  it('creates routine when routine.self.manage grant is present', async () => {
+    mockedAssertAgentGrant.mockResolvedValue(undefined)
     mockedCreateRoutine.mockResolvedValue(routine())
 
     const result = await createRoutineTool(

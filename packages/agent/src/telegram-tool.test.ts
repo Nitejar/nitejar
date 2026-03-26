@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ToolContext } from './tools/types'
 import type { PluginInstanceRecord } from '@nitejar/database'
 import * as Database from '@nitejar/database'
-import * as Integrations from '@nitejar/plugin-handlers'
+import * as TelegramIntegrations from '@nitejar/plugin-handlers/telegram'
 
 // Import the telegram provider to trigger registration
 import './integrations/telegram'
@@ -18,8 +18,8 @@ vi.mock('@nitejar/database', async () => {
   }
 })
 
-vi.mock('@nitejar/plugin-handlers', async () => {
-  const actual = await vi.importActual<typeof Integrations>('@nitejar/plugin-handlers')
+vi.mock('@nitejar/plugin-handlers/telegram', async () => {
+  const actual = await vi.importActual<typeof TelegramIntegrations>('@nitejar/plugin-handlers/telegram')
   return {
     ...actual,
     sendMessage: vi.fn(),
@@ -28,7 +28,7 @@ vi.mock('@nitejar/plugin-handlers', async () => {
 })
 
 const mockedFindPluginInstanceById = vi.mocked(Database.findPluginInstanceById)
-const mockedSendMessage = vi.mocked(Integrations.sendMessage)
+const mockedSendMessage = vi.mocked(TelegramIntegrations.sendMessage)
 const mockedListTelegramSessions = vi.mocked(Database.listTelegramSessionsForAgent)
 const mockedListMessagesBySession = vi.mocked(Database.listMessagesBySession)
 

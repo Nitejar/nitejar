@@ -2,13 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { executeTool, type ToolContext } from './tools'
 import * as Database from '@nitejar/database'
 import * as Sprites from '@nitejar/sprites'
-import * as Integrations from '@nitejar/plugin-handlers'
+import * as GitHubHandlers from '@nitejar/plugin-handlers/github'
+import * as GitHubCredentialProviderModule from '@nitejar/plugin-handlers/github/credential-provider'
 
 vi.mock('@nitejar/database', async () => {
   const actual = await vi.importActual<typeof Database>('@nitejar/database')
   return {
     ...actual,
     getDb: vi.fn(),
+    assertAgentGrant: vi.fn(),
   }
 })
 
@@ -25,12 +27,21 @@ vi.mock('@nitejar/sprites', async () => {
   }
 })
 
-vi.mock('@nitejar/plugin-handlers', async () => {
-  const actual = await vi.importActual<typeof Integrations>('@nitejar/plugin-handlers')
+vi.mock('@nitejar/plugin-handlers/github', async () => {
+  const actual = await vi.importActual<typeof GitHubHandlers>('@nitejar/plugin-handlers/github')
+  return {
+    ...actual,
+    getGitHubAppConfig: vi.fn(),
+  }
+})
+
+vi.mock('@nitejar/plugin-handlers/github/credential-provider', async () => {
+  const actual = await vi.importActual<typeof GitHubCredentialProviderModule>(
+    '@nitejar/plugin-handlers/github/credential-provider'
+  )
   return {
     ...actual,
     GitHubCredentialProvider: vi.fn(),
-    getGitHubAppConfig: vi.fn(),
   }
 })
 
@@ -38,8 +49,8 @@ const mockedGetDb = vi.mocked(Database.getDb)
 const mockedWriteFile = vi.mocked(Sprites.writeFile)
 const mockedSpriteExec = vi.mocked(Sprites.spriteExec)
 const mockedRefreshSpriteNetworkPolicy = vi.mocked(Sprites.refreshSpriteNetworkPolicy)
-const mockedGetGitHubAppConfig = vi.mocked(Integrations.getGitHubAppConfig)
-const mockedCredentialProvider = vi.mocked(Integrations.GitHubCredentialProvider)
+const mockedGetGitHubAppConfig = vi.mocked(GitHubHandlers.getGitHubAppConfig)
+const mockedCredentialProvider = vi.mocked(GitHubCredentialProviderModule.GitHubCredentialProvider)
 
 describe('configure_github_credentials tool', () => {
   beforeEach(() => {

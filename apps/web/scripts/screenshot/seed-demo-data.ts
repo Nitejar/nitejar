@@ -151,6 +151,8 @@ async function seedActivityForJob(input: {
     agent_handle: input.agentHandle,
     job_id: input.jobId,
     session_key: input.sessionKey,
+    goal_id: null,
+    goal_snapshot_json: null,
     status: input.status,
     summary: input.summary,
     resources: JSON.stringify(input.resources),

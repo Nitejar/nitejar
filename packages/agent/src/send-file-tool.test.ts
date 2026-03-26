@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ToolContext } from './tools/types'
 import type { PluginInstanceRecord } from '@nitejar/database'
 import * as Database from '@nitejar/database'
-import * as Integrations from '@nitejar/plugin-handlers'
+import * as TelegramIntegrations from '@nitejar/plugin-handlers/telegram'
 import * as Sprites from '@nitejar/sprites'
 
 // Import the telegram provider to trigger registration
@@ -19,11 +19,10 @@ vi.mock('@nitejar/database', async () => {
   }
 })
 
-vi.mock('@nitejar/plugin-handlers', async () => {
-  const actual = await vi.importActual<typeof Integrations>('@nitejar/plugin-handlers')
+vi.mock('@nitejar/plugin-handlers/telegram', async () => {
+  const actual = await vi.importActual<typeof TelegramIntegrations>('@nitejar/plugin-handlers/telegram')
   return {
     ...actual,
-    sendMessage: vi.fn(),
     sendPhoto: vi.fn(),
     sendDocument: vi.fn(),
     sendChatAction: vi.fn().mockResolvedValue(undefined),
@@ -40,9 +39,9 @@ vi.mock('@nitejar/sprites', async () => {
 })
 
 const mockedFindPluginInstanceById = vi.mocked(Database.findPluginInstanceById)
-const mockedSendPhoto = vi.mocked(Integrations.sendPhoto)
-const mockedSendDocument = vi.mocked(Integrations.sendDocument)
-const mockedSendChatAction = vi.mocked(Integrations.sendChatAction)
+const mockedSendPhoto = vi.mocked(TelegramIntegrations.sendPhoto)
+const mockedSendDocument = vi.mocked(TelegramIntegrations.sendDocument)
+const mockedSendChatAction = vi.mocked(TelegramIntegrations.sendChatAction)
 const mockedSpriteExec = vi.mocked(Sprites.spriteExec)
 
 const basePluginInstance: PluginInstanceRecord = {

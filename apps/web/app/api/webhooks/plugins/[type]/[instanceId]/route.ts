@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
+import { pluginHandlerRegistry } from '@nitejar/plugin-handlers/registry'
 import {
   routeWebhook,
-  pluginHandlerRegistry,
   getPluginInstanceWithConfig,
   type WebhookHooks,
-} from '@nitejar/plugin-handlers'
+} from '@nitejar/plugin-handlers/router'
 import { runAgent } from '@nitejar/agent/runner'
 import { parseAgentConfig } from '@nitejar/agent/config'
 import type { TeamContext } from '@nitejar/agent/prompt-builder'

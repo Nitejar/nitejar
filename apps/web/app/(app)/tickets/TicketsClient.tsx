@@ -5,14 +5,7 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
-import {
-  ArrowRight,
-  Filter,
-  Target,
-  Ticket,
-  Trash2,
-  X,
-} from 'lucide-react'
+import { ArrowRight, Filter, MoreHorizontal, Target, Ticket, X } from 'lucide-react'
 import { trpc, type RouterOutputs } from '@/lib/trpc'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -24,6 +17,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   Combobox,
   ComboboxContent,
@@ -51,14 +50,19 @@ import {
   InlineStatusPicker,
   AvatarCircle,
   InlineCreateRow,
+  statusSelectedStyle,
+  TicketProgress,
 } from '../work/shared'
+import { EditableDescription } from '../components/EditableDescription'
 import { SkeletonTreeRows } from '../work/skeletons'
 import {
   useTreeSelection,
+  useAutoSelectFirst,
   useTreeExpand,
   useTreeDragDrop,
   useTreeKeyboardNav,
   useTreeInlineEdit,
+  useIsDesktop,
   applyOptimisticReorder,
 } from '../work/tree-hooks'
 import type { DropPosition } from '../work/tree-hooks'
@@ -66,7 +70,6 @@ import {
   TreeRootDropZone,
   TreeGroupEndDropZone,
   TreeToolbar,
-  TreeBreadcrumb,
   TreeRow,
   TreeDetailLayout,
   InlineEditInput,
@@ -264,6 +267,7 @@ function TicketTreeRow({
 }) {
   return (
     <TreeRow
+      twoLine
       id={ticket.id}
       depth={depth}
       isSelected={isSelected}
@@ -280,6 +284,53 @@ function TicketTreeRow({
       onDragEnd={onDragEnd}
       dragHandlers={dragHandlers}
       onAddChild={onAddChild}
+      actions={
+        onDelete ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              aria-label={`Open actions for ${ticket.title}`}
+              className="mr-2 inline-flex shrink-0 rounded p-0.5 text-zinc-600 opacity-0 transition-opacity hover:bg-white/[0.04] hover:text-white focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+            >
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={() => {
+                  if (window.confirm(`Cancel ticket "${ticket.title}"?`)) {
+                    onDelete()
+                  }
+                }}
+              >
+                Cancel ticket
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : undefined
+      }
+      secondaryContent={
+        <>
+          {goalTitle && goalId && (
+            <Link
+              href={`/goals/${goalId}`}
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-1 rounded bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-zinc-500 transition hover:bg-white/[0.08] hover:text-zinc-300"
+            >
+              <Target className="h-2.5 w-2.5" />
+              <span className="max-w-[100px] truncate">{goalTitle}</span>
+            </Link>
+          )}
+          {ticket.childTicketCount > 0 && (
+            <span className="text-[10px] text-zinc-600 tabular-nums">
+              {ticket.childTicketCount} sub
+            </span>
+          )}
+          {ticket.assignee ? <AvatarCircle name={ticket.assignee.label} /> : null}
+          <span className="text-[11px] text-zinc-600 tabular-nums">
+            <RelativeTime timestamp={ticket.updatedAt} />
+          </span>
+        </>
+      }
     >
       {onStatusChange ? (
         <InlineStatusPicker
@@ -299,39 +350,6 @@ function TicketTreeRow({
         />
       ) : (
         <span className="min-w-0 flex-1 truncate text-sm text-zinc-300">{ticket.title}</span>
-      )}
-      {goalTitle && goalId && (
-        <Link
-          href={`/goals/${goalId}`}
-          onClick={(e) => e.stopPropagation()}
-          className="inline-flex shrink-0 items-center gap-1 rounded bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-zinc-500 transition hover:bg-white/[0.08] hover:text-zinc-300"
-        >
-          <Target className="h-2.5 w-2.5" />
-          <span className="max-w-[100px] truncate">{goalTitle}</span>
-        </Link>
-      )}
-      {ticket.childTicketCount > 0 && (
-        <span className="shrink-0 text-[10px] text-zinc-600 tabular-nums">
-          {ticket.childTicketCount} sub
-        </span>
-      )}
-      {ticket.assignee ? <AvatarCircle name={ticket.assignee.label} /> : null}
-      <span className="shrink-0 text-[11px] text-zinc-600 tabular-nums">
-        <RelativeTime timestamp={ticket.updatedAt} />
-      </span>
-      {onDelete && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            if (window.confirm(`Cancel ticket "${ticket.title}"?`)) {
-              onDelete()
-            }
-          }}
-          className="inline-flex shrink-0 rounded p-0.5 text-zinc-600 opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-400"
-        >
-          <Trash2 className="h-3 w-3" />
-        </button>
       )}
     </TreeRow>
   )
@@ -383,18 +401,22 @@ function TicketTreeRows({
   dropPosition: DropPosition
   startDrag: (id: string, event: React.DragEvent) => void
   endDrag: () => void
-  getRowDragHandlers: (rowId: string) => {
-    onDragOver?: React.DragEventHandler
-    onDragEnter?: React.DragEventHandler
-    onDragLeave?: React.DragEventHandler
-    onDrop?: React.DragEventHandler
-  } | undefined
-  getGroupEndDropHandlers: (parentId: string) => {
-    onDragOver?: React.DragEventHandler
-    onDragEnter?: React.DragEventHandler
-    onDragLeave?: React.DragEventHandler
-    onDrop?: React.DragEventHandler
-  } | undefined
+  getRowDragHandlers: (rowId: string) =>
+    | {
+        onDragOver?: React.DragEventHandler
+        onDragEnter?: React.DragEventHandler
+        onDragLeave?: React.DragEventHandler
+        onDrop?: React.DragEventHandler
+      }
+    | undefined
+  getGroupEndDropHandlers: (parentId: string) =>
+    | {
+        onDragOver?: React.DragEventHandler
+        onDragEnter?: React.DragEventHandler
+        onDragLeave?: React.DragEventHandler
+        onDrop?: React.DragEventHandler
+      }
+    | undefined
   editingId: string | null
   onStartEdit: (id: string) => void
   onCommitEdit: (id: string, value: string) => void
@@ -493,10 +515,13 @@ function TicketTreeRows({
 }
 
 // ---------------------------------------------------------------------------
+// EditableDescription is now imported from ../components/EditableDescription
+
+// ---------------------------------------------------------------------------
 // Ticket detail panel
 // ---------------------------------------------------------------------------
 
-function TicketDetailPanel({ ticketId }: { ticketId: string }) {
+function TicketDetailPanel({ ticketId, onClose }: { ticketId: string; onClose?: () => void }) {
   const router = useRouter()
   const utils = trpc.useUtils()
   const [selectedAgentId, setSelectedAgentId] = useState('')
@@ -546,6 +571,19 @@ function TicketDetailPanel({ ticketId }: { ticketId: string }) {
     },
   })
 
+  const panelCreateSubTicketMutation = trpc.work.createTicket.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.work.getTicket.invalidate({ ticketId }),
+        utils.work.listTickets.invalidate(),
+        utils.work.listGoals.invalidate(),
+      ])
+    },
+    onError: () => {
+      toast.error('Failed to create sub-ticket')
+    },
+  })
+
   const ticket = ticketQuery.data
 
   useEffect(() => {
@@ -576,36 +614,104 @@ function TicketDetailPanel({ ticketId }: { ticketId: string }) {
   )
 
   if (ticketQuery.isLoading || !ticket) {
-    return <div className="p-6 text-sm text-zinc-500">Loading ticket...</div>
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex h-11 shrink-0 items-center border-b border-zinc-800 px-4">
+          <div className="h-4 w-32 animate-pulse rounded bg-zinc-800" />
+        </div>
+        <div className="space-y-4 p-4">
+          <div className="h-3 w-20 animate-pulse rounded bg-zinc-800" />
+          <div className="h-3 w-48 animate-pulse rounded bg-zinc-800" />
+          <div className="grid grid-cols-[100px_1fr] gap-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <React.Fragment key={i}>
+                <div className="h-3 w-16 animate-pulse rounded bg-zinc-800" />
+                <div className="h-3 w-32 animate-pulse rounded bg-zinc-800" />
+              </React.Fragment>
+            ))}
+          </div>
+          <div className="h-3 w-24 animate-pulse rounded bg-zinc-800" />
+          <div className="h-20 animate-pulse rounded bg-zinc-800/50" />
+        </div>
+      </div>
+    )
   }
 
   const linkedSession = ticket.receiptSummary.links.find((l) => l.kind === 'session')
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="border-b border-zinc-800 px-4 py-4">
-        <div className="min-w-0">
-          <h2 className="text-lg font-semibold text-zinc-100">{ticket.title}</h2>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex h-11 shrink-0 items-center justify-between border-b border-zinc-800 px-4">
+        <div className="flex items-center gap-2 min-w-0">
+          <InlineStatusPicker
+            currentStatus={ticket.status}
+            statuses={ALL_TICKET_STATUSES}
+            onStatusChange={(s) => {
+              updateTicketDetailMutation.mutate({
+                ticketId,
+                patch: { status: s as TicketStatus },
+              })
+            }}
+          />
+          <input
+            key={ticket.title}
+            defaultValue={ticket.title}
+            onBlur={(e) => {
+              const trimmed = e.target.value.trim()
+              if (trimmed && trimmed !== ticket.title) {
+                updateTicketDetailMutation.mutate({ ticketId, patch: { title: trimmed } })
+              } else {
+                e.target.value = ticket.title
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+              if (e.key === 'Escape') {
+                ;(e.target as HTMLInputElement).value = ticket.title
+                ;(e.target as HTMLInputElement).blur()
+              }
+            }}
+            className="min-w-0 flex-1 truncate border-0 bg-transparent text-sm font-medium text-zinc-200 outline-none placeholder:text-zinc-600 focus:text-white"
+          />
+        </div>
+        <div className="flex items-center gap-1">
+          <Link
+            href={`/tickets/${ticketId}`}
+            className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs text-zinc-400 transition hover:bg-white/[0.06] hover:text-white"
+          >
+            Open
+            <ArrowRight className="h-3 w-3" />
+          </Link>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="shrink-0 rounded p-1 text-zinc-500 hover:text-white transition"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-5 p-4">
+          {/* Parent link */}
+          {ticket.parentTicket && (
+            <div className="flex items-center gap-2 text-xs text-zinc-400">
+              <StatusDot status={ticket.parentTicket.status} />
+              <span>Sub-ticket of</span>
+              <Link
+                href={`/tickets/${ticket.parentTicket.id}`}
+                className="text-zinc-300 hover:text-white transition-colors truncate"
+              >
+                {ticket.parentTicket.title}
+              </Link>
+            </div>
+          )}
+
           {/* Properties */}
           <div className="grid grid-cols-[100px_1fr] gap-y-2.5 text-sm">
-            <span className="text-zinc-500">Status</span>
-            <InlineStatusPicker
-              currentStatus={ticket.status}
-              statuses={ALL_TICKET_STATUSES}
-              showLabel
-              onStatusChange={(s) => {
-                updateTicketDetailMutation.mutate({
-                  ticketId,
-                  patch: { status: s as TicketStatus },
-                })
-              }}
-            />
-
             <span className="text-zinc-500">Assignee</span>
             <span className="text-zinc-300">
               {ticket.assignee ? ticket.assignee.label : 'Unassigned'}
@@ -669,12 +775,31 @@ function TicketDetailPanel({ ticketId }: { ticketId: string }) {
             </Combobox>
           </div>
 
+          {/* Description */}
+          <EditableDescription
+            body={ticket.body}
+            onSave={(body) =>
+              updateTicketDetailMutation.mutate({
+                ticketId,
+                patch: { body: body || null },
+              })
+            }
+          />
+
           {/* Sub-tickets */}
-          {ticket.childTickets && ticket.childTickets.length > 0 && (
-            <div>
-              <h3 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-2">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <h3 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
                 Sub-tickets
               </h3>
+              {ticket.childTickets && ticket.childTickets.length > 0 && (
+                <TicketProgress
+                  done={ticket.childProgress.done}
+                  total={ticket.childProgress.total}
+                />
+              )}
+            </div>
+            {ticket.childTickets && ticket.childTickets.length > 0 && (
               <div className="space-y-px">
                 {ticket.childTickets.map((child) => (
                   <Link
@@ -683,12 +808,39 @@ function TicketDetailPanel({ ticketId }: { ticketId: string }) {
                     className="flex items-center gap-2 rounded px-2 py-1 text-sm text-zinc-400 transition hover:bg-white/[0.04] hover:text-zinc-200"
                   >
                     <StatusDot status={child.status} />
-                    <span className="truncate">{child.title}</span>
+                    <span className="min-w-0 flex-1 truncate">{child.title}</span>
+                    {child.children && child.children.length > 0 ? (
+                      <span className="text-[10px] tabular-nums text-zinc-600">
+                        {child.children.length}
+                      </span>
+                    ) : null}
                   </Link>
                 ))}
               </div>
-            </div>
-          )}
+            )}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                const input = e.currentTarget.querySelector('input')
+                const title = input?.value.trim()
+                if (!title) return
+                panelCreateSubTicketMutation.mutate(
+                  { title, parentTicketId: ticketId, goalId: ticket.goal?.id, status: 'ready' },
+                  {
+                    onSuccess: () => {
+                      if (input) input.value = ''
+                    },
+                  }
+                )
+              }}
+              className="mt-1 flex items-center gap-2 px-2"
+            >
+              <input
+                placeholder="Add sub-ticket..."
+                className="h-6 flex-1 border-0 bg-transparent text-xs text-zinc-400 placeholder:text-zinc-600 outline-none"
+              />
+            </form>
+          </div>
 
           {/* Start work */}
           <div>
@@ -756,13 +908,6 @@ function TicketDetailPanel({ ticketId }: { ticketId: string }) {
               </div>
             </div>
           )}
-
-          <Link
-            href={`/tickets/${ticketId}`}
-            className="inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-white transition"
-          >
-            Open full page <ArrowRight className="h-3 w-3" />
-          </Link>
         </div>
       </ScrollArea>
     </div>
@@ -988,18 +1133,34 @@ export function TicketsClient() {
 
   // Query params for cross-surface linking
   const goalIdParam = searchParams.get('goalId')
-  const teamParam = searchParams.get('team')
   const assigneeParam = searchParams.get('assignee')
   const viewParam = searchParams.get('view')
 
   // --- Shared tree hooks ---
-  const { selectedId: selectedTicketId, setSelectedId: setSelectedTicketId, clearSelection } = useTreeSelection()
+  const {
+    selectedId: selectedTicketId,
+    setSelectedId: setSelectedTicketId,
+    clearSelection,
+  } = useTreeSelection()
+  const isDesktop = useIsDesktop()
+
+  // On mobile, clicking a row navigates to the detail page instead of opening the side panel
+  const handleSelect = useCallback(
+    (id: string) => {
+      if (isDesktop) {
+        setSelectedTicketId(id)
+      } else {
+        router.push(`/tickets/${id}`)
+      }
+    },
+    [isDesktop, setSelectedTicketId, router]
+  )
 
   const [activeViewId, setActiveViewId] = useState(viewParam ?? 'active')
   const [search, setSearch] = useState('')
   const [filterStatuses, setFilterStatuses] = useState<string[]>([])
   const [filterScope, setFilterScope] = useState<'mine' | 'my_team' | 'unclaimed' | 'all'>('all')
-  const [filterGoalId, setFilterGoalId] = useState<string | null>(goalIdParam)
+  const [filterGoalId] = useState<string | null>(goalIdParam)
   const [filterAssignee, setFilterAssignee] = useState<string | null>(assigneeParam)
   const [createTicketOpen, setCreateTicketOpen] = useState(false)
   const [creatingChildOf, setCreatingChildOf] = useState<string | null>(null)
@@ -1090,6 +1251,7 @@ export function TicketsClient() {
   const flatTickets = useMemo(() => flattenTicketTree(ticketTree), [ticketTree])
   const flatIds = useMemo(() => flatTickets.map((t) => t.id), [flatTickets])
   const descendantTicketMap = useMemo(() => buildDescendantTicketMap(ticketTree), [ticketTree])
+  useAutoSelectFirst(flatIds[0], selectedTicketId, setSelectedTicketId)
 
   // Auto-expand all tickets that have children (old behavior was expanded by default)
   const parentTicketIds = useMemo(
@@ -1115,8 +1277,8 @@ export function TicketsClient() {
             (t) => t.parentTicketId,
             (t) => t.sortOrder,
             (t, pid) => ({ ...t, parentTicketId: pid }),
-            (t, so) => ({ ...t, sortOrder: so }),
-          ),
+            (t, so) => ({ ...t, sortOrder: so })
+          )
         )
       }
       return { previous }
@@ -1217,28 +1379,18 @@ export function TicketsClient() {
     [tickets, handleTicketStatusChange]
   )
 
-  const extraKeys = useMemo(
-    () => ({ s: handleCycleStatus }),
-    [handleCycleStatus]
-  )
+  const extraKeys = useMemo(() => ({ s: handleCycleStatus }), [handleCycleStatus])
 
   useTreeKeyboardNav({
     flatIds,
     selectedId: selectedTicketId,
-    onSelect: setSelectedTicketId,
+    onSelect: handleSelect,
     onClear: clearSelection,
     onStartEdit: startEdit,
     onOpen: (id) => router.push(`/tickets/${id}`),
     onCreate: () => setCreateTicketOpen(true),
     extraKeys,
   })
-
-  function clearUrlParam(key: string) {
-    const params = new URLSearchParams(searchParams.toString())
-    params.delete(key)
-    const newUrl = params.toString() ? `?${params.toString()}` : '/tickets'
-    router.replace(newUrl)
-  }
 
   function applyView(viewId: string) {
     setActiveViewId(viewId)
@@ -1257,47 +1409,6 @@ export function TicketsClient() {
     }
   }
 
-  function clearGoalFilter() {
-    setFilterGoalId(null)
-    clearUrlParam('goalId')
-  }
-
-  function clearAssigneeFilter() {
-    setFilterAssignee(null)
-    clearUrlParam('assignee')
-  }
-
-  // Fetch goal name for filter badge
-  const goalFilterQuery = trpc.work.getGoal.useQuery(
-    { goalId: filterGoalId! },
-    { enabled: !!filterGoalId }
-  )
-
-  // --- Build breadcrumb segments ---
-  const breadcrumbSegments = useMemo(() => {
-    const segments: { label: string; onClear?: () => void }[] = [
-      { label: activeView?.name ?? 'Active' },
-    ]
-    if (filterGoalId && goalFilterQuery.data) {
-      segments.push({ label: goalFilterQuery.data.title, onClear: clearGoalFilter })
-    }
-    if (filterAssignee) {
-      segments.push({ label: 'Assignee filtered', onClear: clearAssigneeFilter })
-    }
-    if (filterStatuses.length > 0 || filterScope !== 'all' || search) {
-      segments.push({
-        label: `Filtered (${filterStatuses.length + (filterScope !== 'all' ? 1 : 0) + (search ? 1 : 0)})`,
-        onClear: () => {
-          setSearch('')
-          setFilterStatuses([])
-          setFilterScope('all')
-        },
-      })
-    }
-    return segments
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeView, filterGoalId, goalFilterQuery.data, filterAssignee, filterStatuses, filterScope, search])
-
   // --- Filter popover slot ---
   const filterSlot = (
     <Popover>
@@ -1311,10 +1422,7 @@ export function TicketsClient() {
       >
         <Filter className="h-3 w-3" />
         Filter
-        {(filterStatuses.length > 0 ||
-          filterScope !== 'all' ||
-          filterGoalId ||
-          filterAssignee) && (
+        {(filterStatuses.length > 0 || filterScope !== 'all' || filterGoalId || filterAssignee) && (
           <span className="inline-flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-white/15 px-1 text-[9px] font-medium text-white">
             {filterStatuses.length +
               (filterScope !== 'all' ? 1 : 0) +
@@ -1341,10 +1449,10 @@ export function TicketsClient() {
                   }
                 }}
                 className={cn(
-                  'flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] transition',
+                  'flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition',
                   filterStatuses.includes(s)
-                    ? 'border-white/20 bg-white/10 text-white'
-                    : 'border-zinc-800 text-zinc-500 hover:border-zinc-700'
+                    ? statusSelectedStyle(s)
+                    : 'border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:text-zinc-400'
                 )}
               >
                 <StatusDot status={s} className="h-1.5 w-1.5" />
@@ -1403,7 +1511,7 @@ export function TicketsClient() {
           nodes={ticketTree}
           depth={0}
           selectedTicketId={selectedTicketId}
-          onSelect={setSelectedTicketId}
+          onSelect={handleSelect}
           onTicketStatusChange={handleTicketStatusChange}
           onTicketDelete={handleTicketDelete}
           onInlineSubTicketCreate={handleInlineSubTicketCreate}
@@ -1436,25 +1544,13 @@ export function TicketsClient() {
 
   // --- Detail panel ---
   const detailPanel = selectedTicketId ? (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center justify-end border-b border-zinc-800 px-2 py-1">
-        <button
-          type="button"
-          onClick={clearSelection}
-          className="rounded p-1 text-zinc-500 hover:text-white transition"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
-      <div className="min-h-0 flex-1">
-        <TicketDetailPanel ticketId={selectedTicketId} />
-      </div>
-    </div>
+    <TicketDetailPanel ticketId={selectedTicketId} onClose={clearSelection} />
   ) : null
 
-  return (
-    <div className="flex h-full flex-col">
+  const toolbarAndBreadcrumb = (
+    <>
       <TreeToolbar
+        title="Tickets"
         views={TICKET_VIEWS.map((v) => ({ id: v.id, name: v.name }))}
         activeViewId={activeViewId}
         onViewChange={applyView}
@@ -1464,17 +1560,15 @@ export function TicketsClient() {
         filterSlot={filterSlot}
         onCreateClick={() => setCreateTicketOpen(true)}
       />
+    </>
+  )
 
-      <TreeBreadcrumb
-        root="Tickets"
-        onRootClick={() => applyView('active')}
-        segments={breadcrumbSegments}
-      />
-
+  return (
+    <div className="flex h-full flex-col">
       <TreeDetailLayout
+        header={toolbarAndBreadcrumb}
         tree={ticketsQuery.isLoading ? <SkeletonTreeRows /> : renderList()}
         detail={detailPanel}
-        detailWidth="400px"
       />
 
       {/* Create dialog */}

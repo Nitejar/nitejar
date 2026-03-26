@@ -4,13 +4,63 @@
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js",
+      "default": "./dist/types.js"
+    },
+    "./registry": {
+      "types": "./dist/registry.d.ts",
+      "import": "./dist/registry.js",
+      "default": "./dist/registry.js"
+    },
+    "./router": {
+      "types": "./dist/router.d.ts",
+      "import": "./dist/router.js",
+      "default": "./dist/router.js"
+    },
+    "./credential-provider": {
+      "types": "./dist/credential-provider.d.ts",
+      "import": "./dist/credential-provider.js",
+      "default": "./dist/credential-provider.js"
+    },
+    "./github": {
+      "types": "./dist/github/index.d.ts",
+      "import": "./dist/github/index.js",
+      "default": "./dist/github/index.js"
+    },
+    "./github/credential-provider": {
+      "types": "./dist/github/credential-provider.d.ts",
+      "import": "./dist/github/credential-provider.js",
+      "default": "./dist/github/credential-provider.js"
+    },
+    "./slack": {
+      "types": "./dist/slack/index.d.ts",
+      "import": "./dist/slack/index.js",
+      "default": "./dist/slack/index.js"
+    },
+    "./telegram": {
+      "types": "./dist/telegram/index.d.ts",
+      "import": "./dist/telegram/index.js",
+      "default": "./dist/telegram/index.js"
+    },
+    "./discord": {
+      "types": "./dist/discord/index.d.ts",
+      "import": "./dist/discord/index.js",
+      "default": "./dist/discord/index.js"
     }
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
     "lint": "eslint src __tests__ --no-error-on-unmatched-pattern",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

@@ -1,11 +1,14 @@
+import { createPageMetadata } from '@/app/metadata'
 import { PageHeader } from '@/app/(app)/components/PageHeader'
+import { PageScrollShell } from '@/app/(app)/components/PageScrollShell'
 import { EvaluatorListClient } from './EvaluatorListClient'
 
 export const dynamic = 'force-dynamic'
+export const metadata = createPageMetadata('Evaluators')
 
 export default function EvaluatorsPage() {
   return (
-    <div className="space-y-6">
+    <PageScrollShell className="space-y-6">
       <PageHeader
         category="Evals"
         title="Evaluators"
@@ -14,6 +17,6 @@ export default function EvaluatorsPage() {
         action={{ href: '/evals/evaluators/new', label: 'Create Evaluator' }}
       />
       <EvaluatorListClient />
-    </div>
+    </PageScrollShell>
   )
 }

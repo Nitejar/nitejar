@@ -96,7 +96,7 @@ type AttentionItem = {
 type FeedScope = 'mine' | 'all'
 
 type FeedGroup = {
-  key: string
+  key: AttentionItem['type']
   label: string
   icon: AttentionItem['type']
   items: AttentionItem[]
@@ -110,7 +110,6 @@ type AttentionDetail =
       status: string
       health: string
       owner: { label: string; kind: string; ref: string } | null
-      initiative: { id: string; title: string } | null
       ticketCounts: { total: number; blocked: number; done: number }
     }
   | {
@@ -454,7 +453,6 @@ function buildAttentionFeed(
   // 1. needsAttention from fleet (budget, failure rate, long-running, cost spike, zombie)
   for (const item of fleet.needsAttention) {
     const isBudget = item.type === 'budget_exceeded' || item.type === 'budget_warning'
-    const isAgent = item.type === 'high_failure_rate' || item.type === 'cost_spike'
     const isOperation = item.type === 'long_running'
     const isZombie = item.type === 'zombie_dispatch'
 
@@ -517,13 +515,12 @@ function buildAttentionFeed(
 
   // 2. atRiskGoals
   for (const goal of work.atRiskGoals) {
-    const prefix = goal.initiative ? `${goal.initiative.title} · ` : ''
     items.push({
       id: `goal:${goal.id}`,
       type: 'goal',
       severity: goal.health === 'blocked' ? 'critical' : 'warning',
       title: goal.title,
-      reason: `${prefix}${goal.health.replace(/_/g, ' ')} — ${goal.ticketCounts.blocked} blocked, ${goal.ticketCounts.done}/${goal.ticketCounts.total} done`,
+      reason: `${goal.health.replace(/_/g, ' ')} — ${goal.ticketCounts.blocked} blocked, ${goal.ticketCounts.done}/${goal.ticketCounts.total} done`,
       timestamp: goal.updatedAt,
       link: `/goals/${goal.id}`,
       detail: {
@@ -533,9 +530,6 @@ function buildAttentionFeed(
         status: goal.status,
         health: goal.health,
         owner: goal.owner,
-        initiative: goal.initiative
-          ? { id: goal.initiative.id, title: goal.initiative.title }
-          : null,
         ticketCounts: {
           total: goal.ticketCounts.total,
           blocked: goal.ticketCounts.blocked,
@@ -711,8 +705,7 @@ function groupFeedItems(items: AttentionItem[]): FeedGroup[] {
     }))
     .sort(
       (a, b) =>
-        TYPE_GROUP_CONFIG[a.key as AttentionItem['type']].order -
-        TYPE_GROUP_CONFIG[b.key as AttentionItem['type']].order
+        TYPE_GROUP_CONFIG[a.key].order - TYPE_GROUP_CONFIG[b.key].order
     )
 }
 
@@ -1046,14 +1039,6 @@ function GoalDetail({
 }) {
   return (
     <div className="space-y-3">
-      {detail.initiative && (
-        <div>
-          <p className="text-[0.6rem] uppercase tracking-[0.2em] text-muted-foreground">
-            Initiative
-          </p>
-          <p className="mt-1 text-sm text-white/70">{detail.initiative.title}</p>
-        </div>
-      )}
       {detail.outcome && (
         <div>
           <p className="text-[0.6rem] uppercase tracking-[0.2em] text-muted-foreground">Outcome</p>
@@ -1399,10 +1384,10 @@ function InboxState({
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="-mx-2 -mt-2 -mb-4 flex min-h-0 flex-1 flex-col overflow-hidden sm:-mx-6 sm:-mt-4 sm:-mb-6">
       {/* Top bar */}
-      <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-5 py-3">
-        <h1 className="text-sm font-medium text-zinc-100">Command Center</h1>
+      <div className="flex h-11 shrink-0 items-center justify-between border-b border-zinc-800 px-4">
+        <h1 className="text-sm font-semibold text-zinc-200">Command Center</h1>
 
         <div className="flex items-center gap-2">
           <Popover>
@@ -1496,7 +1481,7 @@ function InboxState({
 
       {/* Breadcrumb context line */}
       {(scope !== 'mine' || severityFilter !== 'all') && (
-        <div className="flex shrink-0 items-center gap-1 border-b border-zinc-800 px-5 py-1 text-xs text-zinc-500">
+        <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-zinc-800 px-4 py-1 text-xs text-zinc-500">
           <span
             className="cursor-pointer hover:text-white transition-colors"
             onClick={() => {
@@ -1537,7 +1522,7 @@ function InboxState({
 
       {/* Getting started banner */}
       {showGettingStarted && !gsDismissed && (
-        <div className="shrink-0 border-b border-zinc-800 px-5 py-1.5">
+        <div className="shrink-0 border-b border-zinc-800 px-4 py-1.5">
           <GettingStartedBanner onDismiss={handleDismissGettingStarted} />
         </div>
       )}
@@ -1564,7 +1549,7 @@ function InboxState({
           {/* Left: attention feed, grouped by type */}
           <div className="w-full border-r border-zinc-800 lg:w-[400px] xl:w-[440px]">
             <ScrollArea className="h-full">
-              <div ref={feedListRef} className="p-2">
+              <div ref={feedListRef} className="py-2">
                 {groups.map((group, groupIndex) => (
                   <div key={group.key} className={groupIndex > 0 ? 'mt-3' : ''}>
                     <div className="flex items-center gap-2 px-3 pb-1.5 pt-2">
@@ -1653,7 +1638,7 @@ export function AdminHome() {
 
   if (fleetQuery.isLoading || workQuery.isLoading) {
     return (
-      <div className="py-4">
+      <div className="-mx-2 -mt-2 -mb-4 py-4 sm:-mx-6 sm:-mt-4 sm:-mb-6">
         {Array.from({ length: 5 }).map((_, i) => (
           <SkeletonFeedRow key={i} />
         ))}

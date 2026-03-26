@@ -36,7 +36,8 @@ import { createEventCallback } from '@nitejar/agent/streaming'
 import { decideSteeringAction } from '@nitejar/agent/steer-arbiter'
 import { parseAgentConfig } from '@nitejar/agent/config'
 import type { TeamContext } from '@nitejar/agent/prompt-builder'
-import { getPluginInstanceWithConfig, pluginHandlerRegistry } from '@nitejar/plugin-handlers'
+import { pluginHandlerRegistry } from '@nitejar/plugin-handlers/registry'
+import { getPluginInstanceWithConfig } from '@nitejar/plugin-handlers/router'
 import { createRunnerHookDispatch } from './plugins/hook-dispatch'
 
 const WORKER_STATE_KEY = '__nitejarRunDispatchWorker'
@@ -198,7 +199,7 @@ async function executeDispatch(
   let pendingSteerMessageIds: string[] = []
 
   try {
-    heartbeatTimer = setInterval(() => {
+    heartbeatTimer = global.setInterval(() => {
       void heartbeatRunDispatch(dispatch.id, LEASE_SECONDS).catch((error) => {
         console.warn('[RunDispatchWorker] Heartbeat failed', {
           dispatchId: dispatch.id,
@@ -576,7 +577,7 @@ async function executeDispatch(
     }
   } finally {
     if (heartbeatTimer) {
-      clearInterval(heartbeatTimer)
+      global.clearInterval(heartbeatTimer)
     }
   }
 }
@@ -638,7 +639,7 @@ export const __dispatchWorkerTest = {
     state.active.clear()
     state.tickFn = undefined
     if (state.timer) {
-      clearInterval(state.timer)
+      global.clearInterval(state.timer)
       state.timer = undefined
     }
   },
@@ -670,7 +671,7 @@ export function ensureRunDispatchWorker(): void {
   state.started = true
 
   void state.tickFn()
-  state.timer = setInterval(() => {
+  state.timer = global.setInterval(() => {
     void state.tickFn!()
   }, TICK_MS)
 
@@ -685,7 +686,7 @@ export function stopRunDispatchWorker(): void {
   const state = getState()
   state.draining = true
   if (state.timer) {
-    clearInterval(state.timer)
+    global.clearInterval(state.timer)
     state.timer = undefined
   }
 }

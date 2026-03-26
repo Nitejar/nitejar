@@ -2,23 +2,39 @@ import { TRPCError } from '@trpc/server'
 import { parseAgentConfig } from '@nitejar/agent/config'
 import {
   addAgentToTeam,
+  assignDefaultRoleToTeam,
+  assignRoleToAgent,
+  createRole,
   createTeam,
   createWorkUpdate,
   createWorkView,
   deleteGoalAgentAllocation,
-  deleteTeam,
   deleteWorkView,
+  findAgentById,
   findGoalById,
+  findRoleById,
   findTeamById,
   findWorkViewById,
   getCompanyOverviewRollup,
   getDb,
   getTeamSpendInWindow,
+  listAgentRoleAssignments,
+  listRoleDefaults,
+  listRoleGrants,
+  listRoles,
+  listTeamRoleDefaults,
   sql,
   listAgentAllocationRollups,
   listGoalCoverageRollups,
   listTeamPortfolioRollups,
   listWorkViews,
+  removeDefaultRoleFromTeam,
+  removeRoleFromAgent,
+  replaceRoleDefaults,
+  replaceRoleGrants,
+  resolveEffectivePolicy,
+  updateRole,
+  writePolicyAuditLog,
   removeAgentFromTeam,
   updateGoal,
   updateTeam,
@@ -90,6 +106,17 @@ const companyViewSchema = z.object({
   groupBy: companyGroupBySchema.optional().nullable(),
 })
 
+const policyGrantInputSchema = z.object({
+  action: z.string().trim().min(1),
+  resourceType: z.string().trim().optional().nullable(),
+  resourceId: z.string().trim().optional().nullable(),
+})
+
+const policyDefaultInputSchema = z.object({
+  key: z.string().trim().min(1),
+  value: z.unknown(),
+})
+
 function now(): number {
   return Math.floor(Date.now() / 1000)
 }
@@ -117,6 +144,14 @@ function parseStoredJson<T>(value: string | null | undefined, fallback: T): T {
     return JSON.parse(value) as T
   } catch {
     return fallback
+  }
+}
+
+function parsePolicyJsonValue(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown
+  } catch {
+    return value
   }
 }
 
@@ -284,18 +319,10 @@ function coverageRank(coverage: string) {
   return 3
 }
 
-function heartbeatPosture(timestamp: number | null): 'fresh' | 'quiet' | 'missing' {
-  if (!timestamp) return 'missing'
-  const ageHours = Math.floor((now() - timestamp) / 3600)
-  if (ageHours >= 72) return 'missing'
-  if (ageHours >= 24) return 'quiet'
-  return 'fresh'
-}
-
 function classifyManagementEvent(args: { kind: string; body: string; teamId: string | null }) {
   const body = args.body.toLowerCase()
   if (args.kind === 'heartbeat') {
-    return args.teamId ? 'team_heartbeat' : 'goal_heartbeat'
+    return 'goal_heartbeat'
   }
   if (body.includes('owner changed')) return 'ownership_changed'
   if (body.includes('team changed')) return 'team_changed'
@@ -307,7 +334,7 @@ function classifyManagementEvent(args: { kind: string; body: string; teamId: str
 
 async function buildCompanyOverview() {
   const db = getDb()
-  const [summary, goalCoverage, teamRollups, agentRollups, recentUpdates, allTeams, initiatives] =
+  const [summary, goalCoverage, teamRollups, agentRollups, recentUpdates, allTeams] =
     await Promise.all([
       getCompanyOverviewRollup(),
       listGoalCoverageRollups(),
@@ -335,12 +362,6 @@ async function buildCompanyOverview() {
         .orderBy('sort_order', 'asc')
         .orderBy('name', 'asc')
         .execute(),
-      db
-        .selectFrom('initiatives')
-        .selectAll()
-        .where('archived_at', 'is', null)
-        .orderBy('updated_at', 'desc')
-        .execute(),
     ])
 
   const goalIds = goalCoverage.map((goal) => goal.goal_id)
@@ -349,9 +370,6 @@ async function buildCompanyOverview() {
       ...goalCoverage.flatMap((goal) => goal.active_team_ids),
       ...goalCoverage
         .map((goal) => goal.primary_team_id)
-        .filter((teamId): teamId is string => typeof teamId === 'string'),
-      ...initiatives
-        .map((initiative) => initiative.team_id)
         .filter((teamId): teamId is string => typeof teamId === 'string'),
       ...agentRollups.flatMap((agent) => agent.team_ids),
       ...recentUpdates
@@ -371,7 +389,7 @@ async function buildCompanyOverview() {
     goalIds.length > 0
       ? db
           .selectFrom('goals')
-          .select(['id', 'initiative_id', 'parent_goal_id', 'title', 'outcome'])
+          .select(['id', 'parent_goal_id', 'title', 'outcome'])
           .where('id', 'in', goalIds)
           .execute()
       : Promise.resolve([]),
@@ -393,13 +411,15 @@ async function buildCompanyOverview() {
       ? db
           .selectFrom('agent_teams')
           .innerJoin('agents', 'agents.id', 'agent_teams.agent_id')
+          .leftJoin('agent_role_assignments', 'agent_role_assignments.agent_id', 'agents.id')
+          .leftJoin('roles', 'roles.id', 'agent_role_assignments.role_id')
           .select([
             'agent_teams.team_id as team_id',
-            'agent_teams.is_primary as is_primary',
             'agents.id as agent_id',
             'agents.name as name',
             'agents.handle as handle',
             'agents.config as config',
+            'roles.name as role_name',
           ])
           .where('agent_teams.team_id', 'in', teamIds)
           .execute()
@@ -413,10 +433,6 @@ async function buildCompanyOverview() {
       ...goalCoverage.flatMap((goal) =>
         goal.active_team_ids.map((teamId) => ({ kind: 'team', ref: teamId }))
       ),
-      ...initiatives.map((initiative) => ({
-        kind: initiative.owner_kind,
-        ref: initiative.owner_ref,
-      })),
       ...agentIds.map((agentId) => ({ kind: 'agent', ref: agentId })),
       ...teamIds.map((teamId) => ({ kind: 'team', ref: teamId })),
       ...recentUpdates.map((update) => ({ kind: update.author_kind, ref: update.author_ref })),
@@ -425,7 +441,6 @@ async function buildCompanyOverview() {
   ])
 
   const goalMap = new Map(goals.map((goal) => [goal.id, goal]))
-  const initiativeMap = new Map(initiatives.map((initiative) => [initiative.id, initiative]))
   const allTeamsMap = new Map(allTeams.map((team) => [team.id, team]))
 
   const goalsInProgress = goalCoverage
@@ -441,22 +456,6 @@ async function buildCompanyOverview() {
 
       return {
         id: goal.goal_id,
-        initiative:
-          goalMap.get(goal.goal_id)?.initiative_id &&
-          initiativeMap.has(goalMap.get(goal.goal_id)?.initiative_id ?? '')
-            ? {
-                id: goalMap.get(goal.goal_id)?.initiative_id ?? '',
-                title:
-                  initiativeMap.get(goalMap.get(goal.goal_id)?.initiative_id ?? '')?.title ??
-                  'Initiative',
-                status:
-                  initiativeMap.get(goalMap.get(goal.goal_id)?.initiative_id ?? '')?.status ??
-                  'active',
-                targetLabel:
-                  initiativeMap.get(goalMap.get(goal.goal_id)?.initiative_id ?? '')?.target_label ??
-                  null,
-              }
-            : null,
         parentGoalId: goalMap.get(goal.goal_id)?.parent_goal_id ?? null,
         title: goalMap.get(goal.goal_id)?.title ?? 'Untitled goal',
         outcome: goalMap.get(goal.goal_id)?.outcome ?? '',
@@ -529,7 +528,6 @@ async function buildCompanyOverview() {
       title: string | null
       avatarUrl: string | null
       emoji: string | null
-      isPrimary: boolean
     }>
   >()
   for (const agent of teamAgents) {
@@ -539,10 +537,9 @@ async function buildCompanyOverview() {
       id: agent.agent_id,
       name: agent.name,
       handle: agent.handle,
-      title: parsed.title ?? null,
+      title: agent.role_name ?? null,
       avatarUrl: parsed.avatarUrl ?? null,
       emoji: parsed.emoji ?? null,
-      isPrimary: agent.is_primary === 1,
     })
     teamAgentsByTeam.set(agent.team_id, current)
   }
@@ -554,7 +551,6 @@ async function buildCompanyOverview() {
     charter: team.charter,
     memberCount: team.member_count,
     agentCount: team.agent_count,
-    primaryAgentCount: team.primary_agent_count,
     ownedGoalCount: team.owned_goal_count,
     staffedGoalCount: team.staffed_goal_count,
     activeGoalCount: team.active_goal_count,
@@ -564,8 +560,6 @@ async function buildCompanyOverview() {
     blockedTicketCount: team.blocked_ticket_count,
     goalsNeedingStaffingCount: team.goals_needing_staffing_count,
     overloadedAgentCount: team.overloaded_agent_count,
-    latestHeartbeatAt: team.latest_heartbeat_at,
-    heartbeatPosture: heartbeatPosture(team.latest_heartbeat_at),
     members: teamMembersByTeam.get(team.team_id) ?? [],
     agents: teamAgentsByTeam.get(team.team_id) ?? [],
     goals: goalsInProgress
@@ -668,67 +662,6 @@ async function buildCompanyOverview() {
     (team) => team.goalsNeedingStaffingCount > 0 || team.overloadedAgentCount > 0
   ).length
 
-  const goalCountsByInitiative = new Map<
-    string,
-    { total: number; active: number; blocked: number; atRisk: number; gaps: number }
-  >()
-  for (const goal of goalsInProgress) {
-    const initiativeId = goal.initiative?.id
-    if (!initiativeId) continue
-    const current = goalCountsByInitiative.get(initiativeId) ?? {
-      total: 0,
-      active: 0,
-      blocked: 0,
-      atRisk: 0,
-      gaps: 0,
-    }
-    current.total += 1
-    current.active += 1
-    if (goal.health === 'blocked') current.blocked += 1
-    if (goal.health === 'at_risk') current.atRisk += 1
-    if (goal.coverageStatus !== 'covered') current.gaps += 1
-    goalCountsByInitiative.set(initiativeId, current)
-  }
-
-  const childInitiativeCounts = new Map<string, number>()
-  for (const initiative of initiatives) {
-    if (!initiative.parent_initiative_id) continue
-    childInitiativeCounts.set(
-      initiative.parent_initiative_id,
-      (childInitiativeCounts.get(initiative.parent_initiative_id) ?? 0) + 1
-    )
-  }
-
-  const initiativeRows = initiatives.map((initiative) => {
-    const counts = goalCountsByInitiative.get(initiative.id) ?? {
-      total: 0,
-      active: 0,
-      blocked: 0,
-      atRisk: 0,
-      gaps: 0,
-    }
-    return {
-      id: initiative.id,
-      parentInitiativeId: initiative.parent_initiative_id,
-      title: initiative.title,
-      description: initiative.description,
-      status: initiative.status,
-      targetLabel: initiative.target_label,
-      owner: presentActor(initiative.owner_kind, initiative.owner_ref, actors),
-      team: initiative.team_id ? presentActor('team', initiative.team_id, actors) : null,
-      goalCount: counts.total,
-      activeGoalCount: counts.active,
-      blockedGoalCount: counts.blocked,
-      atRiskGoalCount: counts.atRisk,
-      staffingGapCount: counts.gaps,
-      childInitiativeCount: childInitiativeCounts.get(initiative.id) ?? 0,
-      receiptLinks: {
-        work: `/work`,
-        activity: `/activity`,
-      },
-    }
-  })
-
   // Resolve leads for ALL teams using lead_kind/lead_ref on teams table
   const allTeamIds = allTeams.map((t) => t.id)
   const leadActorRefs = allTeams
@@ -771,7 +704,6 @@ async function buildCompanyOverview() {
       idle_agent_count: idleAgentCount,
       overloaded_team_count: overloadedTeamCount,
       team_count: allTeams.length,
-      initiative_count: initiativeRows.length,
       staffed_agent_count: new Set(
         goalsInProgress.flatMap((goal) => goal.staffedAgents.map((agent) => agent.ref))
       ).size,
@@ -803,7 +735,6 @@ async function buildCompanyOverview() {
     goalsInProgress,
     coverageGaps,
     organization,
-    initiatives: initiativeRows,
     teams,
     agents,
     recentChanges,
@@ -884,8 +815,7 @@ export const companyRouter = router({
         teamId: z.string().trim().optional().nullable(),
       })
     )
-    .mutation(async ({ ctx, input }) => {
-      const userId = requireUserId(ctx.session)
+    .mutation(async ({ input }) => {
       const goal = await findGoalById(input.goalId)
       if (!goal) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Goal not found.' })
@@ -911,8 +841,8 @@ export const companyRouter = router({
         goal_id: goal.id,
         ticket_id: null,
         team_id: input.teamId ?? null,
-        author_kind: 'user',
-        author_ref: userId,
+        author_kind: 'system',
+        author_ref: null,
         kind: 'note',
         body: `Team changed from ${goal.team_id ?? 'none'} to ${input.teamId ?? 'none'}.`,
         metadata_json: null,
@@ -929,8 +859,7 @@ export const companyRouter = router({
         ownerRef: z.string().trim().optional().nullable(),
       })
     )
-    .mutation(async ({ ctx, input }) => {
-      const userId = requireUserId(ctx.session)
+    .mutation(async ({ input }) => {
       const goal = await findGoalById(input.goalId)
       if (!goal) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Goal not found.' })
@@ -956,8 +885,8 @@ export const companyRouter = router({
         goal_id: goal.id,
         ticket_id: null,
         team_id: updated.team_id,
-        author_kind: 'user',
-        author_ref: userId,
+        author_kind: 'system',
+        author_ref: null,
         kind: 'note',
         body: `Owner changed from ${goal.owner_kind ?? 'none'}:${goal.owner_ref ?? 'none'} to ${input.ownerKind ?? 'none'}:${input.ownerRef ?? 'none'}.`,
         metadata_json: null,
@@ -991,8 +920,8 @@ export const companyRouter = router({
         goal_id: goal.id,
         ticket_id: null,
         team_id: goal.team_id,
-        author_kind: 'user',
-        author_ref: userId,
+        author_kind: 'system',
+        author_ref: null,
         kind: 'note',
         body: `Staffed goal with agent ${input.agentId}.`,
         metadata_json: null,
@@ -1008,8 +937,7 @@ export const companyRouter = router({
         agentId: z.string().trim().min(1),
       })
     )
-    .mutation(async ({ ctx, input }) => {
-      const userId = requireUserId(ctx.session)
+    .mutation(async ({ input }) => {
       const goal = await findGoalById(input.goalId)
       if (!goal) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Goal not found.' })
@@ -1020,8 +948,8 @@ export const companyRouter = router({
         goal_id: goal.id,
         ticket_id: null,
         team_id: goal.team_id,
-        author_kind: 'user',
-        author_ref: userId,
+        author_kind: 'system',
+        author_ref: null,
         kind: 'note',
         body: `Unstaffed agent ${input.agentId} from goal coverage.`,
         metadata_json: null,
@@ -1057,6 +985,25 @@ export const companyRouter = router({
         parentTeamName = parentTeam?.name ?? null
       }
 
+      const childTeamRows = await db
+        .selectFrom('teams')
+        .selectAll()
+        .where('parent_team_id', '=', teamId)
+        .orderBy('sort_order', 'asc')
+        .orderBy('name', 'asc')
+        .execute()
+      const childTeamIds = childTeamRows.map((row) => row.id)
+
+      const actorRefs = [
+        ...(teamRow.lead_kind && teamRow.lead_ref
+          ? [{ kind: teamRow.lead_kind, ref: teamRow.lead_ref }]
+          : []),
+        ...childTeamRows
+          .filter((row) => row.lead_kind && row.lead_ref)
+          .map((row) => ({ kind: row.lead_kind, ref: row.lead_ref })),
+      ]
+      const resolvedActors = await resolveActors(actorRefs)
+
       // --- 2. Members ---
       const memberRows = await db
         .selectFrom('team_members')
@@ -1077,16 +1024,23 @@ export const companyRouter = router({
         role: row.role,
       }))
 
+      const teamLead =
+        teamRow.lead_kind && teamRow.lead_ref
+          ? presentActor(teamRow.lead_kind, teamRow.lead_ref, resolvedActors)
+          : null
+
       // --- 3. Agents with workload stats ---
       const agentRows = await db
         .selectFrom('agent_teams')
         .innerJoin('agents', 'agents.id', 'agent_teams.agent_id')
+        .leftJoin('agent_role_assignments', 'agent_role_assignments.agent_id', 'agents.id')
+        .leftJoin('roles', 'roles.id', 'agent_role_assignments.role_id')
         .select([
           'agents.id as id',
           'agents.name as name',
           'agents.handle as handle',
           'agents.config as config',
-          'agent_teams.is_primary as is_primary',
+          'roles.name as role_name',
         ])
         .where('agent_teams.team_id', '=', teamId)
         .execute()
@@ -1129,10 +1083,68 @@ export const companyRouter = router({
           handle: row.handle,
           emoji: parsed.emoji ?? null,
           avatarUrl: parsed.avatarUrl ?? null,
-          title: parsed.title ?? null,
-          isPrimary: row.is_primary === 1,
+          title: row.role_name ?? null,
           openTicketCount: counts.open,
           blockedTicketCount: counts.blocked,
+        }
+      })
+
+      const [childMemberCounts, childAgentCounts, childRollups] = await Promise.all([
+        childTeamIds.length > 0
+          ? db
+              .selectFrom('team_members')
+              .select(['team_id', sql<number>`count(*)`.as('count')])
+              .where('team_id', 'in', childTeamIds)
+              .groupBy('team_id')
+              .execute()
+          : Promise.resolve([]),
+        childTeamIds.length > 0
+          ? db
+              .selectFrom('agent_teams')
+              .select(['team_id', sql<number>`count(*)`.as('count')])
+              .where('team_id', 'in', childTeamIds)
+              .groupBy('team_id')
+              .execute()
+          : Promise.resolve([]),
+        childTeamIds.length > 0
+          ? listTeamPortfolioRollups({ teamIds: childTeamIds })
+          : Promise.resolve([]),
+      ])
+      const childMemberCountByTeamId = new Map(
+        childMemberCounts.map((row) => [row.team_id, row.count])
+      )
+      const childAgentCountByTeamId = new Map(
+        childAgentCounts.map((row) => [row.team_id, row.count])
+      )
+      const childRollupByTeamId = new Map(childRollups.map((row) => [row.team_id, row]))
+
+      const childTeams = childTeamRows.map((row) => {
+        const rollup = childRollupByTeamId.get(row.id)
+        const health =
+          !rollup || rollup.active_goal_count === 0
+            ? 'gray'
+            : rollup.blocked_goal_count > 0
+              ? 'red'
+              : rollup.at_risk_goal_count > 0
+                ? 'amber'
+                : 'green'
+        return {
+          id: row.id,
+          name: row.name,
+          charter: row.charter ?? null,
+          lead:
+            row.lead_kind && row.lead_ref
+              ? presentActor(row.lead_kind, row.lead_ref, resolvedActors)
+              : null,
+          memberCount: childMemberCountByTeamId.get(row.id) ?? 0,
+          agentCount: childAgentCountByTeamId.get(row.id) ?? 0,
+          activeGoalCount: rollup?.active_goal_count ?? 0,
+          atRiskGoalCount: rollup?.at_risk_goal_count ?? 0,
+          blockedGoalCount: rollup?.blocked_goal_count ?? 0,
+          queuedTicketCount: rollup?.queued_ticket_count ?? 0,
+          blockedTicketCount: rollup?.blocked_ticket_count ?? 0,
+          goalsNeedingStaffingCount: rollup?.goals_needing_staffing_count ?? 0,
+          health,
         }
       })
 
@@ -1204,7 +1216,7 @@ export const companyRouter = router({
 
       // Resolve actors for goal owners
       const goalActorRefs = goalRows.flatMap((g) => [{ kind: g.owner_kind, ref: g.owner_ref }])
-      const actorsResolved = await resolveActors(goalActorRefs)
+      const goalActorsResolved = await resolveActors(goalActorRefs)
 
       const goals = goalRows.map((g) => {
         const coverage = coverageByGoalId.get(g.id)
@@ -1214,7 +1226,7 @@ export const companyRouter = router({
           title: g.title,
           status: g.status,
           health: coverage?.health ?? g.status,
-          owner: presentActor(g.owner_kind, g.owner_ref, actorsResolved),
+          owner: presentActor(g.owner_kind, g.owner_ref, goalActorsResolved),
           ticketCounts: {
             total: counts.total,
             blocked: counts.blocked,
@@ -1272,12 +1284,16 @@ export const companyRouter = router({
       const updateRows = await db
         .selectFrom('work_updates')
         .leftJoin('goals', 'goals.id', 'work_updates.goal_id')
+        .leftJoin('tickets', 'tickets.id', 'work_updates.ticket_id')
         .select([
           'work_updates.id as id',
           'work_updates.kind as kind',
           'work_updates.body as body',
           'work_updates.created_at as created_at',
+          'work_updates.goal_id as goal_id',
+          'work_updates.ticket_id as ticket_id',
           'goals.title as goal_title',
+          'tickets.title as ticket_title',
         ])
         .where('work_updates.team_id', '=', teamId)
         .orderBy('work_updates.created_at', 'desc')
@@ -1289,7 +1305,10 @@ export const companyRouter = router({
         kind: row.kind,
         body: row.body,
         createdAt: row.created_at,
+        goalId: row.goal_id ?? null,
         goalTitle: row.goal_title ?? null,
+        ticketId: row.ticket_id ?? null,
+        ticketTitle: row.ticket_title ?? null,
       }))
 
       // --- 8. Spend ---
@@ -1299,16 +1318,6 @@ export const companyRouter = router({
         getTeamSpendInWindow(teamId, nowTs - 30 * 24 * 3600),
       ])
 
-      // --- 9. Heartbeat posture ---
-      const heartbeatRow = await db
-        .selectFrom('work_updates')
-        .select(sql<number>`max(created_at)`.as('latest'))
-        .where('team_id', '=', teamId)
-        .where('kind', '=', 'heartbeat')
-        .executeTakeFirst()
-
-      const hbPosture = heartbeatPosture(heartbeatRow?.latest ?? null)
-
       return {
         team: {
           id: teamRow.id,
@@ -1316,9 +1325,12 @@ export const companyRouter = router({
           charter: teamRow.charter ?? null,
           parentTeamId: teamRow.parent_team_id ?? null,
           parentTeamName,
+          lead: teamLead,
+          updatedAt: teamRow.updated_at,
         },
         members,
         agents,
+        childTeams,
         portfolio,
         goals,
         tickets,
@@ -1327,7 +1339,6 @@ export const companyRouter = router({
           last7d: spend7d,
           last30d: spend30d,
         },
-        heartbeatPosture: hbPosture,
       }
     }),
 
@@ -1451,14 +1462,9 @@ export const companyRouter = router({
           await trx.deleteFrom('team_members').where('team_id', '=', input.id).execute()
         }
 
-        // Move goals and initiatives up to parent team (or null if root)
+        // Move goals up to parent team (or null if root)
         await trx
           .updateTable('goals')
-          .set({ team_id: parentId })
-          .where('team_id', '=', input.id)
-          .execute()
-        await trx
-          .updateTable('initiatives')
           .set({ team_id: parentId })
           .where('team_id', '=', input.id)
           .execute()
@@ -1617,16 +1623,73 @@ export const companyRouter = router({
       z.object({
         agentId: z.string().trim().min(1),
         teamId: z.string().trim().min(1),
-        isPrimary: z.boolean().optional(),
       })
     )
     .mutation(async ({ input }) => {
+      const db = getDb()
+      const existingAssignment = await db
+        .selectFrom('agent_teams')
+        .leftJoin('teams', 'teams.id', 'agent_teams.team_id')
+        .select(['agent_teams.team_id as team_id', 'teams.name as team_name'])
+        .where('agent_teams.agent_id', '=', input.agentId)
+        .executeTakeFirst()
+
+      if (existingAssignment?.team_id === input.teamId) {
+        return { ok: true }
+      }
+
+      if (existingAssignment?.team_id) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: existingAssignment.team_name
+            ? `This agent already belongs to ${existingAssignment.team_name}.`
+            : 'This agent already belongs to another team.',
+        })
+      }
+
       await addAgentToTeam({
         agent_id: input.agentId,
         team_id: input.teamId,
-        is_primary: input.isPrimary ? 1 : 0,
       })
       return { ok: true }
+    }),
+
+  transferAgentToTeam: protectedProcedure
+    .input(
+      z.object({
+        agentId: z.string().trim().min(1),
+        teamId: z.string().trim().min(1),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const db = getDb()
+      const existingAssignment = await db
+        .selectFrom('agent_teams')
+        .leftJoin('teams', 'teams.id', 'agent_teams.team_id')
+        .select(['agent_teams.team_id as team_id', 'teams.name as team_name'])
+        .where('agent_teams.agent_id', '=', input.agentId)
+        .executeTakeFirst()
+
+      if (existingAssignment?.team_id === input.teamId) {
+        return { ok: true, fromTeamName: existingAssignment.team_name ?? null }
+      }
+
+      await db.transaction().execute(async (trx) => {
+        if (existingAssignment?.team_id) {
+          await trx.deleteFrom('agent_teams').where('agent_id', '=', input.agentId).execute()
+        }
+
+        await trx
+          .insertInto('agent_teams')
+          .values({
+            agent_id: input.agentId,
+            team_id: input.teamId,
+            created_at: now(),
+          })
+          .execute()
+      })
+
+      return { ok: true, fromTeamName: existingAssignment?.team_name ?? null }
     }),
 
   removeAgentFromTeam: protectedProcedure
@@ -1652,7 +1715,20 @@ export const companyRouter = router({
     const db = getDb()
     const agents = await db
       .selectFrom('agents')
-      .select(['id', 'name', 'handle', 'config'])
+      .leftJoin('agent_teams', 'agent_teams.agent_id', 'agents.id')
+      .leftJoin('teams', 'teams.id', 'agent_teams.team_id')
+      .leftJoin('agent_role_assignments', 'agent_role_assignments.agent_id', 'agents.id')
+      .leftJoin('roles', 'roles.id', 'agent_role_assignments.role_id')
+      .select([
+        'agents.id as id',
+        'agents.name as name',
+        'agents.handle as handle',
+        'agents.config as config',
+        'teams.id as team_id',
+        'teams.name as team_name',
+        'roles.id as role_id',
+        'roles.name as role_name',
+      ])
       .orderBy('name', 'asc')
       .execute()
     return agents.map((agent) => {
@@ -1661,10 +1737,445 @@ export const companyRouter = router({
         id: agent.id,
         name: agent.name,
         handle: agent.handle,
+        roleId: agent.role_id ?? null,
+        roleName: agent.role_name ?? null,
         emoji: parsed.emoji ?? null,
+        teamId: agent.team_id ?? null,
+        teamName: agent.team_name ?? null,
       }
     })
   }),
+
+  // ---------------------------------------------------------------------------
+  // Roles + layered policy
+  // ---------------------------------------------------------------------------
+
+  listRoles: protectedProcedure.query(async () => {
+    const [roles, teams, agents] = await Promise.all([
+      listRoles(),
+      getDb().selectFrom('teams').select(['id', 'name']).orderBy('name', 'asc').execute(),
+      getDb()
+        .selectFrom('agents')
+        .select(['id', 'name', 'handle'])
+        .orderBy('name', 'asc')
+        .execute(),
+    ])
+
+    const [roleGrantsAll, roleDefaultsAll, teamDefaults, agentAssignments] = await Promise.all([
+      Promise.all(
+        roles.map(async (role) => ({
+          roleId: role.id,
+          grants: await listRoleGrants(role.id),
+        }))
+      ),
+      Promise.all(
+        roles.map(async (role) => ({
+          roleId: role.id,
+          defaults: await listRoleDefaults(role.id),
+        }))
+      ),
+      Promise.all(
+        teams.map(async (team) => ({
+          teamId: team.id,
+          assignments: await listTeamRoleDefaults(team.id),
+        }))
+      ),
+      Promise.all(
+        agents.map(async (agent) => ({
+          agentId: agent.id,
+          assignments: await listAgentRoleAssignments(agent.id),
+        }))
+      ),
+    ])
+
+    const defaultsByRoleId = new Map<string, Array<{ teamId: string; teamName: string }>>()
+    for (const row of teamDefaults) {
+      const team = teams.find((candidate) => candidate.id === row.teamId)
+      if (!team) continue
+      for (const assignment of row.assignments) {
+        const current = defaultsByRoleId.get(assignment.role.id) ?? []
+        current.push({ teamId: team.id, teamName: team.name })
+        defaultsByRoleId.set(assignment.role.id, current)
+      }
+    }
+
+    const agentsByRoleId = new Map<
+      string,
+      Array<{ agentId: string; agentName: string; handle: string }>
+    >()
+    for (const row of agentAssignments) {
+      const agent = agents.find((candidate) => candidate.id === row.agentId)
+      if (!agent) continue
+      for (const assignment of row.assignments) {
+        const current = agentsByRoleId.get(assignment.role.id) ?? []
+        current.push({
+          agentId: agent.id,
+          agentName: agent.name,
+          handle: agent.handle,
+        })
+        agentsByRoleId.set(assignment.role.id, current)
+      }
+    }
+
+    const grantsByRoleId = new Map(
+      roleGrantsAll.map((row) => [
+        row.roleId,
+        row.grants.map((grant) => ({
+          id: grant.id,
+          action: grant.action,
+          resourceType: grant.resource_type,
+          resourceId: grant.resource_id,
+        })),
+      ])
+    )
+
+    const defaultsDataByRoleId = new Map(
+      roleDefaultsAll.map((row) => [
+        row.roleId,
+        row.defaults.map((entry) => ({
+          id: entry.id,
+          key: entry.key,
+          value: parsePolicyJsonValue(entry.value_json),
+        })),
+      ])
+    )
+
+    return roles.map((role) => ({
+      id: role.id,
+      slug: role.slug,
+      name: role.name,
+      charter: role.charter,
+      jobDescription: role.job_description,
+      escalationPosture: role.escalation_posture,
+      active: role.active === 1,
+      grants: grantsByRoleId.get(role.id) ?? [],
+      defaults: defaultsDataByRoleId.get(role.id) ?? [],
+      defaultTeams: defaultsByRoleId.get(role.id) ?? [],
+      assignedAgents: agentsByRoleId.get(role.id) ?? [],
+    }))
+  }),
+
+  getRole: protectedProcedure
+    .input(z.object({ roleId: z.string().trim().min(1) }))
+    .query(async ({ input }) => {
+      const role = await findRoleById(input.roleId)
+      if (!role) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Role not found.' })
+      }
+
+      const [grants, defaults, allTeams, allAgents] = await Promise.all([
+        listRoleGrants(role.id),
+        listRoleDefaults(role.id),
+        getDb().selectFrom('teams').select(['id', 'name']).orderBy('name', 'asc').execute(),
+        getDb()
+          .selectFrom('agents')
+          .select(['id', 'name', 'handle'])
+          .orderBy('name', 'asc')
+          .execute(),
+      ])
+
+      const [teamDefaults, agentAssignments] = await Promise.all([
+        Promise.all(
+          allTeams.map(async (team) => ({
+            team,
+            assignments: await listTeamRoleDefaults(team.id),
+          }))
+        ),
+        Promise.all(
+          allAgents.map(async (agent) => ({
+            agent,
+            assignments: await listAgentRoleAssignments(agent.id),
+          }))
+        ),
+      ])
+
+      return {
+        id: role.id,
+        slug: role.slug,
+        name: role.name,
+        charter: role.charter,
+        jobDescription: role.job_description,
+        escalationPosture: role.escalation_posture,
+        active: role.active === 1,
+        grants: grants.map((grant) => ({
+          id: grant.id,
+          action: grant.action,
+          resourceType: grant.resource_type,
+          resourceId: grant.resource_id,
+        })),
+        defaults: defaults.map((entry) => ({
+          id: entry.id,
+          key: entry.key,
+          value: parsePolicyJsonValue(entry.value_json),
+        })),
+        defaultTeams: teamDefaults
+          .filter((row) => row.assignments.some((assignment) => assignment.role.id === role.id))
+          .map((row) => ({ id: row.team.id, name: row.team.name })),
+        assignedAgents: agentAssignments
+          .filter((row) => row.assignments.some((assignment) => assignment.role.id === role.id))
+          .map((row) => ({
+            id: row.agent.id,
+            name: row.agent.name,
+            handle: row.agent.handle,
+          })),
+      }
+    }),
+
+  createRole: protectedProcedure
+    .input(
+      z.object({
+        slug: z.string().trim().min(1),
+        name: z.string().trim().min(1),
+        charter: z.string().trim().optional().nullable(),
+        jobDescription: z.string().trim().optional().nullable(),
+        escalationPosture: z.string().trim().optional().nullable(),
+        active: z.boolean().optional(),
+        grants: z.array(policyGrantInputSchema).optional(),
+        defaults: z.array(policyDefaultInputSchema).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const role = await createRole({
+        slug: input.slug,
+        name: input.name,
+        charter: input.charter ?? null,
+        job_description: input.jobDescription ?? null,
+        escalation_posture: input.escalationPosture ?? null,
+        active: input.active === false ? 0 : 1,
+      })
+      if (input.grants) {
+        await replaceRoleGrants(
+          role.id,
+          input.grants.map((grant) => ({
+            action: grant.action,
+            resource_type: grant.resourceType ?? null,
+            resource_id: grant.resourceId ?? null,
+          }))
+        )
+      }
+      if (input.defaults) {
+        await replaceRoleDefaults(
+          role.id,
+          input.defaults.map((entry) => ({
+            key: entry.key,
+            value_json: JSON.stringify(entry.value),
+          }))
+        )
+      }
+      await writePolicyAuditLog({
+        eventType: 'POLICY_ROLE_CREATED',
+        capability: 'policy.write',
+        result: 'allowed',
+        metadata: {
+          actorUserId: requireUserId(ctx.session),
+          roleId: role.id,
+        },
+      })
+      return { id: role.id }
+    }),
+
+  updateRole: protectedProcedure
+    .input(
+      z.object({
+        roleId: z.string().trim().min(1),
+        slug: z.string().trim().min(1).optional(),
+        name: z.string().trim().min(1).optional(),
+        charter: z.string().trim().optional().nullable(),
+        jobDescription: z.string().trim().optional().nullable(),
+        escalationPosture: z.string().trim().optional().nullable(),
+        active: z.boolean().optional(),
+        grants: z.array(policyGrantInputSchema).optional(),
+        defaults: z.array(policyDefaultInputSchema).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const role = await findRoleById(input.roleId)
+      if (!role) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Role not found.' })
+      }
+      await updateRole(role.id, {
+        ...(input.slug !== undefined ? { slug: input.slug } : {}),
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.charter !== undefined ? { charter: input.charter } : {}),
+        ...(input.jobDescription !== undefined ? { job_description: input.jobDescription } : {}),
+        ...(input.escalationPosture !== undefined
+          ? { escalation_posture: input.escalationPosture }
+          : {}),
+        ...(input.active !== undefined ? { active: input.active ? 1 : 0 } : {}),
+      })
+      if (input.grants) {
+        await replaceRoleGrants(
+          role.id,
+          input.grants.map((grant) => ({
+            action: grant.action,
+            resource_type: grant.resourceType ?? null,
+            resource_id: grant.resourceId ?? null,
+          }))
+        )
+      }
+      if (input.defaults) {
+        await replaceRoleDefaults(
+          role.id,
+          input.defaults.map((entry) => ({
+            key: entry.key,
+            value_json: JSON.stringify(entry.value),
+          }))
+        )
+      }
+      await writePolicyAuditLog({
+        eventType: 'POLICY_ROLE_UPDATED',
+        capability: 'policy.write',
+        result: 'allowed',
+        metadata: {
+          actorUserId: requireUserId(ctx.session),
+          roleId: role.id,
+        },
+      })
+      return { ok: true }
+    }),
+
+  assignRoleToAgent: protectedProcedure
+    .input(
+      z.object({
+        roleId: z.string().trim().min(1),
+        agentId: z.string().trim().min(1),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [role, agent] = await Promise.all([
+        findRoleById(input.roleId),
+        findAgentById(input.agentId),
+      ])
+      if (!role || !agent) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Role or agent not found.' })
+      }
+      await assignRoleToAgent(agent.id, role.id)
+      await writePolicyAuditLog({
+        eventType: 'POLICY_ROLE_ASSIGNED_TO_AGENT',
+        capability: 'policy.write',
+        result: 'allowed',
+        metadata: {
+          actorUserId: requireUserId(ctx.session),
+          roleId: role.id,
+          agentId: agent.id,
+        },
+      })
+      return { ok: true }
+    }),
+
+  removeRoleFromAgent: protectedProcedure
+    .input(
+      z.object({
+        roleId: z.string().trim().min(1),
+        agentId: z.string().trim().min(1),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const removed = await removeRoleFromAgent(input.agentId, input.roleId)
+      if (!removed) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Role assignment not found.' })
+      }
+      await writePolicyAuditLog({
+        eventType: 'POLICY_ROLE_REMOVED_FROM_AGENT',
+        capability: 'policy.write',
+        result: 'allowed',
+        metadata: {
+          actorUserId: requireUserId(ctx.session),
+          roleId: input.roleId,
+          agentId: input.agentId,
+        },
+      })
+      return { ok: true }
+    }),
+
+  assignDefaultRoleToTeam: protectedProcedure
+    .input(
+      z.object({
+        roleId: z.string().trim().min(1),
+        teamId: z.string().trim().min(1),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [role, team] = await Promise.all([
+        findRoleById(input.roleId),
+        findTeamById(input.teamId),
+      ])
+      if (!role || !team) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Role or team not found.' })
+      }
+      await assignDefaultRoleToTeam(team.id, role.id)
+      await writePolicyAuditLog({
+        eventType: 'POLICY_ROLE_ASSIGNED_TO_TEAM_DEFAULT',
+        capability: 'policy.write',
+        result: 'allowed',
+        metadata: {
+          actorUserId: requireUserId(ctx.session),
+          roleId: role.id,
+          teamId: team.id,
+        },
+      })
+      return { ok: true }
+    }),
+
+  removeDefaultRoleFromTeam: protectedProcedure
+    .input(
+      z.object({
+        roleId: z.string().trim().min(1),
+        teamId: z.string().trim().min(1),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const removed = await removeDefaultRoleFromTeam(input.teamId, input.roleId)
+      if (!removed) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Team default role not found.' })
+      }
+      await writePolicyAuditLog({
+        eventType: 'POLICY_ROLE_REMOVED_FROM_TEAM_DEFAULT',
+        capability: 'policy.write',
+        result: 'allowed',
+        metadata: {
+          actorUserId: requireUserId(ctx.session),
+          roleId: input.roleId,
+          teamId: input.teamId,
+        },
+      })
+      return { ok: true }
+    }),
+
+  getAgentPolicy: protectedProcedure
+    .input(z.object({ agentId: z.string().trim().min(1) }))
+    .query(async ({ input }) => {
+      const agent = await findAgentById(input.agentId)
+      if (!agent) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Agent not found.' })
+      }
+
+      const [resolved, roleAssignments] = await Promise.all([
+        resolveEffectivePolicy(agent.id),
+        listAgentRoleAssignments(agent.id),
+      ])
+
+      return {
+        agent: {
+          id: agent.id,
+          name: agent.name,
+          handle: agent.handle,
+          status: agent.status,
+        },
+        assignedRoles: roleAssignments.map((assignment) => ({
+          id: assignment.role.id,
+          slug: assignment.role.slug,
+          name: assignment.role.name,
+          charter: assignment.role.charter,
+          jobDescription: assignment.role.job_description,
+          escalationPosture: assignment.role.escalation_posture,
+        })),
+        effectiveRoles: resolved.roles,
+        effectiveGrants: resolved.grants,
+        effectiveDefaults: resolved.defaults,
+        legacyCompatibility: resolved.legacy,
+      }
+    }),
 
   listUsers: protectedProcedure.query(async () => {
     const db = getDb()

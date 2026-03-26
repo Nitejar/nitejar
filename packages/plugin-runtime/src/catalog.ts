@@ -1,4 +1,4 @@
-import type { IntegrationCategory } from '@nitejar/plugin-handlers'
+import type { IntegrationCategory } from '@nitejar/plugin-handlers/types'
 
 /**
  * A catalog entry describes a known/recommended plugin that can be installed.

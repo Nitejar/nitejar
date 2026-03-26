@@ -1,12 +1,12 @@
 import type OpenAI from 'openai'
 import type { WorkItem } from '@nitejar/database'
+import { getPluginInstanceWithConfig } from '@nitejar/plugin-handlers/router'
 import {
-  getPluginInstanceWithConfig,
   getFile as getTelegramFile,
   downloadTelegramFileAsDataUrl,
   downloadTelegramFile,
   type TelegramConfig,
-} from '@nitejar/plugin-handlers'
+} from '@nitejar/plugin-handlers/telegram'
 import { agentLog, agentWarn } from './agent-logger'
 import type { WorkItemPayload, WorkItemAttachment } from './types'
 import { sanitize, wrapBoundary } from './prompt-sanitize'

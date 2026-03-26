@@ -38,7 +38,7 @@ vi.mock('@nitejar/database', () => ({
   deletePluginInstance: mockDeletePluginInstance,
 }))
 
-vi.mock('@nitejar/plugin-handlers', () => ({
+vi.mock('@nitejar/plugin-handlers/registry', () => ({
   pluginHandlerRegistry: {
     get: mockPluginHandlerGet,
   },

@@ -32,7 +32,11 @@ export interface Database {
   teams: TeamTable
   team_members: TeamMemberTable
   agent_teams: AgentTeamTable
-  initiatives: InitiativeTable
+  roles: RoleTable
+  role_grants: RoleGrantTable
+  role_defaults: RoleDefaultTable
+  agent_role_assignments: AgentRoleAssignmentTable
+  team_role_defaults: TeamRoleDefaultTable
   goals: GoalTable
   goal_agent_allocations: GoalAgentAllocationTable
   tickets: TicketTable
@@ -567,7 +571,6 @@ export type TeamMemberUpdate = Updateable<TeamMemberTable>
 export interface AgentTeamTable {
   team_id: string
   agent_id: string // unique — one team per agent
-  is_primary: Generated<number> // 0/1 for SQLite
   created_at: Generated<number>
 }
 
@@ -576,29 +579,69 @@ export type NewAgentTeam = Insertable<AgentTeamTable>
 export type AgentTeamUpdate = Updateable<AgentTeamTable>
 
 // ============================================================================
-// Initiatives
+// Roles + Policy
 // ============================================================================
 
-export interface InitiativeTable {
+export interface RoleTable {
   id: Generated<string>
-  parent_initiative_id: string | null
-  title: string
-  slug: string | null
-  description: string | null
-  status: Generated<string> // 'planned' | 'active' | 'at_risk' | 'blocked' | 'done' | 'archived'
-  owner_kind: string | null // 'user' | 'agent' | 'team'
-  owner_ref: string | null
-  team_id: string | null
-  target_label: string | null
-  created_by_user_id: string | null
+  slug: string
+  name: string
+  charter: string | null
+  job_description: string | null
+  escalation_posture: string | null
+  active: Generated<number> // 0 or 1
   created_at: Generated<number>
   updated_at: Generated<number>
-  archived_at: number | null
 }
 
-export type Initiative = Selectable<InitiativeTable>
-export type NewInitiative = Insertable<InitiativeTable>
-export type InitiativeUpdate = Updateable<InitiativeTable>
+export type Role = Selectable<RoleTable>
+export type NewRole = Insertable<RoleTable>
+export type RoleUpdate = Updateable<RoleTable>
+
+export interface RoleGrantTable {
+  id: Generated<string>
+  role_id: string
+  action: string
+  resource_type: string | null
+  resource_id: string | null
+  created_at: Generated<number>
+}
+
+export type RoleGrant = Selectable<RoleGrantTable>
+export type NewRoleGrant = Insertable<RoleGrantTable>
+export type RoleGrantUpdate = Updateable<RoleGrantTable>
+
+export interface RoleDefaultTable {
+  id: Generated<string>
+  role_id: string
+  key: string
+  value_json: string
+  created_at: Generated<number>
+}
+
+export type RoleDefault = Selectable<RoleDefaultTable>
+export type NewRoleDefault = Insertable<RoleDefaultTable>
+export type RoleDefaultUpdate = Updateable<RoleDefaultTable>
+
+export interface AgentRoleAssignmentTable {
+  agent_id: string
+  role_id: string
+  created_at: Generated<number>
+}
+
+export type AgentRoleAssignment = Selectable<AgentRoleAssignmentTable>
+export type NewAgentRoleAssignment = Insertable<AgentRoleAssignmentTable>
+export type AgentRoleAssignmentUpdate = Updateable<AgentRoleAssignmentTable>
+
+export interface TeamRoleDefaultTable {
+  team_id: string
+  role_id: string
+  created_at: Generated<number>
+}
+
+export type TeamRoleDefault = Selectable<TeamRoleDefaultTable>
+export type NewTeamRoleDefault = Insertable<TeamRoleDefaultTable>
+export type TeamRoleDefaultUpdate = Updateable<TeamRoleDefaultTable>
 
 // ============================================================================
 // Goals + Tickets (shared work layer)
@@ -606,7 +649,6 @@ export type InitiativeUpdate = Updateable<InitiativeTable>
 
 export interface GoalTable {
   id: Generated<string>
-  initiative_id: string | null
   parent_goal_id: string | null
   title: string
   outcome: string
@@ -1468,6 +1510,8 @@ export interface ActivityLogTable {
   agent_handle: string // denormalized for display
   job_id: string | null
   session_key: string | null
+  goal_id: string | null
+  goal_snapshot_json: string | null // JSON snapshot for goal-linked heartbeat context
   status: string // ActivityLogStatus
   summary: string // freeform triage summary
   resources: string | null // JSON array of freeform resource identifiers

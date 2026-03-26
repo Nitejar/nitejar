@@ -426,27 +426,26 @@ export function AdminSidebar({ user: userProp }: AdminSidebarProps) {
         <SidebarNav collapsed={collapsed} user={user} onSignOut={onSignOut} />
       </aside>
 
-      {/* Mobile header */}
-      <header className="sticky top-0 z-50 flex h-14 items-center justify-between border-b border-white/[0.06] bg-background/80 px-4 backdrop-blur-xl md:hidden">
+      {/* Mobile header — minimal, only shows nav trigger + logo */}
+      <header className="sticky top-0 z-50 flex h-10 items-center gap-2 border-b border-white/[0.06] bg-background/80 px-3 backdrop-blur-xl md:hidden">
         <button
           onClick={() => setMobileOpen(true)}
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-white/60 transition-colors hover:bg-white/[0.06] hover:text-white"
+          className="flex h-7 w-7 items-center justify-center rounded-md text-white/50 transition-colors hover:bg-white/[0.06] hover:text-white"
         >
-          <IconMenu2 className="h-5 w-5" />
+          <IconMenu2 className="h-4 w-4" />
         </button>
-        <a href="/" className="flex items-center gap-2">
-          <div className="h-7 w-7 overflow-hidden rounded-lg">
+        <a href="/" className="flex items-center gap-1.5">
+          <div className="h-5 w-5 overflow-hidden rounded">
             <Image
               src="/icon.png"
               alt="Nitejar"
-              width={28}
-              height={28}
+              width={20}
+              height={20}
               className="h-full w-full object-cover"
             />
           </div>
-          <span className="text-sm font-semibold text-white/90">Nitejar</span>
+          <span className="text-xs font-medium text-white/60">Nitejar</span>
         </a>
-        <div className="w-9" /> {/* Spacer for centering */}
       </header>
 
       {/* Mobile sheet */}

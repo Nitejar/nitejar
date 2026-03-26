@@ -7,11 +7,8 @@ import type {
   Goal,
   GoalAgentAllocation,
   GoalUpdate,
-  Initiative,
-  InitiativeUpdate,
   NewGoal,
   NewGoalAgentAllocation,
-  NewInitiative,
   NewTeam,
   NewTicket,
   NewTicketLink,
@@ -99,7 +96,7 @@ export async function deleteTeam(id: string, trx?: Kysely<Database>): Promise<bo
 // ---------------------------------------------------------------------------
 
 export async function addAgentToTeam(
-  data: { agent_id: string; team_id: string; is_primary?: number },
+  data: { agent_id: string; team_id: string },
   trx?: Kysely<Database>
 ): Promise<AgentTeam> {
   const db = trx ?? getDb()
@@ -108,7 +105,6 @@ export async function addAgentToTeam(
     .values({
       agent_id: data.agent_id,
       team_id: data.team_id,
-      is_primary: data.is_primary ?? 0,
       created_at: now(),
     })
     .returningAll()
@@ -129,120 +125,7 @@ export async function removeAgentFromTeam(
   return (result?.numDeletedRows ?? 0n) > 0n
 }
 
-export interface ListInitiativesOptions {
-  parentInitiativeId?: string | null
-  statuses?: string[]
-  ownerKind?: string
-  ownerRef?: string
-  teamId?: string
-  q?: string
-  includeArchived?: boolean
-  limit?: number
-  sortBy?: 'updated_at' | 'created_at' | 'title' | 'status'
-  sortDirection?: 'asc' | 'desc'
-}
-
-export async function createInitiative(
-  data: Omit<NewInitiative, 'id' | 'created_at' | 'updated_at'>,
-  trx?: Kysely<Database>
-): Promise<Initiative> {
-  const db = trx ?? getDb()
-  const timestamp = now()
-  return db
-    .insertInto('initiatives')
-    .values({
-      id: uuid(),
-      ...data,
-      created_at: timestamp,
-      updated_at: timestamp,
-    })
-    .returningAll()
-    .executeTakeFirstOrThrow()
-}
-
-export async function updateInitiative(
-  id: string,
-  data: Omit<InitiativeUpdate, 'id' | 'created_at'>,
-  trx?: Kysely<Database>
-): Promise<Initiative | null> {
-  const db = trx ?? getDb()
-  const row = await db
-    .updateTable('initiatives')
-    .set({
-      ...data,
-      updated_at: now(),
-    })
-    .where('id', '=', id)
-    .returningAll()
-    .executeTakeFirst()
-
-  return row ?? null
-}
-
-export async function findInitiativeById(id: string): Promise<Initiative | null> {
-  const db = getDb()
-  const row = await db.selectFrom('initiatives').selectAll().where('id', '=', id).executeTakeFirst()
-  return row ?? null
-}
-
-export async function listInitiatives(opts: ListInitiativesOptions = {}): Promise<Initiative[]> {
-  const db = getDb()
-  let query = db.selectFrom('initiatives').selectAll()
-
-  if (opts.parentInitiativeId === null) {
-    query = query.where('parent_initiative_id', 'is', null)
-  } else if (opts.parentInitiativeId) {
-    query = query.where('parent_initiative_id', '=', opts.parentInitiativeId)
-  }
-
-  if (opts.statuses && opts.statuses.length > 0) {
-    query = query.where('status', 'in', opts.statuses)
-  }
-
-  if (opts.ownerKind) {
-    query = query.where('owner_kind', '=', opts.ownerKind)
-  }
-
-  if (opts.ownerRef) {
-    query = query.where('owner_ref', '=', opts.ownerRef)
-  }
-
-  if (opts.teamId) {
-    query = query.where('team_id', '=', opts.teamId)
-  }
-
-  if (!opts.includeArchived) {
-    query = query.where('archived_at', 'is', null)
-  }
-
-  const q = opts.q?.trim()
-  if (q) {
-    const like = `%${q.toLowerCase()}%`
-    query = query.where((eb) =>
-      eb.or([
-        sql<boolean>`lower(initiatives.title) like ${like}`,
-        sql<boolean>`lower(coalesce(initiatives.description, '')) like ${like}`,
-      ])
-    )
-  }
-
-  const sortDirection = opts.sortDirection === 'asc' ? 'asc' : 'desc'
-  const sortBy = opts.sortBy ?? 'updated_at'
-  if (sortBy === 'title' || sortBy === 'status') {
-    query = query.orderBy(sortBy, sortDirection).orderBy('updated_at', 'desc')
-  } else {
-    query = query.orderBy(sortBy, sortDirection).orderBy('created_at', 'desc')
-  }
-
-  if (opts.limit) {
-    query = query.limit(Math.min(Math.max(opts.limit, 1), 200))
-  }
-
-  return query.execute()
-}
-
 export interface ListGoalsOptions {
-  initiativeId?: string
   parentGoalId?: string | null
   statuses?: string[]
   ownerKind?: string
@@ -359,10 +242,6 @@ export async function listGoalAgentAllocations(opts?: {
 export async function listGoals(opts: ListGoalsOptions = {}): Promise<Goal[]> {
   const db = getDb()
   let query = db.selectFrom('goals').selectAll()
-
-  if (opts.initiativeId) {
-    query = query.where('initiative_id', '=', opts.initiativeId)
-  }
 
   if (opts.parentGoalId === null) {
     query = query.where('parent_goal_id', 'is', null)
@@ -1430,7 +1309,7 @@ export async function listAgentAllocationRollups(opts?: {
     listAgentWorkloadRollups({ agentIds: opts?.agentIds }),
     db
       .selectFrom('agent_teams')
-      .select(['agent_id', 'team_id', 'is_primary'])
+      .select(['agent_id', 'team_id'])
       .$if(Boolean(opts?.agentIds?.length), (qb) => qb.where('agent_id', 'in', opts!.agentIds!))
       .execute(),
     db
@@ -1462,14 +1341,12 @@ export async function listAgentAllocationRollups(opts?: {
   ])
 
   const teamIdsByAgent = new Map<string, Set<string>>()
-  const primaryTeamByAgent = new Map<string, string>()
+  const teamByAgent = new Map<string, string>()
   for (const row of agentTeamRows) {
     const teamIds = teamIdsByAgent.get(row.agent_id) ?? new Set<string>()
     teamIds.add(row.team_id)
     teamIdsByAgent.set(row.agent_id, teamIds)
-    if (row.is_primary === 1 || !primaryTeamByAgent.has(row.agent_id)) {
-      primaryTeamByAgent.set(row.agent_id, row.team_id)
-    }
+    teamByAgent.set(row.agent_id, row.team_id)
   }
 
   const goalIdsByAgent = new Map<string, Set<string>>()
@@ -1535,7 +1412,7 @@ export async function listAgentAllocationRollups(opts?: {
 
       return {
         agent_id: agentId,
-        primary_team_id: primaryTeamByAgent.get(agentId) ?? null,
+        primary_team_id: teamByAgent.get(agentId) ?? null,
         team_ids: [...(teamIdsByAgent.get(agentId) ?? new Set<string>())],
         goal_ids: supportedGoalIds,
         owned_goal_ids: ownedGoalIds,
@@ -1647,7 +1524,7 @@ export async function listGoalCoverageRollups(opts?: {
     agentIds.length > 0
       ? db
           .selectFrom('agent_teams')
-          .select(['agent_id', 'team_id', 'is_primary'])
+          .select(['agent_id', 'team_id'])
           .where('agent_id', 'in', agentIds)
           .execute()
       : Promise.resolve([]),
@@ -1656,16 +1533,14 @@ export async function listGoalCoverageRollups(opts?: {
 
   const healthByGoal = new Map(healthSummaries.map((summary) => [summary.goal_id, summary]))
   const workloadByAgent = new Map(agentRollups.map((rollup) => [rollup.agent_id, rollup]))
-  const primaryTeamByAgent = new Map<string, string>()
+  const teamByAgent = new Map<string, string>()
   const allTeamsByAgent = new Map<string, Set<string>>()
 
   for (const row of agentTeams) {
     const current = allTeamsByAgent.get(row.agent_id) ?? new Set<string>()
     current.add(row.team_id)
     allTeamsByAgent.set(row.agent_id, current)
-    if (row.is_primary === 1 || !primaryTeamByAgent.has(row.agent_id)) {
-      primaryTeamByAgent.set(row.agent_id, row.team_id)
-    }
+    teamByAgent.set(row.agent_id, row.team_id)
   }
 
   const staffingByGoal = new Map<
@@ -1691,8 +1566,8 @@ export async function listGoalCoverageRollups(opts?: {
 
     if (goal.owner_kind === 'agent' && goal.owner_ref) {
       current.staffedAgents.add(goal.owner_ref)
-      const primaryTeamId = primaryTeamByAgent.get(goal.owner_ref)
-      if (primaryTeamId) current.activeTeams.add(primaryTeamId)
+      const teamId = teamByAgent.get(goal.owner_ref)
+      if (teamId) current.activeTeams.add(teamId)
     }
 
     staffingByGoal.set(goal.id, current)
@@ -1705,8 +1580,8 @@ export async function listGoalCoverageRollups(opts?: {
       activeTeams: new Set<string>(),
     }
     current.staffedAgents.add(allocation.agent_id)
-    const primaryTeamId = primaryTeamByAgent.get(allocation.agent_id)
-    if (primaryTeamId) current.activeTeams.add(primaryTeamId)
+    const teamId = teamByAgent.get(allocation.agent_id)
+    if (teamId) current.activeTeams.add(teamId)
     const additionalTeams = allTeamsByAgent.get(allocation.agent_id)
     if (additionalTeams) {
       for (const teamId of additionalTeams) current.activeTeams.add(teamId)
@@ -1726,8 +1601,8 @@ export async function listGoalCoverageRollups(opts?: {
 
     if (ticket.assignee_kind === 'agent' && ticket.assignee_ref) {
       current.staffedAgents.add(ticket.assignee_ref)
-      const primaryTeamId = primaryTeamByAgent.get(ticket.assignee_ref)
-      if (primaryTeamId) current.activeTeams.add(primaryTeamId)
+      const teamId = teamByAgent.get(ticket.assignee_ref)
+      if (teamId) current.activeTeams.add(teamId)
       const additionalTeams = allTeamsByAgent.get(ticket.assignee_ref)
       if (additionalTeams) {
         for (const teamId of additionalTeams) current.activeTeams.add(teamId)
@@ -1761,7 +1636,7 @@ export async function listGoalCoverageRollups(opts?: {
       if (goal.team_id) {
         primaryTeamId = goal.team_id
       } else if (goal.owner_kind === 'agent' && goal.owner_ref) {
-        primaryTeamId = primaryTeamByAgent.get(goal.owner_ref) ?? null
+        primaryTeamId = teamByAgent.get(goal.owner_ref) ?? null
       } else if (activeTeamIds.length === 1) {
         primaryTeamId = activeTeamIds[0] ?? null
       }
@@ -1812,7 +1687,6 @@ export interface TeamPortfolioRollup {
   charter: string | null
   member_count: number
   agent_count: number
-  primary_agent_count: number
   owned_goal_count: number
   staffed_goal_count: number
   active_goal_count: number
@@ -1822,7 +1696,6 @@ export interface TeamPortfolioRollup {
   blocked_ticket_count: number
   goals_needing_staffing_count: number
   overloaded_agent_count: number
-  latest_heartbeat_at: number | null
   goal_ids: string[]
 }
 
@@ -1840,7 +1713,7 @@ export async function listTeamPortfolioRollups(opts?: {
   if (teams.length === 0) return []
 
   const teamIds = teams.map((team) => team.id)
-  const [goalCoverage, memberRows, agentRows, teamTicketRows, heartbeatRows] = await Promise.all([
+  const [goalCoverage, memberRows, agentRows, teamTicketRows] = await Promise.all([
     listGoalCoverageRollups(),
     db
       .selectFrom('team_members')
@@ -1850,7 +1723,7 @@ export async function listTeamPortfolioRollups(opts?: {
       .execute(),
     db
       .selectFrom('agent_teams')
-      .select(['team_id', 'agent_id', 'is_primary'])
+      .select(['team_id', 'agent_id'])
       .where('team_id', 'in', teamIds)
       .execute(),
     db
@@ -1866,13 +1739,6 @@ export async function listTeamPortfolioRollups(opts?: {
       .where('assignee_kind', '=', 'team')
       .where('assignee_ref', 'in', teamIds)
       .groupBy('assignee_ref')
-      .execute(),
-    db
-      .selectFrom('work_updates')
-      .select(['team_id', sql<number>`max(created_at)`.as('latest_heartbeat_at')])
-      .where('team_id', 'in', teamIds)
-      .where('kind', '=', 'heartbeat')
-      .groupBy('team_id')
       .execute(),
   ])
 
@@ -1893,20 +1759,10 @@ export async function listTeamPortfolioRollups(opts?: {
         },
       ])
   )
-  const heartbeatByTeam = new Map(
-    heartbeatRows
-      .filter((row): row is typeof row & { team_id: string } => !!row.team_id)
-      .map((row) => [row.team_id, row.latest_heartbeat_at])
-  )
-
   const agentCountByTeam = new Map<string, number>()
-  const primaryAgentCountByTeam = new Map<string, number>()
   const overloadedAgentCountByTeam = new Map<string, number>()
   for (const row of agentRows) {
     agentCountByTeam.set(row.team_id, (agentCountByTeam.get(row.team_id) ?? 0) + 1)
-    if (row.is_primary === 1) {
-      primaryAgentCountByTeam.set(row.team_id, (primaryAgentCountByTeam.get(row.team_id) ?? 0) + 1)
-    }
     if (isAgentOverloaded(workloadByAgent.get(row.agent_id))) {
       overloadedAgentCountByTeam.set(
         row.team_id,
@@ -1986,7 +1842,6 @@ export async function listTeamPortfolioRollups(opts?: {
         charter: team.charter,
         member_count: memberCountByTeam.get(team.id) ?? 0,
         agent_count: agentCountByTeam.get(team.id) ?? 0,
-        primary_agent_count: primaryAgentCountByTeam.get(team.id) ?? 0,
         owned_goal_count: goalStats.owned,
         staffed_goal_count: goalStats.staffed,
         active_goal_count: goalStats.active,
@@ -1996,7 +1851,6 @@ export async function listTeamPortfolioRollups(opts?: {
         blocked_ticket_count: ticketStats.blocked,
         goals_needing_staffing_count: goalStats.needsStaffing,
         overloaded_agent_count: overloadedAgentCountByTeam.get(team.id) ?? 0,
-        latest_heartbeat_at: heartbeatByTeam.get(team.id) ?? null,
         goal_ids: goalStats.goalIds,
       }
     })

@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { Plus } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { ChevronDown, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 
@@ -23,7 +23,6 @@ export type GoalListInput = {
   ownerKind?: ActorKind
   ownerRef?: string
   teamId?: string
-  initiativeId?: string
   staleOnly?: boolean
   includeArchived?: boolean
   limit?: number
@@ -96,6 +95,30 @@ export function statusColor(status: string): string {
       return 'bg-zinc-700'
     default:
       return 'bg-zinc-500'
+  }
+}
+
+/** Border + bg tint for selected filter pills, keyed to status color. */
+export function statusSelectedStyle(status: string): string {
+  switch (status) {
+    case 'in_progress':
+    case 'active':
+      return 'border-blue-500/40 bg-blue-500/15 text-blue-300'
+    case 'blocked':
+    case 'at_risk':
+      return 'border-red-500/40 bg-red-500/15 text-red-300'
+    case 'ready':
+      return 'border-zinc-400/40 bg-zinc-400/15 text-zinc-300'
+    case 'done':
+      return 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+    case 'inbox':
+    case 'draft':
+      return 'border-zinc-500/40 bg-zinc-500/15 text-zinc-300'
+    case 'canceled':
+    case 'archived':
+      return 'border-zinc-600/40 bg-zinc-600/15 text-zinc-400'
+    default:
+      return 'border-white/20 bg-white/10 text-white'
   }
 }
 
@@ -237,7 +260,14 @@ export function ProgressRing({
             : 'stroke-zinc-600'
 
   return (
-    <svg width={size} height={size} className="shrink-0 -rotate-90">
+    <svg
+      width={size}
+      height={size}
+      className={cn(
+        'shrink-0 -rotate-90',
+        percent >= 100 && 'motion-safe:animate-[scalePulse_0.6s_ease-in-out]'
+      )}
+    >
       {/* Background track */}
       <circle
         cx={size / 2}
@@ -274,15 +304,26 @@ export function formatMetricValue(value: number): string {
 export function TicketProgress({ done, total }: { done: number; total: number }) {
   if (total === 0) return null
   const pct = Math.round((done / total) * 100)
+  const isComplete = done === total && total > 0
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-zinc-500 tabular-nums">
-      <span className="relative h-1 w-10 overflow-hidden rounded-full bg-zinc-800">
+    <span className="inline-flex items-center gap-1.5 text-xs tabular-nums">
+      <span
+        className={cn(
+          'relative h-1 w-10 overflow-hidden rounded-full',
+          isComplete ? 'bg-emerald-900/40' : 'bg-zinc-800'
+        )}
+      >
         <span
-          className="absolute inset-y-0 left-0 rounded-full bg-zinc-500 transition-[width] duration-300 ease-out"
+          className={cn(
+            'absolute inset-y-0 left-0 rounded-full transition-[width] duration-300 ease-out',
+            isComplete ? 'bg-emerald-500' : 'bg-zinc-500'
+          )}
           style={{ width: `${pct}%` }}
         />
       </span>
-      {done}/{total}
+      <span className={isComplete ? 'text-emerald-400' : 'text-zinc-500'}>
+        {done}/{total}
+      </span>
     </span>
   )
 }
@@ -368,5 +409,175 @@ export function InlineCreateRow({
       />
       {isPending && <span className="text-[10px] text-zinc-600">Saving...</span>}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// InlinePicker — popover-based picker styled like InlineStatusPicker
+// ---------------------------------------------------------------------------
+
+export type InlinePickerItem = {
+  value: string
+  label: string
+  hint?: string | null
+  trailing?: ReactNode
+}
+
+/**
+ * Tab definition for InlinePicker. When `tabs` is provided the dropdown
+ * shows tab buttons above the options list and `items` is ignored in
+ * favour of the active tab's items.
+ */
+export type InlinePickerTab = {
+  key: string
+  label: string
+  items: InlinePickerItem[]
+}
+
+export function InlinePicker({
+  value,
+  items,
+  tabs,
+  placeholder = 'None',
+  onValueChange,
+  onClear,
+  className,
+}: {
+  /** Currently selected value */
+  value: string | null
+  /** Flat list of options (ignored when `tabs` is provided) */
+  items?: InlinePickerItem[]
+  /** Optional tabbed groups of options (e.g. People / Agents) */
+  tabs?: InlinePickerTab[]
+  placeholder?: string
+  onValueChange: (value: string) => void
+  /** If provided, shows × to clear; called with no args */
+  onClear?: () => void
+  className?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const [activeTabKey, setActiveTabKey] = useState(() => tabs?.[0]?.key ?? '')
+  const searchRef = useRef<HTMLInputElement>(null)
+
+  // Focus the search input when opening
+  useEffect(() => {
+    if (open) {
+      setSearch('')
+      // Small delay so the popover renders first
+      const timer = setTimeout(() => searchRef.current?.focus(), 50)
+      return () => clearTimeout(timer)
+    }
+  }, [open])
+
+  const activeItems = tabs ? (tabs.find((t) => t.key === activeTabKey)?.items ?? []) : (items ?? [])
+
+  const filtered = search
+    ? activeItems.filter((i) => i.label.toLowerCase().includes(search.toLowerCase()))
+    : activeItems
+
+  const selectedLabel = (tabs ? tabs.flatMap((t) => t.items) : (items ?? [])).find(
+    (i) => i.value === value
+  )?.label
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        className={cn(
+          'group/picker inline-flex items-center justify-start gap-1 rounded p-0.5 pr-1 text-left text-xs transition hover:bg-white/10',
+          className
+        )}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span
+          className={cn('min-w-0 text-left', selectedLabel ? 'text-zinc-300' : 'text-zinc-500')}
+        >
+          {selectedLabel ?? placeholder}
+        </span>
+        <ChevronDown className="h-3 w-3 text-zinc-600 opacity-0 transition group-hover/picker:opacity-100" />
+      </PopoverTrigger>
+      <PopoverContent className="w-48 p-1" align="start" onClick={(e) => e.stopPropagation()}>
+        {(tabs && tabs.length > 1) || (onClear && value) ? (
+          <div className="mb-0.5 flex items-center gap-1 border-b border-zinc-800 px-1 pb-0.5">
+            {tabs && tabs.length > 1 ? (
+              <div className="flex flex-1 gap-1">
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setActiveTabKey(tab.key)}
+                    className={cn(
+                      'rounded px-2 py-0.5 text-[10px] transition',
+                      tab.key === activeTabKey
+                        ? 'bg-white/10 text-white'
+                        : 'text-white/35 hover:text-white/60'
+                    )}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="flex-1" />
+            )}
+            {onClear && value ? (
+              <button
+                type="button"
+                aria-label={`Clear ${placeholder}`}
+                className="rounded px-1.5 py-0.5 text-[10px] text-zinc-500 transition hover:bg-white/10 hover:text-zinc-200"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onClear()
+                  setOpen(false)
+                }}
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        {/* Search */}
+        <input
+          ref={searchRef}
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search..."
+          className="mb-0.5 w-full rounded bg-white/[0.04] px-2 py-1 text-xs text-zinc-300 placeholder:text-zinc-600 outline-none"
+        />
+        {/* Options */}
+        <div className="max-h-48 overflow-y-auto">
+          {filtered.length > 0 ? (
+            filtered.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onValueChange(item.value)
+                  setOpen(false)
+                }}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded px-2 py-1 text-xs transition',
+                  item.value === value
+                    ? 'bg-white/10 text-white'
+                    : 'text-zinc-400 hover:bg-white/[0.06] hover:text-white'
+                )}
+              >
+                <span className="min-w-0 flex-1 text-left">
+                  <span className="block truncate">{item.label}</span>
+                  {item.hint ? (
+                    <span className="block truncate text-[10px] text-zinc-600">{item.hint}</span>
+                  ) : null}
+                </span>
+                {item.trailing ? <span className="shrink-0">{item.trailing}</span> : null}
+              </button>
+            ))
+          ) : (
+            <p className="px-2 py-1 text-[10px] text-zinc-600">No results</p>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }

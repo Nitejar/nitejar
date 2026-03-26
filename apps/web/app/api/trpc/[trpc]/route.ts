@@ -1,14 +1,14 @@
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
-import { getAuth } from '@/lib/auth'
-import { appRouter } from '@/server/routers/_app'
 import type { TRPCContext } from '@/server/trpc'
 
 const createContext = async (req: Request): Promise<TRPCContext> => {
+  const { getAuth } = await import('@/lib/auth')
   const session = await getAuth().api.getSession({ headers: req.headers })
   return { session }
 }
 
 const handler = async (req: Request) => {
+  const { appRouter } = await import('@/server/routers/_app')
   return fetchRequestHandler({
     endpoint: '/api/trpc',
     req,

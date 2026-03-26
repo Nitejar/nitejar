@@ -15,15 +15,6 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ['@tabler/icons-react', 'recharts'],
   },
-  transpilePackages: [
-    '@nitejar/agent',
-    '@nitejar/config',
-    '@nitejar/connectors-github',
-    '@nitejar/core',
-    '@nitejar/database',
-    '@nitejar/plugin-handlers',
-    '@nitejar/sprites',
-  ],
   serverExternalPackages: ['better-sqlite3'],
   async redirects() {
     return await Promise.resolve([

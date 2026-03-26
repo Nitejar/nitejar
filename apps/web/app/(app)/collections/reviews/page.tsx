@@ -1,10 +1,14 @@
+import { createPageMetadata } from '@/app/metadata'
 import { PageHeader } from '../../components/PageHeader'
 import { ClientErrorBoundary } from '../../components/ClientErrorBoundary'
+import { PageScrollShell } from '../../components/PageScrollShell'
 import { ReviewsClient } from './ReviewsClient'
+
+export const metadata = createPageMetadata('Schema Reviews')
 
 export default function SchemaReviewsPage() {
   return (
-    <div className="space-y-6">
+    <PageScrollShell className="space-y-6">
       <PageHeader
         title="Schema Reviews"
         description="Review and approve collection schema proposals from agents."
@@ -14,6 +18,6 @@ export default function SchemaReviewsPage() {
       <ClientErrorBoundary label="Schema Reviews">
         <ReviewsClient />
       </ClientErrorBoundary>
-    </div>
+    </PageScrollShell>
   )
 }

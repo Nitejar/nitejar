@@ -1,7 +1,7 @@
 import { sql } from 'kysely'
 import { getDb } from '../db'
 import { cosineSimilarity, deserializeEmbedding } from './memories'
-import type { ActivityLogEntry, NewActivityLogEntry } from '../types'
+import type { ActivityLogEntry, NewActivityLogEntry, WorkItem } from '../types'
 
 function now(): number {
   return Math.floor(Date.now() / 1000)
@@ -12,6 +12,32 @@ function uuid(): string {
 }
 
 const DEFAULT_ACTIVITY_SUMMARY = 'Auto-derived reason: no reason provided'
+const GOAL_HEARTBEAT_SESSION_KEY_RE = /^work:goal:(.+):heartbeat$/
+const ROUTINE_SOURCE_REF_RE = /^routine:([^:]+):/
+
+export interface ActivityGoalSnapshot {
+  kind: 'goal_heartbeat'
+  goalId: string
+  goalTitle: string
+  goalStatus: string
+  goalOutcome: string
+  routineId: string | null
+  routineName: string | null
+  cronExpr: string | null
+  timezone: string | null
+}
+
+function extractHeartbeatGoalId(sessionKey: string | null | undefined): string | null {
+  if (!sessionKey) return null
+  const match = sessionKey.match(GOAL_HEARTBEAT_SESSION_KEY_RE)
+  return match?.[1] ?? null
+}
+
+function extractRoutineId(sourceRef: string | null | undefined): string | null {
+  if (!sourceRef) return null
+  const match = sourceRef.match(ROUTINE_SOURCE_REF_RE)
+  return match?.[1] ?? null
+}
 
 export function normalizeActivitySummary(
   summary: string | null | undefined,
@@ -24,6 +50,47 @@ export function normalizeActivitySummary(
   if (fallback.length > 0) return fallback
 
   return DEFAULT_ACTIVITY_SUMMARY
+}
+
+export async function resolveActivityGoalSnapshot(
+  workItem: Pick<WorkItem, 'session_key' | 'source_ref'>
+): Promise<{ goalId: string; goalSnapshotJson: string } | null> {
+  const goalId = extractHeartbeatGoalId(workItem.session_key)
+  if (!goalId) return null
+
+  const db = getDb()
+  const routineId = extractRoutineId(workItem.source_ref)
+
+  const [goal, routine] = await Promise.all([
+    db.selectFrom('goals').selectAll().where('id', '=', goalId).executeTakeFirst(),
+    routineId
+      ? db.selectFrom('routines').selectAll().where('id', '=', routineId).executeTakeFirst()
+      : db
+          .selectFrom('routines')
+          .selectAll()
+          .where('target_session_key', '=', workItem.session_key)
+          .orderBy('created_at', 'desc')
+          .executeTakeFirst(),
+  ])
+
+  if (!goal) return null
+
+  const snapshot: ActivityGoalSnapshot = {
+    kind: 'goal_heartbeat',
+    goalId: goal.id,
+    goalTitle: goal.title,
+    goalStatus: goal.status,
+    goalOutcome: goal.outcome,
+    routineId: routine?.id ?? routineId,
+    routineName: routine?.name ?? null,
+    cronExpr: routine?.cron_expr ?? null,
+    timezone: routine?.timezone ?? null,
+  }
+
+  return {
+    goalId: goal.id,
+    goalSnapshotJson: JSON.stringify(snapshot),
+  }
 }
 
 export async function appendActivityEntry(

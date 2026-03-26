@@ -10,7 +10,7 @@ import {
   updatePluginInstance,
   deletePluginInstance,
 } from '@nitejar/database'
-import { pluginHandlerRegistry } from '@nitejar/plugin-handlers'
+import { pluginHandlerRegistry } from '@nitejar/plugin-handlers/registry'
 import { PluginLoader } from '@nitejar/plugin-runtime'
 import {
   getPluginInstanceOp,

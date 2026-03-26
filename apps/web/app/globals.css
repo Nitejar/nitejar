@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
+@import '@xyflow/react/dist/style.css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -116,11 +117,58 @@
   --sidebar-ring: oklch(0.552 0.016 285.938);
 }
 
+@keyframes fadeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scalePulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  .company-org-chart .react-flow__controls {
+    border: 1px solid rgb(255 255 255 / 0.08);
+    background: rgb(9 9 11 / 0.88);
+    box-shadow: 0 16px 40px rgb(0 0 0 / 0.35);
+  }
+
+  .company-org-chart .react-flow__controls-button {
+    border-bottom: 1px solid rgb(255 255 255 / 0.08);
+    background: transparent;
+    color: rgb(255 255 255 / 0.68);
+  }
+
+  .company-org-chart .react-flow__controls-button:hover {
+    background: rgb(255 255 255 / 0.06);
+  }
+
+  .company-org-chart .react-flow__controls-button:last-child {
+    border-bottom: 0;
+  }
+
+  .company-org-chart .react-flow__edge-path {
+    stroke-linecap: round;
   }
 }

@@ -1,6 +1,11 @@
 import { createHash } from 'node:crypto'
 import type Anthropic from '@anthropic-ai/sdk'
-import { insertMediaArtifact, insertMediaArtifactBlob, type MediaArtifact } from '@nitejar/database'
+import {
+  assertAgentGrant,
+  insertMediaArtifact,
+  insertMediaArtifactBlob,
+  type MediaArtifact,
+} from '@nitejar/database'
 import { appendFile, mkdir, spriteExec, writeFile } from '@nitejar/sprites'
 import {
   getImageGenModel,
@@ -361,6 +366,12 @@ export const generateImageTool: ToolHandler = async (input, context) => {
     return { success: false, error: 'Missing job or agent context for media receipts.' }
   }
 
+  await assertAgentGrant({
+    agentId: context.agentId,
+    action: 'capability.image_generation',
+    resourceType: '*',
+  })
+
   const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : ''
   if (!prompt) return { success: false, error: 'prompt is required.' }
 
@@ -459,6 +470,12 @@ export const transcribeAudioTool: ToolHandler = async (input, context) => {
   if (!context.jobId || !context.agentId) {
     return { success: false, error: 'Missing job or agent context for media receipts.' }
   }
+
+  await assertAgentGrant({
+    agentId: context.agentId,
+    action: 'capability.speech_to_text',
+    resourceType: '*',
+  })
 
   const inputPath = typeof input.input_path === 'string' ? input.input_path.trim() : ''
   if (!inputPath) return { success: false, error: 'input_path is required.' }
@@ -562,6 +579,12 @@ export const synthesizeSpeechTool: ToolHandler = async (input, context) => {
   if (!context.jobId || !context.agentId) {
     return { success: false, error: 'Missing job or agent context for media receipts.' }
   }
+
+  await assertAgentGrant({
+    agentId: context.agentId,
+    action: 'capability.text_to_speech',
+    resourceType: '*',
+  })
 
   const text = typeof input.text === 'string' ? input.text.trim() : ''
   if (!text) return { success: false, error: 'text is required.' }

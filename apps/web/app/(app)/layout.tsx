@@ -41,10 +41,10 @@ export default async function AdminLayout({
       : null
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
       <AdminProviders>
         <SidebarProvider>
-          <div className="relative min-h-screen">
+          <div className="relative min-h-0 flex-1">
             <AdminSidebar
               user={{
                 name:

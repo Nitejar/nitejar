@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { createAppAuth } from '@octokit/auth-app'
 import type { PluginInstanceRecord } from '@nitejar/database'
 import { createGitHubClient, postIssueComment } from '@nitejar/connectors-github'
 import type {
@@ -183,6 +184,8 @@ export const githubHandler: PluginHandler<GitHubConfig> = {
     })
   },
 }
+
+export { createAppAuth }
 
 // Re-export types
 export type { GitHubConfig, GitHubResponseContext } from './types'

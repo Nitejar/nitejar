@@ -1,4 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk'
+import { assertAgentGrant } from '@nitejar/database'
 import { extractUrls, formatExtractResults, formatSearchResults, webSearch } from '../../web-search'
 import type { ToolHandler } from '../types'
 
@@ -70,7 +71,15 @@ export const webDefinitions: Anthropic.Tool[] = [
   },
 ]
 
-export const webSearchTool: ToolHandler = async (input) => {
+export const webSearchTool: ToolHandler = async (input, context) => {
+  if (context.agentId) {
+    await assertAgentGrant({
+      agentId: context.agentId,
+      action: 'capability.web_search',
+      resourceType: '*',
+    })
+  }
+
   const query = typeof input.query === 'string' ? input.query.trim() : ''
   if (!query) {
     return { success: false, error: 'query is required.' }
@@ -120,7 +129,15 @@ export const webSearchTool: ToolHandler = async (input) => {
   }
 }
 
-export const extractUrlTool: ToolHandler = async (input) => {
+export const extractUrlTool: ToolHandler = async (input, context) => {
+  if (context.agentId) {
+    await assertAgentGrant({
+      agentId: context.agentId,
+      action: 'capability.web_search',
+      resourceType: '*',
+    })
+  }
+
   const urls = Array.isArray(input.urls) ? (input.urls as string[]) : []
   if (urls.length === 0) {
     return { success: false, error: 'urls is required and must be a non-empty array.' }

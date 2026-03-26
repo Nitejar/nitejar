@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import {
   getDb,
+  assignRoleToAgent,
   createAgent,
   createAgentSandbox,
   createCostLimit,
@@ -44,7 +45,6 @@ function buildConfigFromPartial(input: {
   maxTokens?: number
   editToolMode?: 'hashline' | 'replace'
   soul?: string
-  title?: string
   emoji?: string
   avatarUrl?: string
   memorySettings?: Record<string, unknown>
@@ -68,7 +68,6 @@ function buildConfigFromPartial(input: {
     maxTokens: input.maxTokens,
     editToolMode: input.editToolMode ?? DEFAULT_EDIT_TOOL_MODE,
     soul: input.soul,
-    title: input.title,
     emoji: input.emoji,
     avatarUrl: input.avatarUrl,
     memorySettings,
@@ -91,7 +90,6 @@ const partialConfigSchema = z
     maxTokens: z.number().int().positive().optional(),
     editToolMode: z.enum(['hashline', 'replace']).optional(),
     soul: z.string().optional(),
-    title: z.string().optional(),
     emoji: z.string().optional(),
     avatarUrl: z.string().optional(),
     memorySettings: z.record(z.unknown()).optional(),
@@ -116,7 +114,6 @@ export const agentBuilderRouter = router({
         identity: z.object({
           name: z.string().min(1),
           handle: z.string().optional(),
-          title: z.string().optional(),
           emoji: z.string().optional(),
           avatarUrl: z.string().optional(),
         }),
@@ -125,7 +122,6 @@ export const agentBuilderRouter = router({
     .mutation(async ({ input }) => {
       const builtConfig = buildConfigFromPartial({
         ...input.config,
-        title: input.identity.title,
         emoji: input.identity.emoji,
         avatarUrl: input.identity.avatarUrl,
       })
@@ -179,7 +175,6 @@ export const agentBuilderRouter = router({
         identity: z
           .object({
             name: z.string().optional(),
-            title: z.string().optional(),
             emoji: z.string().optional(),
             avatarUrl: z.string().optional(),
           })
@@ -195,7 +190,6 @@ export const agentBuilderRouter = router({
 
       const builtConfig = buildConfigFromPartial({
         ...input.config,
-        title: input.identity?.title,
         emoji: input.identity?.emoji,
         avatarUrl: input.identity?.avatarUrl,
       })
@@ -363,12 +357,12 @@ export const agentBuilderRouter = router({
         finalIdentity: z.object({
           name: z.string().min(1),
           handle: z.string().min(1),
-          title: z.string().optional(),
           emoji: z.string().optional(),
           avatarUrl: z.string().optional(),
         }),
         finalConfig: z.record(z.unknown()),
         teamId: z.string().optional(),
+        roleId: z.string().optional(),
         pluginAssignments: z.array(z.object({ pluginInstanceId: z.string() })).optional(),
         skillAttachments: z
           .array(
@@ -407,7 +401,6 @@ export const agentBuilderRouter = router({
       // Update agent with final identity and config
       const configObj = buildConfigFromPartial({
         ...input.finalConfig,
-        title: input.finalIdentity.title,
         emoji: input.finalIdentity.emoji,
         avatarUrl: input.finalIdentity.avatarUrl,
       })
@@ -428,10 +421,14 @@ export const agentBuilderRouter = router({
           .values({
             team_id: input.teamId,
             agent_id: agent.id,
-            is_primary: 0,
             created_at: now(),
           })
           .execute()
+      }
+
+      // Assign role
+      if (input.roleId) {
+        await assignRoleToAgent(agent.id, input.roleId)
       }
 
       // Assign plugin instances

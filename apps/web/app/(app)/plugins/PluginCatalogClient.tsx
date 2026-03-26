@@ -12,7 +12,7 @@ import {
 import { trpc } from '@/lib/trpc'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from '@/components/ui/empty'
-import type { IntegrationCategory } from '@nitejar/plugin-handlers'
+import type { IntegrationCategory } from '@nitejar/plugin-handlers/types'
 import { CustomPluginsSection } from './CustomPluginsSection'
 
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {

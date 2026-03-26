@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { trpc } from '@/lib/trpc'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -17,9 +18,10 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 
 interface AgentIdentityFormProps {
   agentId: string
-  handle: string // @mention ID
-  name: string // Display name
-  initialTitle?: string | null // Role
+  handle: string
+  name: string
+  currentRoleId: string | null
+  availableRoles: { id: string; name: string }[]
   initialEmoji?: string | null
   initialAvatarUrl?: string | null
   currentTeamId?: string | null
@@ -28,7 +30,7 @@ interface AgentIdentityFormProps {
 
 interface IdentityValues {
   name: string
-  title?: string
+  roleId: string
   emoji?: string
   avatarUrl?: string
   teamId?: string
@@ -38,7 +40,8 @@ export function AgentIdentityForm({
   agentId,
   handle: _handle,
   name,
-  initialTitle,
+  currentRoleId,
+  availableRoles,
   initialEmoji,
   initialAvatarUrl,
   currentTeamId,
@@ -51,7 +54,7 @@ export function AgentIdentityForm({
   const form = useForm<IdentityValues>({
     defaultValues: {
       name: name,
-      title: initialTitle ?? '',
+      roleId: currentRoleId ?? '',
       emoji: initialEmoji ?? '',
       avatarUrl: initialAvatarUrl ?? '',
       teamId: currentTeamId ?? '',
@@ -66,6 +69,18 @@ export function AgentIdentityForm({
     },
     onError: (error) => {
       setStatus({ type: 'error', text: error.message })
+    },
+  })
+
+  const assignRole = trpc.company.assignRoleToAgent.useMutation({
+    onSuccess: () => {
+      router.refresh()
+    },
+  })
+
+  const removeRole = trpc.company.removeRoleFromAgent.useMutation({
+    onSuccess: () => {
+      router.refresh()
     },
   })
 
@@ -84,23 +99,30 @@ export function AgentIdentityForm({
   const handleSubmit = form.handleSubmit((values) => {
     setStatus(null)
 
-    // Update identity
+    // Update identity (name, emoji, avatar)
     updateIdentity.mutate({
       id: agentId,
       name: values.name?.trim() || null,
-      title: values.title?.trim() || null,
       emoji: values.emoji?.trim() || null,
       avatarUrl: values.avatarUrl?.trim() || null,
     })
+
+    // Handle role change
+    const newRoleId = values.roleId || null
+    if (newRoleId !== currentRoleId) {
+      if (newRoleId) {
+        assignRole.mutate({ roleId: newRoleId, agentId })
+      } else if (currentRoleId) {
+        removeRole.mutate({ roleId: currentRoleId, agentId })
+      }
+    }
 
     // Handle team change
     const newTeamId = values.teamId || null
     if (newTeamId !== currentTeamId) {
       if (currentTeamId && !newTeamId) {
-        // Remove from current team
         removeFromTeam.mutate({ teamId: currentTeamId, agentId })
       } else if (newTeamId) {
-        // Assign to new team (this replaces any existing assignment)
         assignToTeam.mutate({ teamId: newTeamId, agentId })
       }
     }
@@ -109,7 +131,12 @@ export function AgentIdentityForm({
   const selectedEmoji = form.watch('emoji') || initialEmoji || null
   const previewAvatar = form.watch('avatarUrl') || initialAvatarUrl || null
 
-  const isSaving = updateIdentity.isPending || assignToTeam.isPending || removeFromTeam.isPending
+  const isSaving =
+    updateIdentity.isPending ||
+    assignRole.isPending ||
+    removeRole.isPending ||
+    assignToTeam.isPending ||
+    removeFromTeam.isPending
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -128,19 +155,28 @@ export function AgentIdentityForm({
           <p className="text-[10px] text-muted-foreground">The display name shown in the UI.</p>
         </div>
 
-        {/* Title (role) */}
+        {/* Role */}
         <div className="space-y-2">
-          <Label htmlFor="title" className="text-xs">
-            Title
+          <Label htmlFor="roleId" className="text-xs">
+            Role
           </Label>
-          <Input
-            id="title"
-            {...form.register('title')}
-            placeholder="Sr Eng"
-            className="border-white/10 bg-white/5"
-          />
+          <NativeSelect
+            id="roleId"
+            {...form.register('roleId')}
+            className="w-full border-white/10 bg-white/5"
+          >
+            <NativeSelectOption value="">No role assigned</NativeSelectOption>
+            {availableRoles.map((role) => (
+              <NativeSelectOption key={role.id} value={role.id}>
+                {role.name}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
           <p className="text-[10px] text-muted-foreground">
-            The agent&apos;s role or job description.
+            Defines this agent&apos;s permissions and policy.{' '}
+            <Link href="/company/roles" className="text-primary hover:underline">
+              Manage roles
+            </Link>
           </p>
         </div>
 

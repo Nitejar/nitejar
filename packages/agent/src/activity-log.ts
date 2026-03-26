@@ -1,5 +1,6 @@
 import {
   appendActivityEntry,
+  resolveActivityGoalSnapshot,
   findByResources,
   findSimilarActivityEntries,
   updateActivityStatus,
@@ -25,6 +26,7 @@ export async function recordStartingActivity(
   triage: TriageResult
 ): Promise<string | null> {
   try {
+    const goalSnapshot = await resolveActivityGoalSnapshot(workItem).catch(() => null)
     let embeddingBlob: Uint8Array | null = null
     if (isEmbeddingsAvailable() && triage.reason) {
       try {
@@ -42,6 +44,8 @@ export async function recordStartingActivity(
       agent_handle: agent.handle,
       job_id: job.id,
       session_key: workItem.session_key,
+      goal_id: goalSnapshot?.goalId ?? null,
+      goal_snapshot_json: goalSnapshot?.goalSnapshotJson ?? null,
       status: 'starting',
       summary: triage.reason,
       resources: triage.resources.length > 0 ? JSON.stringify(triage.resources) : null,
@@ -68,6 +72,7 @@ export async function recordPassActivity(
   triage: TriageResult
 ): Promise<string | null> {
   try {
+    const goalSnapshot = await resolveActivityGoalSnapshot(workItem).catch(() => null)
     let embeddingBlob: Uint8Array | null = null
     const reason = triage.reason || 'Decided not to respond'
     if (isEmbeddingsAvailable() && reason) {
@@ -86,6 +91,8 @@ export async function recordPassActivity(
       agent_handle: agent.handle,
       job_id: job.id,
       session_key: workItem.session_key,
+      goal_id: goalSnapshot?.goalId ?? null,
+      goal_snapshot_json: goalSnapshot?.goalSnapshotJson ?? null,
       status: 'passed',
       summary: reason,
       resources: triage.resources.length > 0 ? JSON.stringify(triage.resources) : null,

@@ -10,6 +10,7 @@ vi.mock('@nitejar/database', async () => {
   const actual = await vi.importActual<typeof Database>('@nitejar/database')
   return {
     ...actual,
+    assertAgentGrant: vi.fn(),
     insertMediaArtifact: vi.fn(),
     insertMediaArtifactBlob: vi.fn(),
   }

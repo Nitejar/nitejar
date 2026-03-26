@@ -2,13 +2,29 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { NetworkPolicy, PolicyPreset } from '@nitejar/agent/types'
-import { IconLockAccess, IconRefresh, IconShieldCheck } from '@tabler/icons-react'
+
+/** Split a raw string into cleaned domain entries (comma, newline, or space separated). */
+function parseDomains(raw: string): string[] {
+  return raw
+    .split(/[,\n]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+import Link from 'next/link'
+import { IconInfoCircle, IconLockAccess, IconRefresh, IconShieldCheck } from '@tabler/icons-react'
 import { trpc } from '@/lib/trpc'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 
+interface RoleNetworkDefaults {
+  roleName: string
+  mode: string
+  rules: Array<{ domain: string; action: string }>
+}
+
 interface NetworkPolicySectionProps {
   agentId: string
+  roleNetworkDefaults?: RoleNetworkDefaults | null
 }
 
 interface SyncStatus {
@@ -37,7 +53,7 @@ function clonePolicy(policy: NetworkPolicy): NetworkPolicy {
   }
 }
 
-export function NetworkPolicySection({ agentId }: NetworkPolicySectionProps) {
+export function NetworkPolicySection({ agentId, roleNetworkDefaults }: NetworkPolicySectionProps) {
   const [localPolicy, setLocalPolicy] = useState<NetworkPolicy | null>(null)
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null)
   const [newDomain, setNewDomain] = useState('')
@@ -192,17 +208,20 @@ export function NetworkPolicySection({ agentId }: NetworkPolicySectionProps) {
       return
     }
 
-    const incomingRule = {
-      domain: newDomain.trim(),
+    const domains = parseDomains(newDomain)
+    if (domains.length === 0) return
+
+    const incomingRules = domains.map((d) => ({
+      domain: d,
       action: newAction,
-    } as const
+    })) as Array<{ domain: string; action: 'allow' | 'deny' }>
 
     const catchAllIndex = localPolicy.rules.findIndex((rule) => rule.domain === '*')
     const rules = [...localPolicy.rules]
     if (catchAllIndex === -1) {
-      rules.push(incomingRule)
+      rules.push(...incomingRules)
     } else {
-      rules.splice(catchAllIndex, 0, incomingRule)
+      rules.splice(catchAllIndex, 0, ...incomingRules)
     }
 
     setLocalPolicy({
@@ -250,6 +269,44 @@ export function NetworkPolicySection({ agentId }: NetworkPolicySectionProps) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {roleNetworkDefaults && roleNetworkDefaults.rules.length > 0 && (
+          <div className="rounded-lg border border-sky-500/20 bg-sky-500/5 p-3">
+            <div className="flex items-start gap-2">
+              <IconInfoCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-300" />
+              <div className="space-y-1">
+                <p className="text-xs text-sky-200">
+                  Network rules inherited from role:{' '}
+                  <Link href="/company/roles" className="font-medium text-sky-100 hover:underline">
+                    {roleNetworkDefaults.roleName}
+                  </Link>
+                </p>
+                <p className="text-[10px] text-sky-300/70">
+                  Agent-level rules below can override role defaults.
+                </p>
+                <div className="mt-1.5 space-y-0.5">
+                  {roleNetworkDefaults.rules.map((rule, i) => (
+                    <div
+                      key={`${rule.domain}-${i}`}
+                      className="flex items-center gap-2 text-[10px] text-sky-200/80"
+                    >
+                      <span
+                        className={`rounded px-1 py-0.5 text-[8px] uppercase ${
+                          rule.action === 'allow'
+                            ? 'bg-emerald-500/20 text-emerald-300'
+                            : 'bg-red-500/20 text-red-300'
+                        }`}
+                      >
+                        {rule.action}
+                      </span>
+                      <span className="font-mono">{rule.domain}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {policyQuery.isLoading && !localPolicy ? (
           <div className="rounded-lg border border-dashed border-white/10 p-3 text-xs text-muted-foreground">
             Loading network policy...
@@ -393,7 +450,29 @@ export function NetworkPolicySection({ agentId }: NetworkPolicySectionProps) {
               <Input
                 value={newDomain}
                 onChange={(event) => setNewDomain(event.target.value)}
-                placeholder="Add domain pattern"
+                onPaste={(event) => {
+                  const text = event.clipboardData.getData('text')
+                  const domains = parseDomains(text)
+                  if (domains.length > 1 && localPolicy) {
+                    event.preventDefault()
+                    const incomingRules = domains.map((d) => ({
+                      domain: d,
+                      action: newAction,
+                    })) as Array<{ domain: string; action: 'allow' | 'deny' }>
+                    const catchAllIndex = localPolicy.rules.findIndex((r) => r.domain === '*')
+                    const rules = [...localPolicy.rules]
+                    if (catchAllIndex === -1) {
+                      rules.push(...incomingRules)
+                    } else {
+                      rules.splice(catchAllIndex, 0, ...incomingRules)
+                    }
+                    setLocalPolicy({ ...localPolicy, rules, customized: true })
+                    setNewDomain('')
+                    setNewAction('allow')
+                    setIsDirty(true)
+                  }
+                }}
+                placeholder="Add domains — comma or newline separated"
                 className="h-8 border-white/10 bg-white/5 text-xs"
               />
               <select

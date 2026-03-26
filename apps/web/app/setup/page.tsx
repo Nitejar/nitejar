@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { getDb } from '@nitejar/database'
+import { createPageMetadata } from '@/app/metadata'
 import { bootstrapFirstUserAction } from '@/app/actions/auth'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -7,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 
 export const dynamic = 'force-dynamic'
+export const metadata = createPageMetadata('Setup')
 
 type PageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>

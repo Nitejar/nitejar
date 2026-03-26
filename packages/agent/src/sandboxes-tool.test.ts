@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Agent, AgentSandbox } from '@nitejar/database'
+import type { AgentSandbox } from '@nitejar/database'
 import type { ToolContext } from './tools'
 import * as Database from '@nitejar/database'
 import * as Sandboxes from './sandboxes'
@@ -13,7 +13,7 @@ vi.mock('@nitejar/database', async () => {
   const actual = await vi.importActual<typeof Database>('@nitejar/database')
   return {
     ...actual,
-    findAgentById: vi.fn(),
+    assertAgentGrant: vi.fn(),
   }
 })
 
@@ -27,7 +27,7 @@ vi.mock('./sandboxes', async () => {
   }
 })
 
-const mockedFindAgentById = vi.mocked(Database.findAgentById)
+const mockedAssertAgentGrant = vi.mocked(Database.assertAgentGrant)
 const mockedCreateEphemeralSandboxForAgent = vi.mocked(Sandboxes.createEphemeralSandboxForAgent)
 const mockedDeleteAgentSandboxByName = vi.mocked(Sandboxes.deleteAgentSandboxByName)
 const mockedResolveAgentSandboxByName = vi.mocked(Sandboxes.resolveAgentSandboxByName)
@@ -36,17 +36,6 @@ const baseContext: ToolContext = {
   spriteName: 'nitejar-agent-1',
   activeSandboxName: 'home',
   agentId: 'agent-1',
-}
-
-const baseAgent: Agent = {
-  id: 'agent-1',
-  handle: 'agent',
-  name: 'Agent One',
-  sprite_id: 'nitejar-agent-1',
-  config: JSON.stringify({}),
-  status: 'idle',
-  created_at: 0,
-  updated_at: 0,
 }
 
 function sandbox(overrides: Partial<AgentSandbox> = {}): AgentSandbox {
@@ -66,15 +55,17 @@ function sandbox(overrides: Partial<AgentSandbox> = {}): AgentSandbox {
 }
 
 beforeEach(() => {
-  mockedFindAgentById.mockReset()
+  mockedAssertAgentGrant.mockReset()
   mockedCreateEphemeralSandboxForAgent.mockReset()
   mockedDeleteAgentSandboxByName.mockReset()
   mockedResolveAgentSandboxByName.mockReset()
 })
 
 describe('createEphemeralSandboxTool', () => {
-  it('rejects creation when ephemeral policy is disabled', async () => {
-    mockedFindAgentById.mockResolvedValue(baseAgent)
+  it('rejects creation when sandbox.ephemeral.create grant is missing', async () => {
+    mockedAssertAgentGrant.mockRejectedValue(
+      new Error('Access denied: missing grant "sandbox.ephemeral.create".')
+    )
 
     const result = await createEphemeralSandboxTool(
       { name: 'task-1', description: 'Sandbox for task' },
@@ -82,15 +73,12 @@ describe('createEphemeralSandboxTool', () => {
     )
 
     expect(result.success).toBe(false)
-    expect(result.error).toContain('disabled')
+    expect(result.error).toContain('sandbox.ephemeral.create')
     expect(mockedCreateEphemeralSandboxForAgent).not.toHaveBeenCalled()
   })
 
-  it('creates and switches by default when policy is enabled', async () => {
-    mockedFindAgentById.mockResolvedValue({
-      ...baseAgent,
-      config: JSON.stringify({ allowEphemeralSandboxCreation: true }),
-    })
+  it('creates and switches by default when grant is present', async () => {
+    mockedAssertAgentGrant.mockResolvedValue(undefined)
     mockedCreateEphemeralSandboxForAgent.mockResolvedValue(sandbox())
 
     const result = await createEphemeralSandboxTool(
@@ -106,10 +94,7 @@ describe('createEphemeralSandboxTool', () => {
   })
 
   it('creates without switching when switch_to=false', async () => {
-    mockedFindAgentById.mockResolvedValue({
-      ...baseAgent,
-      config: JSON.stringify({ allowEphemeralSandboxCreation: true }),
-    })
+    mockedAssertAgentGrant.mockResolvedValue(undefined)
     mockedCreateEphemeralSandboxForAgent.mockResolvedValue(sandbox())
 
     const result = await createEphemeralSandboxTool(
@@ -135,6 +120,7 @@ describe('switchSandboxTool', () => {
 
 describe('deleteSandboxTool', () => {
   it('returns to home when deleting currently active sandbox', async () => {
+    mockedAssertAgentGrant.mockResolvedValue(undefined)
     mockedDeleteAgentSandboxByName.mockResolvedValue(sandbox({ name: 'task-1' }))
     mockedResolveAgentSandboxByName.mockResolvedValue(
       sandbox({
@@ -160,6 +146,7 @@ describe('deleteSandboxTool', () => {
   })
 
   it('propagates home-delete protection errors', async () => {
+    mockedAssertAgentGrant.mockResolvedValue(undefined)
     mockedDeleteAgentSandboxByName.mockRejectedValue(
       new Error('The home sandbox cannot be deleted.')
     )

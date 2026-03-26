@@ -1,11 +1,26 @@
 import type Anthropic from '@anthropic-ai/sdk'
-import { findAgentById, getDb, listAgentSandboxes, listMemories } from '@nitejar/database'
+import {
+  findAgentById,
+  getDb,
+  listAgentSandboxes,
+  listMemories,
+  resolveEffectivePolicy,
+} from '@nitejar/database'
 import { parseAgentConfig } from '../../config'
 import type { ToolHandler } from '../types'
 
 export const getSelfConfigDefinition: Anthropic.Tool = {
   name: 'get_self_config',
   description: 'View your own agent configuration, status, and statistics.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {},
+  },
+}
+
+export const getSelfPolicyDefinition: Anthropic.Tool = {
+  name: 'get_self_policy',
+  description: 'View your effective roles, grants, defaults, and legacy compatibility posture.',
   input_schema: {
     type: 'object' as const,
     properties: {},
@@ -59,4 +74,43 @@ export const getSelfConfigTool: ToolHandler = async (_input, context) => {
   ]
 
   return { success: true, output: lines.join('\n') }
+}
+
+export const getSelfPolicyTool: ToolHandler = async (_input, context) => {
+  if (!context.agentId) {
+    return { success: false, error: 'Missing agent identity.' }
+  }
+
+  try {
+    const [agent, resolved] = await Promise.all([
+      findAgentById(context.agentId),
+      resolveEffectivePolicy(context.agentId),
+    ])
+
+    if (!agent) {
+      return { success: false, error: 'Agent not found.' }
+    }
+
+    return {
+      success: true,
+      output: JSON.stringify(
+        {
+          agent: {
+            id: agent.id,
+            handle: agent.handle,
+            name: agent.name,
+            status: agent.status,
+          },
+          roles: resolved.roles,
+          grants: resolved.grants,
+          defaults: resolved.defaults,
+          legacyCompatibility: resolved.legacy,
+        },
+        null,
+        2
+      ),
+    }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
 }

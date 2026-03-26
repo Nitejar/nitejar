@@ -160,7 +160,7 @@ Owner: QA / Operator Verification
 
 - [x] Create or script a realistic local dataset
 - [x] Validate 20 goals / 100 tickets / 50 agents
-- [x] Validate goal and team heartbeats
+- [x] Validate goal heartbeats
 - [x] Validate costs and activity links from portfolio views
 - [x] Validate no-Sprites and SQLite-only local setup
 

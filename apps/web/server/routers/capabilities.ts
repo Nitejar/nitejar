@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
 import { getDb } from '@nitejar/database'
-import { createAppAuth, getGitHubAppConfig } from '@nitejar/plugin-handlers'
+import { createAppAuth, getGitHubAppConfig } from '@nitejar/plugin-handlers/github'
 import { protectedProcedure, router } from '../trpc'
 
 const capabilitySchema = z.enum([

@@ -1,3 +1,10 @@
+---
+name: sprites
+description: Manage Sprites persistent Linux VMs via the Sprites API. Use when working with sprite lifecycle, command execution, filesystem operations, or debugging agent sandboxes running on Sprites.
+metadata:
+  short-description: Manage Sprites VMs
+---
+
 # Sprites Management Skill
 
 Manage Sprites (persistent Linux VMs) via the Sprites API.

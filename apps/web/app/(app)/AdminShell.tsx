@@ -9,12 +9,14 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
   return (
     <div
-      className={cn('transition-[margin] duration-200', collapsed ? 'md:ml-[56px]' : 'md:ml-60')}
+      className={cn(
+        'flex h-full flex-col overflow-hidden transition-[margin] duration-200',
+        collapsed ? 'md:ml-[56px]' : 'md:ml-60'
+      )}
     >
-      {/* Decorative gradient */}
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.08),transparent_50%),radial-gradient(ellipse_at_bottom_right,rgba(14,165,233,0.06),transparent_50%)]" />
-
-      <main className="relative px-6 pt-4 pb-6">{children}</main>
+      <main className="relative flex min-h-0 flex-1 flex-col px-2 pt-2 pb-4 sm:px-6 sm:pt-4 sm:pb-6">
+        {children}
+      </main>
     </div>
   )
 }

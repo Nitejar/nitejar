@@ -1,9 +1,8 @@
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   artifactAbsoluteUrl,
@@ -23,7 +22,6 @@ import {
 } from '../../src/lib/index.js'
 
 const tempDirs: string[] = []
-
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true })
@@ -131,58 +129,19 @@ describe('platform and parsing helpers', () => {
   })
 
   it('finds a free port when auto selection starts on an occupied one', async () => {
-    const blocker = createServer()
-    await new Promise<void>((resolve, reject) => {
-      blocker.once('error', reject)
-      blocker.listen(0, '0.0.0.0', () => resolve())
-    })
-    const address = blocker.address()
-    if (!address || typeof address === 'string') {
-      throw new Error('failed to get blocker port')
-    }
-    const blockedPort = address.port
+    const isAvailable = vi.fn((port: number) => Promise.resolve(port !== 4100 && port === 4101))
 
-    try {
-      const selected = await resolveAutoPort(blockedPort, 50)
-      expect(selected).not.toBe(blockedPort)
-      expect(selected).toBeGreaterThan(blockedPort)
-    } finally {
-      await new Promise<void>((resolve, reject) => {
-        blocker.close((error) => {
-          if (error) {
-            reject(error)
-            return
-          }
-          resolve()
-        })
-      })
-    }
+    const selected = await resolveAutoPort(4100, 50, isAvailable)
+
+    expect(selected).toBe(4101)
+    expect(isAvailable).toHaveBeenCalledWith(4100)
+    expect(isAvailable).toHaveBeenCalledWith(4101)
   })
 
   it('fails fast when requested port is already in use', async () => {
-    const blocker = createServer()
-    await new Promise<void>((resolve, reject) => {
-      blocker.once('error', reject)
-      blocker.listen(0, '0.0.0.0', () => resolve())
-    })
-    const address = blocker.address()
-    if (!address || typeof address === 'string') {
-      throw new Error('failed to get blocker port')
-    }
-
-    try {
-      await expect(ensurePortAvailable(address.port)).rejects.toThrow(/Port .* is already in use/)
-    } finally {
-      await new Promise<void>((resolve, reject) => {
-        blocker.close((error) => {
-          if (error) {
-            reject(error)
-            return
-          }
-          resolve()
-        })
-      })
-    }
+    await expect(ensurePortAvailable(4100, () => Promise.resolve(false))).rejects.toThrow(
+      /Port 4100 is already in use/
+    )
   })
 
   it('tails text safely', () => {

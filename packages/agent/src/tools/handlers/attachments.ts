@@ -1,6 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk'
-import { getPluginInstanceWithConfig } from '@nitejar/plugin-handlers'
-import { downloadTelegramFile, getFile as getTelegramFile } from '@nitejar/plugin-handlers'
+import { getPluginInstanceWithConfig } from '@nitejar/plugin-handlers/router'
+import { downloadTelegramFile, getFile as getTelegramFile } from '@nitejar/plugin-handlers/telegram'
 import { mkdir, spriteExec, writeFile } from '@nitejar/sprites'
 import { parseTelegramConfig } from '../../telegram-attachments'
 import { guessExtension } from '../helpers'

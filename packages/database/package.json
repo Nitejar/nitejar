@@ -4,22 +4,28 @@
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js",
+      "default": "./dist/src/index.js"
     },
     "./migrate": {
-      "types": "./src/migrate.ts",
-      "default": "./src/migrate.ts"
+      "types": "./dist/src/migrate.d.ts",
+      "import": "./dist/src/migrate.js",
+      "default": "./dist/src/migrate.js"
     },
     "./runtime-migrate": {
-      "types": "./src/runtime-migrate.ts",
+      "types": "./dist/src/runtime-migrate.d.ts",
+      "import": "./dist/src/runtime-migrate.js",
       "default": "./dist/src/runtime-migrate.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
     "lint": "eslint src __tests__ --no-error-on-unmatched-pattern",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

@@ -12,6 +12,7 @@ vi.mock('@nitejar/database', async () => {
   const actual = await vi.importActual<typeof Database>('@nitejar/database')
   return {
     ...actual,
+    assertAgentGrant: vi.fn(),
     findAgentById: vi.fn(),
     listAgents: vi.fn(),
     findAgentByHandle: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock('@nitejar/database', async () => {
   }
 })
 
+const mockedAssertAgentGrant = vi.mocked(Database.assertAgentGrant)
 const mockedFindAgentById = vi.mocked(Database.findAgentById)
 const mockedListAgents = vi.mocked(Database.listAgents)
 const mockedFindAgentByHandle = vi.mocked(Database.findAgentByHandle)
@@ -63,6 +65,7 @@ function sandbox(overrides: Partial<AgentSandbox> = {}): AgentSandbox {
 }
 
 beforeEach(() => {
+  mockedAssertAgentGrant.mockReset()
   mockedFindAgentById.mockReset()
   mockedListAgents.mockReset()
   mockedFindAgentByHandle.mockReset()
@@ -73,7 +76,7 @@ beforeEach(() => {
 
 describe('platform control tools', () => {
   it('rejects list_agents when dangerouslyUnrestricted is disabled', async () => {
-    mockedFindAgentById.mockResolvedValue(agent({}, { dangerouslyUnrestricted: false }))
+    mockedAssertAgentGrant.mockRejectedValue(new Error('platform control disabled'))
 
     const result = await listAgentsTool({}, baseContext)
 
@@ -83,7 +86,7 @@ describe('platform control tools', () => {
   })
 
   it('lists agents when dangerouslyUnrestricted is enabled', async () => {
-    mockedFindAgentById.mockResolvedValue(agent({}, { dangerouslyUnrestricted: true }))
+    mockedAssertAgentGrant.mockResolvedValue(undefined)
     mockedListAgents.mockResolvedValue([
       agent({ id: 'agent-1', handle: 'alpha', name: 'Alpha' }, { title: 'Ops' }),
       agent({ id: 'agent-2', handle: 'beta', name: 'Beta' }, { title: 'QA' }),
@@ -98,7 +101,7 @@ describe('platform control tools', () => {
   })
 
   it('updates agent status in dangerous mode', async () => {
-    mockedFindAgentById.mockResolvedValue(agent({}, { dangerouslyUnrestricted: true }))
+    mockedAssertAgentGrant.mockResolvedValue(undefined)
     mockedUpdateAgent.mockResolvedValue(agent({ id: 'agent-2', status: 'offline' }))
 
     const result = await setAgentStatusTool(
@@ -115,7 +118,7 @@ describe('platform control tools', () => {
   })
 
   it('creates an agent and home sandbox in dangerous mode', async () => {
-    mockedFindAgentById.mockResolvedValue(agent({}, { dangerouslyUnrestricted: true }))
+    mockedAssertAgentGrant.mockResolvedValue(undefined)
     mockedFindAgentByHandle.mockResolvedValue(null)
     mockedCreateAgent.mockResolvedValue(
       agent({ id: 'agent-2', handle: 'builder', name: 'Builder' }, { title: 'Builder' })

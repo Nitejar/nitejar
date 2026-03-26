@@ -23,7 +23,6 @@ import {
   reorderTicket,
   listGoalHealthSummaries,
   listAgentWorkloadRollups,
-  listInitiatives,
   listLinkedWorkItemsForTicket,
   listRelatedTickets,
   listTicketRelations,
@@ -44,6 +43,7 @@ import { z } from 'zod'
 import { validateCronSchedule } from '../services/routines/cron'
 import { getAlwaysTrueRuleForEnvelope } from '../services/routines/rules'
 import { protectedProcedure, router } from '../trpc'
+import { buildGoalHeartbeatPrompt } from './work-heartbeat'
 
 const goalStatusSchema = z.enum(['draft', 'active', 'at_risk', 'blocked', 'done', 'archived'])
 const progressSourceSchema = z.enum([
@@ -57,7 +57,7 @@ const progressSourceSchema = z.enum([
 const ticketStatusSchema = z.enum(['inbox', 'ready', 'in_progress', 'blocked', 'done', 'canceled'])
 const actorKindSchema = z.enum(['user', 'agent'])
 const ticketLinkKindSchema = z.enum(['session', 'work_item', 'external'])
-const heartbeatTargetKindSchema = z.enum(['goal', 'team'])
+const heartbeatTargetKindSchema = z.enum(['goal'])
 const workViewEntityKindSchema = z.enum(['goal', 'ticket'])
 const sortDirectionSchema = z.enum(['asc', 'desc'])
 const goalSortFieldSchema = z.enum(['updated_at', 'created_at', 'title', 'status'])
@@ -70,7 +70,6 @@ const goalListInputSchema = z.object({
   ownerKind: actorKindSchema.optional(),
   ownerRef: z.string().trim().optional(),
   teamId: z.string().trim().optional(),
-  initiativeId: z.string().trim().optional(),
   staleOnly: z.boolean().default(false),
   includeArchived: z.boolean().default(false),
   limit: z.number().int().min(1).max(200).default(100),
@@ -125,6 +124,14 @@ type ResolvedActor = {
   avatarUrl?: string | null
   emoji?: string | null
 } | null
+
+export type TicketTreeNode = {
+  id: string
+  title: string
+  status: string
+  assignee: ResolvedActor
+  children: TicketTreeNode[]
+}
 
 function now(): number {
   return Math.floor(Date.now() / 1000)
@@ -268,41 +275,6 @@ function buildHeartbeatContext(targetKind: HeartbeatTargetKind, targetId: string
   })
 }
 
-function buildGoalHeartbeatPrompt(goal: { id: string; title: string; outcome: string }): string {
-  return [
-    `You are running the recurring heartbeat for goal ${goal.id}: "${goal.title}".`,
-    `Goal outcome: ${goal.outcome}`,
-    '',
-    'Review the active work before you summarize it:',
-    `- Use search_tickets with goal_id="${goal.id}" and status="ready,in_progress,blocked".`,
-    '- Use get_ticket on any ticket that looks important, blocked, stale, or expensive.',
-    '',
-    `Then post exactly one heartbeat update with post_work_update using goal_id="${goal.id}" and kind="heartbeat".`,
-    'The update should cover current progress, blockers, workload risk, and the next concrete move.',
-    'Keep it concise and human-readable.',
-  ].join('\n')
-}
-
-function buildTeamHeartbeatPrompt(team: {
-  id: string
-  name: string
-  charter: string | null
-}): string {
-  return [
-    `You are running the recurring heartbeat for team ${team.id}: "${team.name}".`,
-    team.charter ? `Team charter: ${team.charter}` : 'Review the team queue and owned goals.',
-    '',
-    'Review the work before you summarize it:',
-    `- Use search_goals with owner_kind="team" and owner_ref="${team.id}".`,
-    `- Use search_tickets with assignee_kind="team" and assignee_ref="${team.id}" and status="inbox,ready,in_progress,blocked".`,
-    '- Use get_ticket on any ticket that looks blocked, stale, or important.',
-    '',
-    `Then post exactly one heartbeat update with post_work_update using team_id="${team.id}" and kind="heartbeat".`,
-    'The update should cover queue health, blockers, ownership gaps, overload risk, and the next concrete move.',
-    'Keep it concise and human-readable.',
-  ].join('\n')
-}
-
 async function ensureHeartbeatSession(input: {
   sessionKey: string
   title: string
@@ -353,18 +325,58 @@ async function findHeartbeatRoutineConfig(targetKind: HeartbeatTargetKind, targe
     return null
   }
 
-  const agent = await db
-    .selectFrom('agents')
-    .select(['id', 'name', 'handle'])
-    .where('id', '=', routine.agent_id)
-    .executeTakeFirst()
+  let agentId: string | null = routine.agent_id
+  let agentName: string | null = null
+  let agentHandle: string | null = null
+  let agentTitle: string | null = null
+  let goalOwnershipResolved = false
+
+  if (targetKind === 'goal') {
+    const goal = await findGoalById(targetId)
+    if (goal?.owner_kind === 'agent' && goal.owner_ref) {
+      goalOwnershipResolved = true
+      const ownerAgent = await db
+        .selectFrom('agents')
+        .leftJoin('agent_role_assignments', 'agent_role_assignments.agent_id', 'agents.id')
+        .leftJoin('roles', 'roles.id', 'agent_role_assignments.role_id')
+        .select(['agents.id', 'agents.name', 'agents.handle', 'roles.name as role_name'])
+        .where('agents.id', '=', goal.owner_ref)
+        .executeTakeFirst()
+
+      if (ownerAgent) {
+        agentId = ownerAgent.id
+        agentName = ownerAgent.name
+        agentHandle = ownerAgent.handle
+        agentTitle = ownerAgent.role_name ?? null
+      }
+    } else if (goal) {
+      goalOwnershipResolved = true
+      agentId = null
+    }
+  }
+
+  if (!goalOwnershipResolved && !agentName && agentId) {
+    const agent = await db
+      .selectFrom('agents')
+      .leftJoin('agent_role_assignments', 'agent_role_assignments.agent_id', 'agents.id')
+      .leftJoin('roles', 'roles.id', 'agent_role_assignments.role_id')
+      .select(['agents.id', 'agents.name', 'agents.handle', 'roles.name as role_name'])
+      .where('agents.id', '=', agentId)
+      .executeTakeFirst()
+
+    agentId = agent?.id ?? agentId
+    agentName = agent?.name ?? null
+    agentHandle = agent?.handle ?? null
+    agentTitle = agent?.role_name ?? null
+  }
 
   return {
     id: routine.id,
     sessionKey,
-    agentId: routine.agent_id,
-    agentName: agent?.name ?? null,
-    agentHandle: agent?.handle ?? null,
+    agentId,
+    agentName,
+    agentHandle,
+    agentTitle,
     enabled: routine.enabled === 1,
     cronExpr: routine.cron_expr,
     timezone: routine.timezone,
@@ -373,6 +385,193 @@ async function findHeartbeatRoutineConfig(targetKind: HeartbeatTargetKind, targe
     lastFiredAt: routine.last_fired_at,
     lastStatus: routine.last_status,
   }
+}
+
+type GoalHeartbeatOwner = {
+  agentId: string
+  agentName: string
+  agentTitle: string | null
+}
+
+async function findGoalHeartbeatOwner(goalId: string): Promise<GoalHeartbeatOwner | null> {
+  const db = getDb()
+  const goal = await findGoalById(goalId)
+  if (!goal) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Goal not found.' })
+  }
+
+  if (goal.owner_kind !== 'agent' || !goal.owner_ref) {
+    return null
+  }
+
+  const agent = await db
+    .selectFrom('agents')
+    .leftJoin('agent_role_assignments', 'agent_role_assignments.agent_id', 'agents.id')
+    .leftJoin('roles', 'roles.id', 'agent_role_assignments.role_id')
+    .select(['agents.id', 'agents.name', 'roles.name as role_name'])
+    .where('agents.id', '=', goal.owner_ref)
+    .executeTakeFirst()
+
+  if (!agent) {
+    return null
+  }
+
+  return {
+    agentId: agent.id,
+    agentName: agent.name,
+    agentTitle: agent.role_name ?? null,
+  }
+}
+
+async function buildGoalHeartbeatRoutineSpec(input: {
+  goalId: string
+  ownerAgent: GoalHeartbeatOwner
+}) {
+  const db = getDb()
+  const goal = await findGoalById(input.goalId)
+  if (!goal) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Goal not found.' })
+  }
+
+  const goalRow = requireFirst(await enrichGoals([goal]), 'goal')
+  const allGoals = await listGoals({ includeArchived: false })
+
+  const goalsByParent = new Map<string, typeof allGoals>()
+  for (const row of allGoals) {
+    if (!row.parent_goal_id) continue
+    const siblings = goalsByParent.get(row.parent_goal_id) ?? []
+    siblings.push(row)
+    goalsByParent.set(row.parent_goal_id, siblings)
+  }
+
+  const descendantGoals: typeof allGoals = []
+  const collectDescendants = (parentGoalId: string) => {
+    const children = [...(goalsByParent.get(parentGoalId) ?? [])].sort(
+      (left, right) => left.sort_order - right.sort_order
+    )
+    for (const child of children) {
+      descendantGoals.push(child)
+      collectDescendants(child.id)
+    }
+  }
+
+  collectDescendants(goal.id)
+
+  const enrichedDescendants = await enrichGoals(descendantGoals)
+  const descendantSessionKeys = enrichedDescendants.map((descendant) =>
+    buildHeartbeatSessionKey('goal', descendant.id)
+  )
+  const activeDescendantRoutines =
+    descendantSessionKeys.length > 0
+      ? await db
+          .selectFrom('routines')
+          .select(['target_session_key'])
+          .where('target_session_key', 'in', descendantSessionKeys)
+          .where('archived_at', 'is', null)
+          .where('enabled', '=', 1)
+          .execute()
+      : []
+
+  const activeSessionKeys = new Set(activeDescendantRoutines.map((row) => row.target_session_key))
+
+  const actionPrompt = buildGoalHeartbeatPrompt({
+    goalId: goal.id,
+    title: goal.title,
+    outcome: goal.outcome,
+    assignedAgentName: input.ownerAgent.agentName,
+    assignedAgentTitle: input.ownerAgent.agentTitle ?? null,
+    goalOwnerLabel: goalRow.owner?.label ?? null,
+    goalOwnerTitle: goalRow.owner?.kind === 'agent' ? (goalRow.owner.title ?? null) : null,
+    descendants: enrichedDescendants.map((descendant) => ({
+      id: descendant.id,
+      title: descendant.title,
+      outcome: descendant.outcome,
+      ownerLabel: descendant.owner?.label ?? null,
+      ownerTitle: descendant.owner?.kind === 'agent' ? (descendant.owner.title ?? null) : null,
+      latestUpdate: descendant.latestUpdate?.body ?? null,
+      hasActiveHeartbeat: activeSessionKeys.has(buildHeartbeatSessionKey('goal', descendant.id)),
+    })),
+  })
+
+  return {
+    goal,
+    targetLabel: goal.title,
+    sessionTitle: `Goal stewardship · ${goal.title}`,
+    actionPrompt,
+    ownerAgent: input.ownerAgent,
+  }
+}
+
+async function syncGoalHeartbeatToOwner(input: {
+  goalId: string
+  userId: string
+  ownerKind: string | null
+  ownerRef: string | null
+  teamId: string | null
+}) {
+  const db = getDb()
+  const sessionKey = buildHeartbeatSessionKey('goal', input.goalId)
+  const existing = await db
+    .selectFrom('routines')
+    .selectAll()
+    .where('target_session_key', '=', sessionKey)
+    .where('archived_at', 'is', null)
+    .orderBy('created_at', 'desc')
+    .executeTakeFirst()
+
+  if (!existing) return
+
+  if (input.ownerKind !== 'agent' || !input.ownerRef) {
+    if (existing.enabled === 1) {
+      await updateRoutine(existing.id, {
+        enabled: 0,
+        next_run_at: null,
+      })
+
+      await createWorkUpdate({
+        goal_id: input.goalId,
+        ticket_id: null,
+        team_id: input.teamId,
+        author_kind: 'system',
+        author_ref: null,
+        kind: 'note',
+        body: 'Disabled goal stewardship because this goal no longer has an agent owner.',
+        metadata_json: JSON.stringify({ routineId: existing.id }),
+      })
+    }
+    return
+  }
+
+  const ownerAgent = await findGoalHeartbeatOwner(input.goalId)
+  if (!ownerAgent) {
+    return
+  }
+
+  const goalHeartbeat = await buildGoalHeartbeatRoutineSpec({
+    goalId: input.goalId,
+    ownerAgent,
+  })
+
+  await ensureHeartbeatSession({
+    sessionKey,
+    title: goalHeartbeat.sessionTitle,
+    ownerUserId: input.userId,
+    agentId: ownerAgent.agentId,
+  })
+
+  const nextRunAt =
+    existing.enabled === 1
+      ? validateCronSchedule(existing.cron_expr ?? '0 9 * * 1-5', existing.timezone ?? 'UTC')
+      : null
+
+  await updateRoutine(existing.id, {
+    agent_id: ownerAgent.agentId,
+    name: `Goal Stewardship · ${goalHeartbeat.targetLabel}`,
+    description: `Recurring stewardship loop for goal ${goalHeartbeat.targetLabel}.`,
+    action_prompt: goalHeartbeat.actionPrompt,
+    next_run_at: nextRunAt,
+    target_response_context: buildHeartbeatContext('goal', input.goalId),
+  })
 }
 
 async function resolveActors(refs: Array<{ kind: string | null; ref: string | null }>): Promise<{
@@ -412,8 +611,16 @@ async function resolveActors(refs: Array<{ kind: string | null; ref: string | nu
     agentIds.length > 0
       ? db
           .selectFrom('agents')
-          .select(['id', 'name', 'handle', 'config'])
-          .where('id', 'in', agentIds)
+          .leftJoin('agent_role_assignments', 'agent_role_assignments.agent_id', 'agents.id')
+          .leftJoin('roles', 'roles.id', 'agent_role_assignments.role_id')
+          .select([
+            'agents.id',
+            'agents.name',
+            'agents.handle',
+            'agents.config',
+            'roles.name as role_name',
+          ])
+          .where('agents.id', 'in', agentIds)
           .execute()
       : Promise.resolve([]),
     teamIds.length > 0
@@ -441,7 +648,7 @@ async function resolveActors(refs: Array<{ kind: string | null; ref: string | nu
             id: agent.id,
             name: agent.name,
             handle: agent.handle,
-            title: parsed.title ?? null,
+            title: agent.role_name ?? null,
             avatarUrl: parsed.avatarUrl ?? null,
             emoji: parsed.emoji ?? null,
           },
@@ -500,66 +707,62 @@ function presentActor(
   return null
 }
 
+function presentWorkUpdate(
+  update: Awaited<ReturnType<typeof listWorkUpdates>>[number],
+  resolved: Awaited<ReturnType<typeof resolveActors>>
+) {
+  return {
+    ...update,
+    source: update.author_kind === 'system' ? ('system' as const) : ('authored' as const),
+    author: presentActor(update.author_kind, update.author_ref, resolved),
+  }
+}
+
 async function enrichGoals(rows: Awaited<ReturnType<typeof listGoals>>) {
   if (rows.length === 0) return []
   const db = getDb()
   const goalIds = rows.map((row) => row.id)
-  const initiativeIds = [
-    ...new Set(
-      rows
-        .map((row) => row.initiative_id)
-        .filter((initiativeId): initiativeId is string => !!initiativeId)
-    ),
-  ]
   const parentGoalIds = [
     ...new Set(
       rows.map((row) => row.parent_goal_id).filter((goalId): goalId is string => !!goalId)
     ),
   ]
-  const [tickets, updates, childGoals, initiatives, parentGoals, actors, healthSummaries] =
-    await Promise.all([
-      db
-        .selectFrom('tickets')
-        .select(['id', 'goal_id', 'status'])
-        .where('goal_id', 'in', goalIds)
-        .where('archived_at', 'is', null)
-        .execute(),
-      db
-        .selectFrom('work_updates')
-        .select(['goal_id', 'body', 'kind', 'created_at'])
-        .where('goal_id', 'in', goalIds)
-        .orderBy('created_at', 'desc')
-        .execute(),
-      db
-        .selectFrom('goals')
-        .select([
-          'id',
-          'parent_goal_id',
-          'progress_source',
-          'progress_current',
-          'progress_target',
-          'status',
-        ])
-        .where('parent_goal_id', 'in', goalIds)
-        .where('archived_at', 'is', null)
-        .execute(),
-      initiativeIds.length > 0
-        ? db
-            .selectFrom('initiatives')
-            .select(['id', 'title', 'status', 'target_label'])
-            .where('id', 'in', initiativeIds)
-            .execute()
-        : Promise.resolve([]),
-      parentGoalIds.length > 0
-        ? db
-            .selectFrom('goals')
-            .select(['id', 'title', 'status'])
-            .where('id', 'in', parentGoalIds)
-            .execute()
-        : Promise.resolve([]),
-      resolveActors(rows.map((row) => ({ kind: row.owner_kind, ref: row.owner_ref }))),
-      listGoalHealthSummaries({ goalIds }),
-    ])
+  const [tickets, updates, childGoals, parentGoals, actors, healthSummaries] = await Promise.all([
+    db
+      .selectFrom('tickets')
+      .select(['id', 'goal_id', 'status'])
+      .where('goal_id', 'in', goalIds)
+      .where('archived_at', 'is', null)
+      .execute(),
+    db
+      .selectFrom('work_updates')
+      .select(['goal_id', 'body', 'kind', 'created_at'])
+      .where('goal_id', 'in', goalIds)
+      .orderBy('created_at', 'desc')
+      .execute(),
+    db
+      .selectFrom('goals')
+      .select([
+        'id',
+        'parent_goal_id',
+        'progress_source',
+        'progress_current',
+        'progress_target',
+        'status',
+      ])
+      .where('parent_goal_id', 'in', goalIds)
+      .where('archived_at', 'is', null)
+      .execute(),
+    parentGoalIds.length > 0
+      ? db
+          .selectFrom('goals')
+          .select(['id', 'title', 'status'])
+          .where('id', 'in', parentGoalIds)
+          .execute()
+      : Promise.resolve([]),
+    resolveActors(rows.map((row) => ({ kind: row.owner_kind, ref: row.owner_ref }))),
+    listGoalHealthSummaries({ goalIds }),
+  ])
 
   const ticketCounts = new Map<
     string,
@@ -606,7 +809,6 @@ async function enrichGoals(rows: Awaited<ReturnType<typeof listGoals>>) {
     childCounts.set(child.parent_goal_id, (childCounts.get(child.parent_goal_id) ?? 0) + 1)
   }
 
-  const initiativeMap = new Map(initiatives.map((initiative) => [initiative.id, initiative]))
   const parentGoalMap = new Map(parentGoals.map((goal) => [goal.id, goal]))
   const healthByGoal = new Map(healthSummaries.map((summary) => [summary.goal_id, summary]))
 
@@ -675,15 +877,6 @@ async function enrichGoals(rows: Awaited<ReturnType<typeof listGoals>>) {
 
     return {
       id: row.id,
-      initiative:
-        row.initiative_id && initiativeMap.has(row.initiative_id)
-          ? {
-              id: row.initiative_id,
-              title: initiativeMap.get(row.initiative_id)?.title ?? 'Initiative',
-              status: initiativeMap.get(row.initiative_id)?.status ?? 'active',
-              targetLabel: initiativeMap.get(row.initiative_id)?.target_label ?? null,
-            }
-          : null,
       parentGoalId: row.parent_goal_id,
       parentGoal:
         row.parent_goal_id && parentGoalMap.has(row.parent_goal_id)
@@ -769,28 +962,13 @@ async function enrichTickets(rows: Awaited<ReturnType<typeof listTickets>>) {
     ),
   ]
 
-  const [goals, initiatives, updates, links, relations, childTickets, parentTickets, actors] =
-    await Promise.all([
+  const [goals, updates, links, relations, childTickets, parentTickets, actors] = await Promise.all(
+    [
       goalIds.length > 0
         ? db
             .selectFrom('goals')
-            .select(['id', 'title', 'status', 'initiative_id'])
-            .where('id', 'in', goalIds)
-            .execute()
-        : Promise.resolve([]),
-      goalIds.length > 0
-        ? db
-            .selectFrom('initiatives')
             .select(['id', 'title', 'status'])
-            .where(
-              'id',
-              'in',
-              db
-                .selectFrom('goals')
-                .select('initiative_id')
-                .where('id', 'in', goalIds)
-                .where('initiative_id', 'is not', null)
-            )
+            .where('id', 'in', goalIds)
             .execute()
         : Promise.resolve([]),
       db
@@ -824,10 +1002,10 @@ async function enrichTickets(rows: Awaited<ReturnType<typeof listTickets>>) {
             .execute()
         : Promise.resolve([]),
       resolveActors(rows.map((row) => ({ kind: row.assignee_kind, ref: row.assignee_ref }))),
-    ])
+    ]
+  )
 
   const goalMap = new Map(goals.map((goal) => [goal.id, goal]))
-  const initiativeMap = new Map(initiatives.map((initiative) => [initiative.id, initiative]))
   const latestUpdates = new Map<string, { body: string; kind: string; createdAt: number }>()
   for (const update of updates) {
     if (!update.ticket_id || latestUpdates.has(update.ticket_id)) continue
@@ -907,19 +1085,6 @@ async function enrichTickets(rows: Awaited<ReturnType<typeof listTickets>>) {
             id: row.goal_id,
             title: goalMap.get(row.goal_id)?.title ?? 'Goal',
             status: goalMap.get(row.goal_id)?.status ?? 'draft',
-            initiative:
-              goalMap.get(row.goal_id)?.initiative_id &&
-              initiativeMap.has(goalMap.get(row.goal_id)?.initiative_id ?? '')
-                ? {
-                    id: goalMap.get(row.goal_id)?.initiative_id ?? '',
-                    title:
-                      initiativeMap.get(goalMap.get(row.goal_id)?.initiative_id ?? '')?.title ??
-                      'Initiative',
-                    status:
-                      initiativeMap.get(goalMap.get(row.goal_id)?.initiative_id ?? '')?.status ??
-                      'active',
-                  }
-                : null,
           }
         : null,
     assignee: presentActor(row.assignee_kind, row.assignee_ref, actors),
@@ -1301,7 +1466,6 @@ export const workRouter = router({
         ownerKind,
         ownerRef,
         teamId,
-        initiativeId: input?.initiativeId,
         includeArchived: input?.includeArchived,
         limit: input?.limit,
         sortBy: input?.sort?.field,
@@ -1323,80 +1487,6 @@ export const workRouter = router({
       return input?.staleOnly ? rows.filter((goal) => goal.isStale) : rows
     }),
 
-  listInitiatives: protectedProcedure
-    .input(
-      z
-        .object({
-          statuses: z.array(goalStatusSchema).optional(),
-          includeArchived: z.boolean().default(false),
-        })
-        .optional()
-    )
-    .query(async ({ input }) => {
-      const db = getDb()
-      const initiatives = await listInitiatives({
-        statuses: input?.statuses,
-        includeArchived: input?.includeArchived,
-        limit: 200,
-        sortBy: 'title',
-        sortDirection: 'asc',
-      })
-      const initiativeIds = initiatives.map((initiative) => initiative.id)
-      const [goals, childInitiatives] = await Promise.all([
-        initiativeIds.length > 0
-          ? db
-              .selectFrom('goals')
-              .select(['initiative_id', 'id', 'status'])
-              .where('initiative_id', 'in', initiativeIds)
-              .where('archived_at', 'is', null)
-              .execute()
-          : Promise.resolve([]),
-        initiativeIds.length > 0
-          ? db
-              .selectFrom('initiatives')
-              .select(['parent_initiative_id'])
-              .where('parent_initiative_id', 'in', initiativeIds)
-              .where('archived_at', 'is', null)
-              .execute()
-          : Promise.resolve([]),
-      ])
-
-      const goalCounts = new Map<string, number>()
-      const activeGoalCounts = new Map<string, number>()
-      for (const goal of goals) {
-        if (!goal.initiative_id) continue
-        goalCounts.set(goal.initiative_id, (goalCounts.get(goal.initiative_id) ?? 0) + 1)
-        if (goal.status !== 'done' && goal.status !== 'archived') {
-          activeGoalCounts.set(
-            goal.initiative_id,
-            (activeGoalCounts.get(goal.initiative_id) ?? 0) + 1
-          )
-        }
-      }
-
-      const childCounts = new Map<string, number>()
-      for (const child of childInitiatives) {
-        if (!child.parent_initiative_id) continue
-        childCounts.set(
-          child.parent_initiative_id,
-          (childCounts.get(child.parent_initiative_id) ?? 0) + 1
-        )
-      }
-
-      return initiatives.map((initiative) => ({
-        id: initiative.id,
-        parentInitiativeId: initiative.parent_initiative_id,
-        title: initiative.title,
-        description: initiative.description,
-        status: initiative.status,
-        teamId: initiative.team_id,
-        targetLabel: initiative.target_label,
-        goalCount: goalCounts.get(initiative.id) ?? 0,
-        activeGoalCount: activeGoalCounts.get(initiative.id) ?? 0,
-        childInitiativeCount: childCounts.get(initiative.id) ?? 0,
-      }))
-    }),
-
   getGoal: protectedProcedure
     .input(z.object({ goalId: z.string().min(1) }))
     .query(async ({ input }) => {
@@ -1406,12 +1496,36 @@ export const workRouter = router({
       }
 
       const goalRow = requireFirst(await enrichGoals([goal]), 'goal')
-      const [childGoals, tickets, updates] = await Promise.all([
-        listGoals({ parentGoalId: goal.id, includeArchived: false }),
+      const [allGoals, tickets, updates] = await Promise.all([
+        listGoals({ includeArchived: false }),
         listTickets({ goalId: goal.id, includeArchived: false }),
         listWorkUpdates({ goalId: goal.id, limit: 20 }),
       ])
 
+      const goalsByParent = new Map<string, typeof allGoals>()
+      for (const row of allGoals) {
+        if (!row.parent_goal_id) continue
+        const siblings = goalsByParent.get(row.parent_goal_id) ?? []
+        siblings.push(row)
+        goalsByParent.set(row.parent_goal_id, siblings)
+      }
+
+      const descendantGoals: typeof allGoals = []
+      const collectDescendants = (parentGoalId: string) => {
+        const children = [...(goalsByParent.get(parentGoalId) ?? [])].sort(
+          (a, b) => a.sort_order - b.sort_order
+        )
+        for (const child of children) {
+          descendantGoals.push(child)
+          collectDescendants(child.id)
+        }
+      }
+
+      collectDescendants(goal.id)
+
+      const updateActors = await resolveActors(
+        updates.map((update) => ({ kind: update.author_kind, ref: update.author_ref }))
+      )
       const ticketRows = await enrichTickets(tickets)
       const ticketReceiptSummaries = await Promise.all(
         ticketRows.map(async (ticket) => ({
@@ -1422,13 +1536,13 @@ export const workRouter = router({
 
       return {
         ...goalRow,
-        childGoals: await enrichGoals(childGoals),
+        childGoals: await enrichGoals(descendantGoals),
         tickets: ticketRows.map((ticket) => ({
           ...ticket,
           receiptSummary:
             ticketReceiptSummaries.find((entry) => entry.ticketId === ticket.id)?.summary ?? null,
         })),
-        updates,
+        updates: updates.map((update) => presentWorkUpdate(update, updateActors)),
         rollup: {
           totalCostUsd: ticketReceiptSummaries.reduce(
             (sum, entry) => sum + entry.summary.totalCostUsd,
@@ -1451,7 +1565,6 @@ export const workRouter = router({
       z.object({
         title: z.string().trim().min(1).max(200),
         outcome: z.string().trim().min(1).max(4000),
-        initiativeId: z.string().trim().optional().nullable(),
         parentGoalId: z.string().trim().optional().nullable(),
         ownerKind: actorKindSchema.optional().nullable(),
         ownerRef: z.string().trim().optional().nullable(),
@@ -1464,7 +1577,6 @@ export const workRouter = router({
     .mutation(async ({ ctx, input }) => {
       const userId = requireUserId(ctx.session)
       const goal = await createGoal({
-        initiative_id: input.initiativeId ?? null,
         parent_goal_id: input.parentGoalId ?? null,
         title: input.title,
         outcome: input.outcome,
@@ -1489,8 +1601,8 @@ export const workRouter = router({
         goal_id: goal.id,
         ticket_id: null,
         team_id: goal.team_id,
-        author_kind: 'user',
-        author_ref: userId,
+        author_kind: 'system',
+        author_ref: null,
         kind: 'note',
         body: `Created goal "${goal.title}".`,
         metadata_json: null,
@@ -1507,7 +1619,6 @@ export const workRouter = router({
           title: z.string().trim().min(1).max(200).optional(),
           outcome: z.string().trim().min(1).max(4000).optional(),
           status: goalStatusSchema.optional(),
-          initiativeId: z.string().trim().optional().nullable(),
           ownerKind: actorKindSchema.optional().nullable(),
           ownerRef: z.string().trim().optional().nullable(),
           teamId: z.string().trim().optional().nullable(),
@@ -1527,10 +1638,6 @@ export const workRouter = router({
       }
 
       const updated = await updateGoal(input.goalId, {
-        initiative_id:
-          input.patch.initiativeId === undefined
-            ? existing.initiative_id
-            : (input.patch.initiativeId ?? null),
         title: input.patch.title ?? existing.title,
         outcome: input.patch.outcome ?? existing.outcome,
         status: input.patch.status ?? existing.status,
@@ -1578,8 +1685,8 @@ export const workRouter = router({
           goal_id: updated.id,
           ticket_id: null,
           team_id: null,
-          author_kind: 'user',
-          author_ref: userId,
+          author_kind: 'system',
+          author_ref: null,
           kind: 'status',
           body: `Status changed from ${existing.status} to ${updated.status}.`,
           metadata_json: null,
@@ -1595,11 +1702,19 @@ export const workRouter = router({
           goal_id: updated.id,
           ticket_id: null,
           team_id: updated.team_id,
-          author_kind: 'user',
-          author_ref: userId,
+          author_kind: 'system',
+          author_ref: null,
           kind: 'note',
           body: `Owner changed from ${existing.owner_kind ?? 'none'}:${existing.owner_ref ?? 'none'} to ${updated.owner_kind ?? 'none'}:${updated.owner_ref ?? 'none'}.`,
           metadata_json: null,
+        })
+
+        await syncGoalHeartbeatToOwner({
+          goalId: updated.id,
+          userId,
+          ownerKind: updated.owner_kind,
+          ownerRef: updated.owner_ref,
+          teamId: updated.team_id,
         })
       }
 
@@ -1610,8 +1725,8 @@ export const workRouter = router({
           goal_id: updated.id,
           ticket_id: null,
           team_id: updated.team_id,
-          author_kind: 'user',
-          author_ref: userId,
+          author_kind: 'system',
+          author_ref: null,
           kind: 'note',
           body: `Team changed from ${existing.team_id ?? 'none'} to ${updated.team_id ?? 'none'}.`,
           metadata_json: null,
@@ -1713,7 +1828,7 @@ export const workRouter = router({
 
       const ticketRow = requireFirst(await enrichTickets([ticket]), 'ticket')
       const db = getDb()
-      const [updates, related, receiptSummary, childTicketRows] = await Promise.all([
+      const [updates, related, receiptSummary] = await Promise.all([
         listWorkUpdates({ ticketId: ticket.id, limit: 30 }),
         listRelatedTickets({
           text: `${ticket.title} ${ticket.body ?? ''}`,
@@ -1721,23 +1836,74 @@ export const workRouter = router({
           limit: 5,
         }),
         buildTicketReceiptSummary(ticket.id),
-        db
+      ])
+      const updateActors = await resolveActors(
+        updates.map((update) => ({ kind: update.author_kind, ref: update.author_ref }))
+      )
+
+      // Fetch full descendant tree iteratively (breadth-first)
+      type DescendantRow = {
+        id: string
+        title: string
+        status: string
+        assignee_kind: string | null
+        assignee_ref: string | null
+        parent_ticket_id: string | null
+      }
+      const allDescendants: DescendantRow[] = []
+      let parentIds = [ticket.id]
+      while (parentIds.length > 0) {
+        const batch = await db
           .selectFrom('tickets')
-          .select(['id', 'title', 'status'])
-          .where('parent_ticket_id', '=', ticket.id)
+          .select(['id', 'title', 'status', 'assignee_kind', 'assignee_ref', 'parent_ticket_id'])
+          .where('parent_ticket_id', 'in', parentIds)
           .where('archived_at', 'is', null)
           .orderBy('created_at', 'asc')
-          .execute(),
-      ])
+          .execute()
+        if (batch.length === 0) break
+        allDescendants.push(...batch)
+        parentIds = batch.map((r) => r.id)
+      }
 
-      return {
-        ...ticketRow,
-        updates,
-        childTickets: childTicketRows.map((row) => ({
+      // Resolve all descendant assignees
+      const descendantActors = await resolveActors(
+        allDescendants.map((r) => ({ kind: r.assignee_kind, ref: r.assignee_ref }))
+      )
+
+      // Build nested tree structure
+      const nodeMap = new Map<string, TicketTreeNode>()
+      for (const row of allDescendants) {
+        nodeMap.set(row.id, {
           id: row.id,
           title: row.title,
           status: row.status,
-        })),
+          assignee: presentActor(row.assignee_kind, row.assignee_ref, descendantActors),
+          children: [],
+        })
+      }
+      const rootChildren: TicketTreeNode[] = []
+      for (const row of allDescendants) {
+        const node = nodeMap.get(row.id)!
+        if (row.parent_ticket_id === ticket.id) {
+          rootChildren.push(node)
+        } else {
+          const parentNode = nodeMap.get(row.parent_ticket_id!)
+          if (parentNode) parentNode.children.push(node)
+        }
+      }
+
+      // Compute direct child progress
+      const directChildren = allDescendants.filter((r) => r.parent_ticket_id === ticket.id)
+      const childProgress = {
+        done: directChildren.filter((r) => r.status === 'done').length,
+        total: directChildren.length,
+      }
+
+      return {
+        ...ticketRow,
+        updates: updates.map((update) => presentWorkUpdate(update, updateActors)),
+        childTickets: rootChildren,
+        childProgress,
         relatedTickets: await enrichTickets(related.map((entry) => entry.ticket)),
         relatedScores: related.map((entry) => ({ ticketId: entry.ticket.id, score: entry.score })),
         receiptSummary,
@@ -1797,8 +1963,8 @@ export const workRouter = router({
         goal_id: ticket.goal_id,
         ticket_id: ticket.id,
         team_id: null,
-        author_kind: 'user',
-        author_ref: userId,
+        author_kind: 'system',
+        author_ref: null,
         kind: 'note',
         body: `Created ticket "${ticket.title}".`,
         metadata_json: null,
@@ -1842,8 +2008,8 @@ export const workRouter = router({
         goal_id: updated.goal_id,
         ticket_id: updated.id,
         team_id: null,
-        author_kind: 'user',
-        author_ref: userId,
+        author_kind: 'system',
+        author_ref: null,
         kind: 'status',
         body: `Claimed by ${input.assigneeKind} ${input.assigneeRef}.`,
         metadata_json: null,
@@ -1914,8 +2080,8 @@ export const workRouter = router({
           goal_id: updated.goal_id,
           ticket_id: updated.id,
           team_id: null,
-          author_kind: 'user',
-          author_ref: userId,
+          author_kind: 'system',
+          author_ref: null,
           kind: 'status',
           body: `Status changed from ${existing.status} to ${updated.status}.`,
           metadata_json: null,
@@ -1934,8 +2100,8 @@ export const workRouter = router({
           goal_id: updated.goal_id,
           ticket_id: updated.id,
           team_id: null,
-          author_kind: 'user',
-          author_ref: userId,
+          author_kind: 'system',
+          author_ref: null,
           kind: 'note',
           body: `Assigned to ${label}.`,
           metadata_json: null,
@@ -2021,8 +2187,8 @@ export const workRouter = router({
             goal_id: updated.goal_id,
             ticket_id: updated.id,
             team_id: null,
-            author_kind: 'user',
-            author_ref: userId,
+            author_kind: 'system',
+            author_ref: null,
             kind: body.startsWith('Status changed') ? 'status' : 'note',
             body,
             metadata_json: null,
@@ -2058,6 +2224,22 @@ export const workRouter = router({
         })
       }
 
+      if (input.kind === 'heartbeat') {
+        if (!input.goalId) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Heartbeat updates must target a goal.',
+          })
+        }
+
+        if (input.teamId) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Team heartbeat updates have been removed.',
+          })
+        }
+      }
+
       return createWorkUpdate({
         goal_id: input.goalId ?? null,
         ticket_id: input.ticketId ?? null,
@@ -2075,66 +2257,23 @@ export const workRouter = router({
       z.object({
         targetKind: heartbeatTargetKindSchema,
         targetId: z.string().trim().min(1),
-        agentId: z.string().trim().min(1),
         cronExpr: z.string().trim().min(1),
-        timezone: z.string().trim().min(1),
+        timezone: z.string().trim().min(1).optional(),
         enabled: z.boolean().default(true),
       })
     )
     .mutation(async ({ ctx, input }) => {
       const userId = requireUserId(ctx.session)
       const db = getDb()
-      const agent = await db
-        .selectFrom('agents')
-        .select(['id', 'name'])
-        .where('id', '=', input.agentId)
-        .executeTakeFirst()
-
-      if (!agent) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Agent not found.' })
+      const ownerAgent = await findGoalHeartbeatOwner(input.targetId)
+      if (!ownerAgent) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Goal stewardship requires an agent owner.',
+        })
       }
 
       const sessionKey = buildHeartbeatSessionKey(input.targetKind, input.targetId)
-      let targetLabel = ''
-      let sessionTitle = ''
-      let actionPrompt = ''
-      let goalId: string | null = null
-      let teamId: string | null = null
-
-      if (input.targetKind === 'goal') {
-        const goal = await findGoalById(input.targetId)
-        if (!goal) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Goal not found.' })
-        }
-        targetLabel = goal.title
-        sessionTitle = `Goal heartbeat · ${goal.title}`
-        actionPrompt = buildGoalHeartbeatPrompt(goal)
-        goalId = goal.id
-      } else {
-        const team = await db
-          .selectFrom('teams')
-          .select(['id', 'name', 'charter'])
-          .where('id', '=', input.targetId)
-          .executeTakeFirst()
-
-        if (!team) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Team not found.' })
-        }
-
-        targetLabel = team.name
-        sessionTitle = `Team heartbeat · ${team.name}`
-        actionPrompt = buildTeamHeartbeatPrompt(team)
-        teamId = team.id
-      }
-
-      await ensureHeartbeatSession({
-        sessionKey,
-        title: sessionTitle,
-        ownerUserId: userId,
-        agentId: input.agentId,
-      })
-
-      const nextRunAt = input.enabled ? validateCronSchedule(input.cronExpr, input.timezone) : null
       const existing = await db
         .selectFrom('routines')
         .selectAll()
@@ -2142,20 +2281,36 @@ export const workRouter = router({
         .where('archived_at', 'is', null)
         .orderBy('created_at', 'desc')
         .executeTakeFirst()
+      const timezone = input.timezone?.trim() || existing?.timezone || 'UTC'
+      const goalHeartbeat = await buildGoalHeartbeatRoutineSpec({
+        goalId: input.targetId,
+        ownerAgent,
+      })
+      const targetLabel = goalHeartbeat.targetLabel
+      const sessionTitle = goalHeartbeat.sessionTitle
+      const actionPrompt = goalHeartbeat.actionPrompt
+      const goalId: string | null = goalHeartbeat.goal.id
+      const teamId: string | null = null
 
-      const name = `${input.targetKind === 'goal' ? 'Goal' : 'Team'} Heartbeat · ${targetLabel}`
-      const description =
-        input.targetKind === 'goal'
-          ? `Recurring heartbeat for goal ${targetLabel}.`
-          : `Recurring heartbeat for team ${targetLabel}.`
+      await ensureHeartbeatSession({
+        sessionKey,
+        title: sessionTitle,
+        ownerUserId: userId,
+        agentId: ownerAgent.agentId,
+      })
+
+      const nextRunAt = input.enabled ? validateCronSchedule(input.cronExpr, timezone) : null
+
+      const name = `Goal Stewardship · ${targetLabel}`
+      const description = `Recurring stewardship loop for goal ${targetLabel}.`
       const routinePatch = {
-        agent_id: input.agentId,
+        agent_id: ownerAgent.agentId,
         name,
         description,
         enabled: input.enabled ? 1 : 0,
         trigger_kind: 'cron',
         cron_expr: input.cronExpr,
-        timezone: input.timezone,
+        timezone,
         rule_json: JSON.stringify(getAlwaysTrueRuleForEnvelope()),
         condition_probe: null,
         condition_config: null,
@@ -2189,12 +2344,12 @@ export const workRouter = router({
         goal_id: goalId,
         ticket_id: null,
         team_id: teamId,
-        author_kind: 'user',
-        author_ref: userId,
+        author_kind: 'system',
+        author_ref: null,
         kind: 'note',
         body: existing
-          ? `Updated ${input.targetKind} heartbeat schedule for ${agent.name}.`
-          : `Configured ${input.targetKind} heartbeat schedule for ${agent.name}.`,
+          ? 'Updated goal stewardship schedule.'
+          : 'Configured goal stewardship schedule.',
         metadata_json: JSON.stringify({ routineId: routine.id }),
       })
 
@@ -2255,8 +2410,8 @@ export const workRouter = router({
         goal_id: ticket.goal_id,
         ticket_id: ticket.id,
         team_id: null,
-        author_kind: 'user',
-        author_ref: userId,
+        author_kind: 'system',
+        author_ref: null,
         kind: 'note',
         body: `Linked ${input.kind} receipt ${input.ref}.`,
         metadata_json: null,
@@ -2330,8 +2485,8 @@ export const workRouter = router({
         goal_id: ticket.goal_id,
         ticket_id: ticket.id,
         team_id: null,
-        author_kind: 'user',
-        author_ref: userId,
+        author_kind: 'system',
+        author_ref: null,
         kind: 'note',
         body: `Promoted untracked session ${input.sessionKey} into a ticket.`,
         metadata_json: null,

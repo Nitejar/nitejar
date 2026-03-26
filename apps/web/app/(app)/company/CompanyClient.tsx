@@ -1,30 +1,43 @@
 'use client'
 
 import Link from 'next/link'
+import { usePathname, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bot,
+  ChevronDown,
   ChevronRight,
   ExternalLink,
+  GitBranch,
+  MoreHorizontal,
+  Network,
   Plus,
-  Trash2,
-  X,
   Pencil,
-  Check,
-  User,
+  Shield,
+  X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { trpc, type RouterOutputs } from '@/lib/trpc'
 import { cn } from '@/lib/utils'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { AvatarCircle } from '../work/shared'
 import { SkeletonCompanyTree, SkeletonDetailPanel } from '../work/skeletons'
+import { CompanyOrgChart } from './CompanyOrgChart'
+import { RolesView } from './RolesView'
 import {
   useTreeSelection,
+  useAutoSelectFirst,
   useTreeExpand,
   useTreeDragDrop,
   useTreeInlineEdit,
   useTreeKeyboardNav,
+  useIsDesktop,
   applyOptimisticReorder,
   type DropPosition,
 } from '../work/tree-hooks'
@@ -32,33 +45,15 @@ import {
   TreeRootDropZone,
   TreeGroupEndDropZone,
   TreeToolbar,
-  TreeBreadcrumb,
   TreeRow,
   InlineEditInput,
   TreeDetailLayout,
 } from '../work/tree-components'
+import { AgentAssignmentControl, LeadPicker } from './team-management-controls'
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-/** Close a dropdown when clicking outside its container ref */
-function useClickOutside(
-  ref: React.RefObject<HTMLElement | null>,
-  active: boolean,
-  onClose: () => void
-) {
-  useEffect(() => {
-    if (!active) return
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        onClose()
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [ref, active, onClose])
-}
 
 type CompanyOverview = RouterOutputs['company']['getOverview']
 type OrgTeamRow = CompanyOverview['organization'][number]
@@ -229,70 +224,6 @@ function InlineCreateInput({
 // Health summary bar
 // ---------------------------------------------------------------------------
 
-function HealthSummaryBar({
-  data,
-  portfolioById,
-  childrenByParent,
-}: {
-  data: CompanyOverview
-  portfolioById: Map<string, TeamRow>
-  childrenByParent: Map<string | null, OrgTeamRow[]>
-}) {
-  const totalTeams = data.organization.length
-
-  const atRiskGoals = data.summary.at_risk_goal_count ?? 0
-  const blockedGoals = data.summary.blocked_goal_count ?? 0
-  const goalsAtRisk = atRiskGoals + blockedGoals
-
-  // Staffing gaps from root-level teams (aggregated)
-  const rootTeams = childrenByParent.get(null) ?? []
-  const staffingGaps = rootTeams.reduce((sum, t) => {
-    const agg = aggregateStats(t.id, childrenByParent, portfolioById)
-    return sum + agg.staffingGapCount
-  }, 0)
-
-  const blockedLoad = data.goalsInProgress.filter((g) => g.health === 'blocked').length
-
-  const stats: Array<{ label: string; value: number; tone?: 'red' | 'amber' | 'neutral' }> = [
-    { label: 'Teams', value: totalTeams },
-    {
-      label: 'Goals at risk',
-      value: goalsAtRisk,
-      tone: goalsAtRisk > 0 ? 'red' : 'neutral',
-    },
-    {
-      label: 'Staffing gaps',
-      value: staffingGaps,
-      tone: staffingGaps > 0 ? 'amber' : 'neutral',
-    },
-    { label: 'Blocked goals', value: blockedLoad, tone: blockedLoad > 0 ? 'red' : 'neutral' },
-  ]
-
-  return (
-    <div className="flex items-center gap-6 border border-zinc-800 px-5 py-3">
-      {stats.map((stat) => (
-        <div key={stat.label} className="flex items-center gap-2">
-          <span className="text-[0.6rem] uppercase tracking-[0.15em] text-white/40">
-            {stat.label}
-          </span>
-          <span
-            className={cn(
-              'text-sm font-semibold tabular-nums',
-              stat.tone === 'red'
-                ? 'text-rose-400'
-                : stat.tone === 'amber'
-                  ? 'text-amber-400'
-                  : 'text-white/80'
-            )}
-          >
-            {stat.value}
-          </span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 // ---------------------------------------------------------------------------
 // Inline create row (click to reveal input)
 // ---------------------------------------------------------------------------
@@ -314,7 +245,6 @@ function OrgTreeRow({
   onStartEdit,
   commitEdit,
   cancelEdit,
-  onDelete,
   draggedId,
   dragTargetId,
   dropPosition,
@@ -335,24 +265,27 @@ function OrgTreeRow({
   onStartEdit: (id: string) => void
   commitEdit: (id: string, value: string) => void
   cancelEdit: () => void
-  onDelete: (id: string, name: string) => void
   draggedId: string | null
   dragTargetId: string | null
   dropPosition: DropPosition
   startDrag: (id: string, event: React.DragEvent) => void
   endDrag: () => void
-  getRowDragHandlers: (rowId: string) => {
-    onDragOver: (event: React.DragEvent) => void
-    onDragEnter: (event: React.DragEvent) => void
-    onDragLeave: () => void
-    onDrop: (event: React.DragEvent) => void
-  } | undefined
-  getGroupEndDropHandlers: (parentRowId: string) => {
-    onDragOver: (event: React.DragEvent) => void
-    onDragEnter: (event: React.DragEvent) => void
-    onDragLeave: () => void
-    onDrop: (event: React.DragEvent) => void
-  } | undefined
+  getRowDragHandlers: (rowId: string) =>
+    | {
+        onDragOver: (event: React.DragEvent) => void
+        onDragEnter: (event: React.DragEvent) => void
+        onDragLeave: () => void
+        onDrop: (event: React.DragEvent) => void
+      }
+    | undefined
+  getGroupEndDropHandlers: (parentRowId: string) =>
+    | {
+        onDragOver: (event: React.DragEvent) => void
+        onDragEnter: (event: React.DragEvent) => void
+        onDragLeave: () => void
+        onDrop: (event: React.DragEvent) => void
+      }
+    | undefined
 }) {
   const childTeams = childrenByParent.get(team.id) ?? []
   const hasChildren = childTeams.length > 0
@@ -389,6 +322,28 @@ function OrgTreeRow({
         onDragStart={(e) => startDrag(team.id, e)}
         onDragEnd={endDrag}
         dragHandlers={getRowDragHandlers(team.id)}
+        secondaryContent={
+          !isEditing ? (
+            <>
+              {metrics.length > 0 && (
+                <span className="text-[10px] text-zinc-600 tabular-nums">
+                  {metrics.join(' · ')}
+                </span>
+              )}
+              {stats.health !== 'gray' && stats.health !== 'green' && (
+                <span
+                  className={cn(
+                    'text-[10px]',
+                    stats.health === 'red' ? 'text-rose-400' : 'text-amber-400'
+                  )}
+                >
+                  {healthLabel(stats.health)}
+                </span>
+              )}
+              {team.lead && <AvatarCircle name={team.lead.label} />}
+            </>
+          ) : undefined
+        }
       >
         <HealthDot health={stats.health} />
 
@@ -398,10 +353,7 @@ function OrgTreeRow({
             defaultValue={team.name}
             onCommit={commitEdit}
             onCancel={cancelEdit}
-            className={cn(
-              'min-w-0 flex-1',
-              depth === 0 ? 'font-semibold' : 'font-medium'
-            )}
+            className={cn('min-w-0 flex-1', depth === 0 ? 'font-semibold' : 'font-medium')}
           />
         ) : (
           <span
@@ -412,37 +364,6 @@ function OrgTreeRow({
           >
             {team.name}
           </span>
-        )}
-
-        {/* Metrics */}
-        {!isEditing && metrics.length > 0 && (
-          <span className="shrink-0 text-[10px] text-zinc-600 tabular-nums">
-            {metrics.join(' · ')}
-          </span>
-        )}
-
-        {/* Health label */}
-        {!isEditing && stats.health !== 'gray' && stats.health !== 'green' && (
-          <span className={cn('shrink-0 text-[10px]', stats.health === 'red' ? 'text-rose-400' : 'text-amber-400')}>
-            {healthLabel(stats.health)}
-          </span>
-        )}
-
-        {/* Lead */}
-        {team.lead && !isEditing && <AvatarCircle name={team.lead.label} />}
-
-        {/* Delete */}
-        {!isEditing && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              onDelete(team.id, team.name)
-            }}
-            className="inline-flex shrink-0 rounded p-0.5 text-zinc-600 opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-400"
-          >
-            <Trash2 className="h-3 w-3" />
-          </button>
         )}
       </TreeRow>
 
@@ -464,7 +385,6 @@ function OrgTreeRow({
               onStartEdit={onStartEdit}
               commitEdit={commitEdit}
               cancelEdit={cancelEdit}
-              onDelete={onDelete}
               draggedId={draggedId}
               dragTargetId={dragTargetId}
               dropPosition={dropPosition}
@@ -487,130 +407,18 @@ function OrgTreeRow({
 }
 
 // ---------------------------------------------------------------------------
-// Agent assignment combobox
-// ---------------------------------------------------------------------------
-
-function AgentAssignmentSection({
-  teamId,
-  currentAgentIds,
-}: {
-  teamId: string
-  currentAgentIds: string[]
-}) {
-  const [showPicker, setShowPicker] = useState(false)
-  const [search, setSearch] = useState('')
-  const searchRef = useRef<HTMLInputElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const utils = trpc.useUtils()
-
-  const closePicker = useCallback(() => {
-    setShowPicker(false)
-    setSearch('')
-  }, [])
-
-  useClickOutside(containerRef, showPicker, closePicker)
-
-  const agentsQuery = trpc.company.listAgents.useQuery(undefined, {
-    enabled: showPicker,
-  })
-
-  const addAgent = trpc.company.addAgentToTeam.useMutation({
-    onSuccess: () => {
-      void utils.company.getOverview.invalidate()
-      setShowPicker(false)
-      setSearch('')
-    },
-    onError: () => {
-      toast.error('Failed to add agent to team')
-    },
-  })
-
-  useEffect(() => {
-    if (showPicker) searchRef.current?.focus()
-  }, [showPicker])
-
-  const available = useMemo(() => {
-    const all = agentsQuery.data ?? []
-    const currentSet = new Set(currentAgentIds)
-    return all
-      .filter((a) => !currentSet.has(a.id))
-      .filter(
-        (a) =>
-          !search ||
-          a.name.toLowerCase().includes(search.toLowerCase()) ||
-          a.handle?.toLowerCase().includes(search.toLowerCase())
-      )
-  }, [agentsQuery.data, currentAgentIds, search])
-
-  return (
-    <div ref={containerRef}>
-      {!showPicker ? (
-        <button
-          onClick={() => setShowPicker(true)}
-          className="flex items-center gap-1.5 px-2 py-1 text-sm text-zinc-600 hover:text-zinc-400 transition"
-        >
-          <Plus className="h-3 w-3" />
-          <span>Add agent</span>
-        </button>
-      ) : (
-        <div className="mt-1 border border-zinc-800 p-1.5">
-          <input
-            ref={searchRef}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                setShowPicker(false)
-                setSearch('')
-              }
-            }}
-            placeholder="Search agents..."
-            className="w-full bg-transparent px-1.5 py-1 text-sm text-white outline-none placeholder:text-zinc-600"
-          />
-          <div className="max-h-40 overflow-y-auto">
-            {available.length === 0 && (
-              <div className="px-1.5 py-2 text-xs text-zinc-600">
-                {agentsQuery.isLoading ? 'Loading...' : 'No agents available'}
-              </div>
-            )}
-            {available.map((agent) => (
-              <button
-                key={agent.id}
-                onClick={() => addAgent.mutate({ agentId: agent.id, teamId })}
-                className="flex w-full items-center gap-2 px-1.5 py-1.5 text-left text-sm text-white/65 hover:bg-white/[0.04] hover:text-white/85 transition"
-              >
-                {agent.emoji ? (
-                  <span className="text-xs">{agent.emoji}</span>
-                ) : (
-                  <Bot className="h-3 w-3 text-white/30" />
-                )}
-                <span className="truncate">{agent.name}</span>
-                {agent.handle && (
-                  <span className="text-[0.55rem] text-white/30">@{agent.handle}</span>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Editable charter (click to edit, textarea)
+// Editable charter (inline contentEditable to avoid sidebar layout shift)
 // ---------------------------------------------------------------------------
 
 function EditableCharter({ teamId, charter }: { teamId: string; charter: string | null }) {
-  const [editing, setEditing] = useState(false)
-  const [value, setValue] = useState(charter ?? '')
-  const ref = useRef<HTMLTextAreaElement>(null)
+  const [focused, setFocused] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const saved = useRef(charter ?? '')
   const utils = trpc.useUtils()
 
   const updateTeam = trpc.company.updateTeam.useMutation({
     onSuccess: () => {
       void utils.company.getOverview.invalidate()
-      setEditing(false)
     },
     onError: () => {
       toast.error('Failed to update team charter')
@@ -618,222 +426,73 @@ function EditableCharter({ teamId, charter }: { teamId: string; charter: string 
   })
 
   useEffect(() => {
-    if (editing) {
-      ref.current?.focus()
-      ref.current?.select()
+    const nextValue = charter ?? ''
+    if (!ref.current || document.activeElement === ref.current) return
+    if (ref.current.innerText !== nextValue) {
+      ref.current.textContent = nextValue
     }
-  }, [editing])
-
-  // Reset value when selection changes
-  useEffect(() => {
-    setValue(charter ?? '')
+    saved.current = nextValue
   }, [charter, teamId])
 
-  const commit = () => {
-    const trimmed = value.trim()
-    if (trimmed !== (charter ?? '')) {
-      updateTeam.mutate({ id: teamId, charter: trimmed || null })
-    } else {
-      setEditing(false)
+  useEffect(() => {
+    if (ref.current && !ref.current.textContent && charter) {
+      ref.current.textContent = charter
     }
-  }
+  }, [charter])
 
-  if (!editing) {
-    return (
-      <button
-        onClick={() => setEditing(true)}
-        className="group mt-1 flex w-full items-start gap-1.5 text-left"
-      >
-        {charter ? (
-          <p className="text-xs leading-relaxed text-white/30">{charter}</p>
-        ) : (
-          <p className="text-xs text-white/20">Add charter...</p>
-        )}
-        <Pencil className="mt-0.5 h-3 w-3 shrink-0 text-white/15 opacity-0 transition-opacity group-hover:opacity-100" />
-      </button>
-    )
-  }
+  const commit = useCallback(async () => {
+    const nextValue = ref.current?.innerText.replace(/\r\n/g, '\n').trim() ?? ''
+    if (nextValue === saved.current) return
+    try {
+      await updateTeam.mutateAsync({ id: teamId, charter: nextValue || null })
+      saved.current = nextValue
+    } catch {
+      if (ref.current) {
+        ref.current.textContent = saved.current
+      }
+    }
+  }, [teamId, updateTeam])
 
   return (
-    <div className="mt-1">
-      <textarea
+    <div className="group relative mt-1">
+      <div
         ref={ref}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
+        contentEditable
+        suppressContentEditableWarning
+        role="textbox"
+        aria-label="Team description"
+        aria-multiline="true"
+        data-placeholder="Describe this team's purpose, responsibilities, and what success looks like..."
+        onFocus={() => setFocused(true)}
+        onBlur={() => {
+          setFocused(false)
+          void commit()
+        }}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) commit()
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault()
+            ref.current?.blur()
+          }
           if (e.key === 'Escape') {
-            setValue(charter ?? '')
-            setEditing(false)
+            e.preventDefault()
+            if (ref.current) {
+              ref.current.textContent = saved.current
+            }
+            ref.current?.blur()
           }
         }}
-        onBlur={commit}
-        rows={3}
-        className="w-full resize-none border border-zinc-700 bg-transparent px-2 py-1.5 text-xs leading-relaxed text-white/60 outline-none focus:border-zinc-500 placeholder:text-white/20"
-        placeholder="Describe this team's purpose, responsibilities, and what success looks like..."
+        className={cn(
+          'min-h-[2.5rem] w-full cursor-text whitespace-pre-wrap text-xs leading-relaxed outline-none transition',
+          'empty:before:text-white/20 empty:before:content-[attr(data-placeholder)]',
+          focused || updateTeam.isPending ? 'text-white/60' : 'text-white/30'
+        )}
       />
-      <div className="mt-1 flex items-center gap-2 text-[0.55rem] text-white/25">
-        <span>Cmd+Enter to save</span>
-        <span>Esc to cancel</span>
-      </div>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Lead picker (click current lead to change)
-// ---------------------------------------------------------------------------
-
-function LeadPicker({
-  teamId,
-  currentLead,
-}: {
-  teamId: string
-  currentLead: {
-    kind: string
-    ref: string
-    label: string
-    emoji?: string | null
-    avatarUrl?: string | null
-  } | null
-}) {
-  const [picking, setPicking] = useState(false)
-  const [search, setSearch] = useState('')
-  const searchRef = useRef<HTMLInputElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const utils = trpc.useUtils()
-
-  const closePicker = useCallback(() => {
-    setPicking(false)
-    setSearch('')
-  }, [])
-
-  useClickOutside(containerRef, picking, closePicker)
-
-  const agentsQuery = trpc.company.listAgents.useQuery(undefined, { enabled: picking })
-  const usersQuery = trpc.company.listUsers.useQuery(undefined, { enabled: picking })
-
-  const setLead = trpc.company.setTeamLead.useMutation({
-    onSuccess: () => {
-      void utils.company.getOverview.invalidate()
-      setPicking(false)
-      setSearch('')
-    },
-    onError: () => {
-      toast.error('Failed to set team lead')
-    },
-  })
-
-  useEffect(() => {
-    if (picking) searchRef.current?.focus()
-  }, [picking])
-
-  const candidates = useMemo(() => {
-    const items: Array<{
-      kind: 'agent' | 'user'
-      ref: string
-      label: string
-      emoji?: string | null
-      avatarUrl?: string | null
-    }> = []
-    for (const agent of agentsQuery.data ?? []) {
-      items.push({ kind: 'agent', ref: agent.id, label: agent.name, emoji: agent.emoji })
-    }
-    for (const user of usersQuery.data ?? []) {
-      items.push({ kind: 'user', ref: user.id, label: user.name, avatarUrl: user.avatarUrl })
-    }
-    if (!search) return items
-    const q = search.toLowerCase()
-    return items.filter((i) => i.label.toLowerCase().includes(q))
-  }, [agentsQuery.data, usersQuery.data, search])
-
-  const leadDisplay = currentLead ? (
-    <div className="flex items-center gap-1.5 text-sm text-white/70">
-      {currentLead.emoji ? (
-        <span>{currentLead.emoji}</span>
-      ) : currentLead.avatarUrl ? (
-        <img src={currentLead.avatarUrl} alt="" className="h-4 w-4 rounded-full" />
-      ) : (
-        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-white/10 text-[0.55rem] text-white/50">
-          {currentLead.label.charAt(0)}
-        </span>
-      )}
-      <span>{currentLead.label}</span>
-      {currentLead.kind === 'agent' && <Bot className="h-3 w-3 text-white/25" />}
-      {currentLead.kind === 'user' && <User className="h-3 w-3 text-white/25" />}
-    </div>
-  ) : (
-    <span className="text-sm text-white/20">Set lead...</span>
-  )
-
-  return (
-    <div ref={containerRef} className="mt-2">
-      <div className="flex items-center gap-2">
-        <div className="text-[0.6rem] uppercase tracking-[0.15em] text-white/35">Lead</div>
-        <button onClick={() => setPicking(!picking)} className="group flex items-center gap-1.5">
-          {leadDisplay}
-          <Pencil className="h-3 w-3 shrink-0 text-white/15 opacity-0 transition-opacity group-hover:opacity-100" />
-        </button>
-      </div>
-
-      {picking && (
-        <div className="mt-1.5 border border-zinc-800 p-1.5">
-          <input
-            ref={searchRef}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                setPicking(false)
-                setSearch('')
-              }
-            }}
-            placeholder="Search agents & users..."
-            className="w-full bg-transparent px-1.5 py-1 text-sm text-white outline-none placeholder:text-zinc-600"
-          />
-          <div className="max-h-48 overflow-y-auto">
-            {candidates.length === 0 && (
-              <div className="px-1.5 py-2 text-xs text-zinc-600">
-                {agentsQuery.isLoading || usersQuery.isLoading ? 'Loading...' : 'No matches'}
-              </div>
-            )}
-            {candidates.map((candidate) => {
-              const isCurrentLead =
-                currentLead?.kind === candidate.kind && currentLead?.ref === candidate.ref
-              return (
-                <button
-                  key={`${candidate.kind}-${candidate.ref}`}
-                  onClick={() => {
-                    if (isCurrentLead) return
-                    setLead.mutate({ teamId, leadKind: candidate.kind, leadRef: candidate.ref })
-                  }}
-                  className={cn(
-                    'flex w-full items-center gap-2 px-1.5 py-1.5 text-left text-sm transition',
-                    isCurrentLead
-                      ? 'text-white/40'
-                      : 'text-white/65 hover:bg-white/[0.04] hover:text-white/85'
-                  )}
-                >
-                  {candidate.emoji ? (
-                    <span className="text-xs">{candidate.emoji}</span>
-                  ) : candidate.avatarUrl ? (
-                    <img src={candidate.avatarUrl} alt="" className="h-4 w-4 rounded-full" />
-                  ) : candidate.kind === 'agent' ? (
-                    <Bot className="h-3 w-3 text-white/30" />
-                  ) : (
-                    <User className="h-3 w-3 text-white/30" />
-                  )}
-                  <span className="flex-1 truncate">{candidate.label}</span>
-                  <span className="text-[0.55rem] text-white/25">
-                    {candidate.kind === 'agent' ? 'Agent' : 'User'}
-                  </span>
-                  {isCurrentLead && <Check className="h-3 w-3 text-white/30" />}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
+      <Pencil
+        className={cn(
+          'pointer-events-none absolute right-0 top-0 h-3 w-3 text-white/15 transition-opacity',
+          focused ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'
+        )}
+      />
     </div>
   )
 }
@@ -848,14 +507,23 @@ function DetailPanel({
   organizationById,
   childrenByParent,
   onSelect,
+  onClose,
+  onDelete,
 }: {
   selected: SelectedItem
   portfolioById: Map<string, TeamRow>
   organizationById: Map<string, OrgTeamRow>
   childrenByParent: Map<string | null, OrgTeamRow[]>
   onSelect: (item: SelectedItem) => void
+  onClose?: () => void
+  onDelete: (id: string, name: string) => void
 }) {
   const utils = trpc.useUtils()
+  const [propertiesOpen, setPropertiesOpen] = useState(true)
+  const [portfolioOpen, setPortfolioOpen] = useState(true)
+  const [childTeamsOpen, setChildTeamsOpen] = useState(true)
+  const [agentsOpen, setAgentsOpen] = useState(true)
+  const [membersOpen, setMembersOpen] = useState(true)
 
   const removeAgent = trpc.company.removeAgentFromTeam.useMutation({
     onSuccess: () => {
@@ -865,6 +533,14 @@ function DetailPanel({
       toast.error('Failed to remove agent from team')
     },
   })
+
+  useEffect(() => {
+    setPropertiesOpen(true)
+    setPortfolioOpen(true)
+    setChildTeamsOpen(true)
+    setAgentsOpen(true)
+    setMembersOpen(true)
+  }, [selected])
 
   if (!selected) {
     return (
@@ -879,215 +555,352 @@ function DetailPanel({
 
   const portfolio = portfolioById.get(selected)
   const childTeams = childrenByParent.get(selected) ?? []
+  const parentTeam = teamOrg.parentTeamId
+    ? (organizationById.get(teamOrg.parentTeamId) ?? null)
+    : null
   const stats = aggregateStats(selected, childrenByParent, portfolioById)
 
   // Health breakdown from portfolio goals
-  const activeCount = portfolio
-    ? portfolio.activeGoalCount - portfolio.atRiskGoalCount - portfolio.blockedGoalCount
-    : 0
   const atRiskCount = portfolio?.atRiskGoalCount ?? 0
   const blockedCount = portfolio?.blockedGoalCount ?? 0
 
   // Agents from portfolio data
   const agents = portfolio?.agents ?? []
+  const members = portfolio?.members ?? []
+  const propertiesSummary = parentTeam
+    ? `${healthLabel(stats.health)} · reports to ${parentTeam.name}`
+    : `${healthLabel(stats.health)} · root team`
+  const portfolioSummary = portfolio
+    ? [
+        `${portfolio.activeGoalCount} goals`,
+        portfolio.queuedTicketCount > 0 ? `${portfolio.queuedTicketCount} tickets` : null,
+        blockedCount > 0 ? `${blockedCount} blocked` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : 'No active work'
 
   return (
-    <ScrollArea className="h-full">
-      <div className="space-y-5 p-4">
-        {/* Heading */}
-        <div>
-          <div className="flex items-center gap-2">
-            <HealthDot health={stats.health} size="md" />
-            <h2 className="text-base font-semibold text-white">{teamOrg.name}</h2>
-          </div>
-          <EditableCharter teamId={selected} charter={teamOrg.charter} />
-          <LeadPicker teamId={selected} currentLead={teamOrg.lead} />
-        </div>
-
-        {/* Key stats */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <div className="text-[0.6rem] uppercase tracking-[0.15em] text-white/35">Goals</div>
-            <div className="mt-0.5 text-lg font-semibold tabular-nums text-white">
-              {stats.goalCount}
-            </div>
-          </div>
-          <div>
-            <div className="text-[0.6rem] uppercase tracking-[0.15em] text-white/35">
-              Child teams
-            </div>
-            <div className="mt-0.5 text-lg font-semibold tabular-nums text-white">
-              {stats.childTeamCount}
-            </div>
-          </div>
-          <div>
-            <div className="text-[0.6rem] uppercase tracking-[0.15em] text-white/35">Agents</div>
-            <div className="mt-0.5 text-lg font-semibold tabular-nums text-white">
-              {stats.agentCount}
-            </div>
-          </div>
-          <div>
-            <div className="text-[0.6rem] uppercase tracking-[0.15em] text-white/35">
-              Staffing gaps
-            </div>
-            <div
-              className={cn(
-                'mt-0.5 text-lg font-semibold tabular-nums',
-                stats.staffingGapCount > 0 ? 'text-amber-400' : 'text-white'
-              )}
-            >
-              {stats.staffingGapCount}
-            </div>
-          </div>
-        </div>
-
-        {/* Health breakdown (only if portfolio data exists) */}
-        {portfolio && (
-          <div>
-            <div className="text-[0.6rem] uppercase tracking-[0.15em] text-white/35">Health</div>
-            <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs">
-              {activeCount > 0 && (
-                <span className="flex items-center gap-1 text-emerald-400">
-                  <HealthDot health="green" /> {activeCount} active
-                </span>
-              )}
-              {atRiskCount > 0 && (
-                <span className="flex items-center gap-1 text-amber-400">
-                  <HealthDot health="amber" /> {atRiskCount} at risk
-                </span>
-              )}
-              {blockedCount > 0 && (
-                <span className="flex items-center gap-1 text-rose-400">
-                  <HealthDot health="red" /> {blockedCount} blocked
-                </span>
-              )}
-              {activeCount === 0 && atRiskCount === 0 && blockedCount === 0 && (
-                <span className="text-white/30">No active goals</span>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* View work links */}
-        <div className="space-y-1.5">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex h-11 shrink-0 items-center justify-between border-b border-zinc-800 px-4">
+        <div className="flex items-center gap-2 min-w-0">
+          <HealthDot health={stats.health} size="md" />
           <Link
-            href={`/goals?teamId=${selected}`}
-            className="flex items-center gap-1.5 text-sm text-white/55 hover:text-white/80 transition-colors"
+            href={`/company/teams/${selected}`}
+            className="truncate text-sm font-semibold text-zinc-100 hover:text-white transition"
           >
-            View goals <ExternalLink className="h-3 w-3" />
-          </Link>
-          <Link
-            href={`/tickets?team=${selected}`}
-            className="flex items-center gap-1.5 text-sm text-white/55 hover:text-white/80 transition-colors"
-          >
-            View tickets <ExternalLink className="h-3 w-3" />
+            {teamOrg.name}
           </Link>
           <Link
             href={`/company/teams/${selected}`}
-            className="flex items-center gap-1.5 text-sm text-white/55 hover:text-white/80 transition-colors"
+            className="shrink-0 rounded p-0.5 text-zinc-600 hover:text-white transition"
           >
-            Full team detail <ExternalLink className="h-3 w-3" />
+            <ChevronRight className="h-3 w-3" />
           </Link>
         </div>
+        <div className="flex items-center gap-1">
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              aria-label={`Open actions for ${teamOrg.name}`}
+              className="shrink-0 rounded p-1 text-zinc-500 transition hover:bg-white/[0.04] hover:text-white"
+            >
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={() => onDelete(selected, teamOrg.name)}
+              >
+                Delete team
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-        {/* Child teams */}
-        {childTeams.length > 0 && (
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="shrink-0 rounded p-1 text-zinc-500 hover:text-white transition"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="space-y-5 p-4">
           <div>
-            <div className="mb-1.5 text-[0.6rem] uppercase tracking-[0.15em] text-white/35">
-              Child teams
-            </div>
-            <div className="space-y-1">
-              {childTeams.map((child) => {
-                const childHealth = teamHealth(portfolioById.get(child.id))
-                return (
+            <EditableCharter teamId={selected} charter={teamOrg.charter} />
+            <LeadPicker teamId={selected} currentLead={teamOrg.lead} />
+          </div>
+
+          <section>
+            <button
+              type="button"
+              onClick={() => setPropertiesOpen((value) => !value)}
+              className="group flex w-full items-center gap-2 text-left"
+            >
+              <span className="text-[0.65rem] uppercase tracking-[0.2em] text-white/35">
+                Properties
+              </span>
+              <span className="text-xs text-white/25">{propertiesSummary}</span>
+              <ChevronDown
+                className={cn(
+                  'ml-auto h-3 w-3 shrink-0 text-white/25 transition-transform',
+                  propertiesOpen && 'rotate-180'
+                )}
+              />
+            </button>
+            {propertiesOpen ? (
+              <div className="mt-3 grid grid-cols-[84px_1fr] gap-y-2.5 text-sm">
+                <span className="text-white/30">Health</span>
+                <span className="inline-flex items-center gap-2 text-white/65">
+                  <HealthDot health={stats.health} />
+                  <span className="capitalize">{healthLabel(stats.health)}</span>
+                </span>
+
+                <span className="text-white/30">Reports to</span>
+                {parentTeam ? (
                   <button
-                    key={child.id}
-                    onClick={() => onSelect(child.id)}
-                    className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm text-white/65 hover:bg-white/[0.04] hover:text-white/85 transition"
+                    type="button"
+                    onClick={() => onSelect(parentTeam.id)}
+                    className="inline-flex items-center gap-1.5 text-left text-white/65 transition hover:text-white/85"
                   >
-                    <HealthDot health={childHealth} />
-                    <span className="flex-1 truncate">{child.name}</span>
+                    <span className="truncate">{parentTeam.name}</span>
                     <ChevronRight className="h-3 w-3 text-white/20" />
                   </button>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Agents with remove + add */}
-        <div>
-          <div className="mb-1.5 text-[0.6rem] uppercase tracking-[0.15em] text-white/35">
-            Agents
-          </div>
-          <div className="space-y-1">
-            {agents.map((agent) => (
-              <div
-                key={agent.id}
-                className="group flex items-center gap-2 px-2 py-1.5 text-sm text-white/65 hover:bg-white/[0.04] transition"
-              >
-                <Link
-                  href={`/agents/${agent.id}`}
-                  className="flex min-w-0 flex-1 items-center gap-2 transition-colors hover:text-white/85"
-                >
-                  {agent.emoji ? (
-                    <span className="text-xs">{agent.emoji}</span>
-                  ) : (
-                    <Bot className="h-3 w-3 text-white/30" />
-                  )}
-                  <span className="truncate">{agent.name}</span>
-                  {agent.isPrimary && (
-                    <span className="rounded bg-primary/15 px-1 py-px text-[0.5rem] font-medium text-primary">
-                      Primary
-                    </span>
-                  )}
-                </Link>
-                <button
-                  onClick={() => removeAgent.mutate({ agentId: agent.id, teamId: selected })}
-                  className="flex h-4 w-4 shrink-0 items-center justify-center rounded opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto hover:bg-white/10"
-                  title="Remove from team"
-                >
-                  <X className="h-3 w-3 text-white/30 hover:text-rose-400" />
-                </button>
+                ) : (
+                  <span className="text-white/25">Root team</span>
+                )}
               </div>
-            ))}
-            {agents.length === 0 && (
-              <div className="px-2 py-1 text-xs text-white/25">No agents assigned</div>
-            )}
-          </div>
-          <AgentAssignmentSection teamId={selected} currentAgentIds={agents.map((a) => a.id)} />
-        </div>
+            ) : null}
+          </section>
 
-        {/* Members */}
-        {portfolio && portfolio.members.length > 0 && (
-          <div>
-            <div className="mb-1.5 text-[0.6rem] uppercase tracking-[0.15em] text-white/35">
-              Members
-            </div>
-            <div className="space-y-1">
-              {portfolio.members.map((member) => (
-                <div
-                  key={member.id}
-                  className="flex items-center gap-2 px-2 py-1.5 text-sm text-white/65"
+          <section>
+            <button
+              type="button"
+              onClick={() => setPortfolioOpen((value) => !value)}
+              className="group flex w-full items-center gap-2 text-left"
+            >
+              <span className="text-[0.65rem] uppercase tracking-[0.2em] text-white/35">
+                Portfolio
+              </span>
+              <span className="text-xs text-white/25">{portfolioSummary}</span>
+              <ChevronDown
+                className={cn(
+                  'ml-auto h-3 w-3 shrink-0 text-white/25 transition-transform',
+                  portfolioOpen && 'rotate-180'
+                )}
+              />
+            </button>
+            {portfolioOpen ? (
+              <div className="mt-3 space-y-1">
+                <Link
+                  href={`/goals?teamId=${selected}`}
+                  className="group flex items-start justify-between gap-3 rounded-md px-2 py-1.5 transition hover:bg-white/[0.04]"
                 >
-                  {member.avatarUrl ? (
-                    <img src={member.avatarUrl} alt="" className="h-4 w-4 rounded-full" />
-                  ) : (
-                    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-zinc-800 text-[0.5rem] text-white/40">
-                      {member.name.charAt(0)}
-                    </span>
+                  <div className="min-w-0">
+                    <div className="text-sm text-white/70 transition group-hover:text-white/90">
+                      Goals
+                    </div>
+                    <div className="text-[0.65rem] text-white/35">
+                      {portfolio
+                        ? [
+                            `${portfolio.activeGoalCount} active`,
+                            atRiskCount > 0 ? `${atRiskCount} at risk` : null,
+                            blockedCount > 0 ? `${blockedCount} blocked` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ') || 'No active goals'
+                        : 'No active goals'}
+                    </div>
+                  </div>
+                  <ExternalLink className="mt-0.5 h-3 w-3 shrink-0 text-white/20 transition group-hover:text-white/45" />
+                </Link>
+
+                <Link
+                  href={`/tickets?team=${selected}`}
+                  className="group flex items-start justify-between gap-3 rounded-md px-2 py-1.5 transition hover:bg-white/[0.04]"
+                >
+                  <div className="min-w-0">
+                    <div className="text-sm text-white/70 transition group-hover:text-white/90">
+                      Tickets
+                    </div>
+                    <div className="text-[0.65rem] text-white/35">
+                      {portfolio
+                        ? [
+                            `${portfolio.queuedTicketCount} queued`,
+                            portfolio.blockedTicketCount > 0
+                              ? `${portfolio.blockedTicketCount} blocked`
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ') || 'No active tickets'
+                        : 'No active tickets'}
+                    </div>
+                  </div>
+                  <ExternalLink className="mt-0.5 h-3 w-3 shrink-0 text-white/20 transition group-hover:text-white/45" />
+                </Link>
+
+                {stats.staffingGapCount > 0 ? (
+                  <div className="rounded-md px-2 py-1.5 text-[0.65rem] text-amber-300/85">
+                    {stats.staffingGapCount} staffing gap{stats.staffingGapCount === 1 ? '' : 's'}{' '}
+                    in the current portfolio
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
+
+          {childTeams.length > 0 && (
+            <section>
+              <button
+                type="button"
+                onClick={() => setChildTeamsOpen((value) => !value)}
+                className="group flex w-full items-center gap-2 text-left"
+              >
+                <span className="text-[0.65rem] uppercase tracking-[0.2em] text-white/35">
+                  Child teams
+                </span>
+                <span className="text-xs text-white/25">{childTeams.length} reporting here</span>
+                <ChevronDown
+                  className={cn(
+                    'ml-auto h-3 w-3 shrink-0 text-white/25 transition-transform',
+                    childTeamsOpen && 'rotate-180'
                   )}
-                  <span className="truncate">{member.name}</span>
-                  {member.role && (
-                    <span className="text-[0.55rem] text-white/30">{member.role}</span>
-                  )}
+                />
+              </button>
+              {childTeamsOpen ? (
+                <div className="mt-3 space-y-1">
+                  {childTeams.map((child) => {
+                    const childHealth = teamHealth(portfolioById.get(child.id))
+                    return (
+                      <button
+                        key={child.id}
+                        onClick={() => onSelect(child.id)}
+                        className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm text-white/65 hover:bg-white/[0.04] hover:text-white/85 transition"
+                      >
+                        <HealthDot health={childHealth} />
+                        <span className="flex-1 truncate">{child.name}</span>
+                        <ChevronRight className="h-3 w-3 text-white/20" />
+                      </button>
+                    )
+                  })}
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </ScrollArea>
+              ) : null}
+            </section>
+          )}
+
+          <section>
+            <button
+              type="button"
+              onClick={() => setAgentsOpen((value) => !value)}
+              className="group flex w-full items-center gap-2 text-left"
+            >
+              <span className="text-[0.65rem] uppercase tracking-[0.2em] text-white/35">
+                Agents
+              </span>
+              <span className="text-xs text-white/25">
+                {agents.length > 0 ? `${agents.length} assigned` : 'No agents assigned'}
+              </span>
+              <ChevronDown
+                className={cn(
+                  'ml-auto h-3 w-3 shrink-0 text-white/25 transition-transform',
+                  agentsOpen && 'rotate-180'
+                )}
+              />
+            </button>
+            {agentsOpen ? (
+              <div className="mt-3 space-y-1">
+                {agents.map((agent) => (
+                  <div
+                    key={agent.id}
+                    className="group flex items-center gap-2 px-2 py-1.5 text-sm text-white/65 hover:bg-white/[0.04] transition"
+                  >
+                    <Link
+                      href={`/agents/${agent.id}`}
+                      className="flex min-w-0 flex-1 items-center gap-2 transition-colors hover:text-white/85"
+                    >
+                      {agent.emoji ? (
+                        <span className="text-xs">{agent.emoji}</span>
+                      ) : (
+                        <Bot className="h-3 w-3 text-white/30" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate">{agent.name}</span>
+                        </div>
+                        {agent.title ? (
+                          <div className="truncate text-[0.6rem] text-white/30">{agent.title}</div>
+                        ) : null}
+                      </div>
+                    </Link>
+                    <button
+                      onClick={() => removeAgent.mutate({ agentId: agent.id, teamId: selected })}
+                      className="flex h-4 w-4 shrink-0 items-center justify-center rounded opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto hover:bg-white/10"
+                      title="Remove from team"
+                    >
+                      <X className="h-3 w-3 text-white/30 hover:text-rose-400" />
+                    </button>
+                  </div>
+                ))}
+                {agents.length === 0 && (
+                  <div className="px-2 py-1 text-xs text-white/25">No agents assigned</div>
+                )}
+                <AgentAssignmentControl
+                  teamId={selected}
+                  currentAgentIds={agents.map((a) => a.id)}
+                />
+              </div>
+            ) : null}
+          </section>
+
+          {portfolio && members.length > 0 && (
+            <section>
+              <button
+                type="button"
+                onClick={() => setMembersOpen((value) => !value)}
+                className="group flex w-full items-center gap-2 text-left"
+              >
+                <span className="text-[0.65rem] uppercase tracking-[0.2em] text-white/35">
+                  Members
+                </span>
+                <span className="text-xs text-white/25">{members.length} people</span>
+                <ChevronDown
+                  className={cn(
+                    'ml-auto h-3 w-3 shrink-0 text-white/25 transition-transform',
+                    membersOpen && 'rotate-180'
+                  )}
+                />
+              </button>
+              {membersOpen ? (
+                <div className="mt-3 space-y-1">
+                  {members.map((member) => (
+                    <div
+                      key={member.id}
+                      className="flex items-center gap-2 px-2 py-1.5 text-sm text-white/65"
+                    >
+                      {member.avatarUrl ? (
+                        <img src={member.avatarUrl} alt="" className="h-4 w-4 rounded-full" />
+                      ) : (
+                        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-zinc-800 text-[0.5rem] text-white/40">
+                          {member.name.charAt(0)}
+                        </span>
+                      )}
+                      <span className="truncate">{member.name}</span>
+                      {member.role && (
+                        <span className="text-[0.55rem] text-white/30">{member.role}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          )}
+        </div>
+      </ScrollArea>
+    </div>
   )
 }
 
@@ -1096,17 +909,46 @@ function DetailPanel({
 // ---------------------------------------------------------------------------
 
 export function CompanyClient() {
+  const router = useRouter()
+  const pathname = usePathname()
   const utils = trpc.useUtils()
   const overviewQuery = trpc.company.getOverview.useQuery(undefined, {
     refetchInterval: 15_000,
   })
 
   // Shared tree hooks
-  const { selectedId: selected, setSelectedId: setSelected, clearSelection } = useTreeSelection<string>()
-  const { expandedIds: expanded, setExpandedIds: setExpanded, toggle: handleToggle } = useTreeExpand()
+  const {
+    selectedId: selected,
+    setSelectedId: setSelected,
+    clearSelection,
+  } = useTreeSelection<string>()
+  const isDesktop = useIsDesktop()
+
+  // On mobile, clicking a row navigates to the detail page instead of opening the side panel
+  const handleSelect = useCallback(
+    (id: string) => {
+      if (isDesktop) {
+        setSelected(id)
+      } else {
+        router.push(`/company/teams/${id}`)
+      }
+    },
+    [isDesktop, setSelected, router]
+  )
+  const {
+    expandedIds: expanded,
+    setExpandedIds: setExpanded,
+    toggle: handleToggle,
+  } = useTreeExpand()
 
   const [search, setSearch] = useState('')
   const [creatingRootTeam, setCreatingRootTeam] = useState(false)
+
+  const activeViewId = useMemo<'structure' | 'org_chart' | 'roles'>(() => {
+    if (pathname === '/company/roles') return 'roles'
+    if (pathname === '/company/org-chart') return 'org_chart'
+    return 'structure'
+  }, [pathname])
 
   // Mutations
   const moveTeam = trpc.company.moveTeam.useMutation({
@@ -1125,7 +967,7 @@ export function CompanyClient() {
             (t) => t.parentTeamId ?? null,
             (t) => t.sortOrder,
             (t, pid) => ({ ...t, parentTeamId: pid }),
-            (t, so) => ({ ...t, sortOrder: so }),
+            (t, so) => ({ ...t, sortOrder: so })
           ),
         })
       }
@@ -1173,7 +1015,9 @@ export function CompanyClient() {
   const organizationData = useMemo(() => data?.organization ?? [], [data?.organization])
   const teamData = useMemo(() => data?.teams ?? [], [data?.teams])
 
-  // Build tree structures
+  // Build tree structures — sort each group so optimistic sortOrder changes
+  // are immediately reflected (backend returns pre-sorted, but optimistic
+  // updates only mutate sortOrder values without reordering the array).
   const childrenByParent = useMemo(() => {
     const map = new Map<string | null, OrgTeamRow[]>()
     for (const team of organizationData) {
@@ -1181,6 +1025,9 @@ export function CompanyClient() {
       const group = map.get(key) ?? []
       group.push(team)
       map.set(key, group)
+    }
+    for (const group of map.values()) {
+      group.sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
     }
     return map
   }, [organizationData])
@@ -1191,6 +1038,16 @@ export function CompanyClient() {
   )
 
   const portfolioById = useMemo(() => new Map(teamData.map((t) => [t.id, t])), [teamData])
+  const statsByTeamId = useMemo(
+    () =>
+      new Map(
+        organizationData.map((team) => [
+          team.id,
+          aggregateStats(team.id, childrenByParent, portfolioById),
+        ])
+      ),
+    [childrenByParent, organizationData, portfolioById]
+  )
 
   // Build descendant map for drag/drop hook (Map<string, Set<string>>)
   const descendantMap = useMemo(() => {
@@ -1324,11 +1181,13 @@ export function CompanyClient() {
     return ids
   }, [filteredChildrenByParent, expanded])
 
+  useAutoSelectFirst(flatTeamIds[0], selected, setSelected)
+
   // Keyboard navigation
   useTreeKeyboardNav({
     flatIds: flatTeamIds,
     selectedId: selected,
-    onSelect: setSelected,
+    onSelect: handleSelect,
     onClear: clearSelection,
     onStartEdit: startEdit,
     onCreate: () => setCreatingRootTeam(true),
@@ -1346,6 +1205,24 @@ export function CompanyClient() {
     },
     [deleteTeamMut, childrenByParent]
   )
+
+  // Compute health distribution across root teams
+  const healthCounts = useMemo(() => {
+    const counts = { green: 0, amber: 0, red: 0, gray: 0 }
+    for (const team of organizationData) {
+      if (team.parentTeamId) continue // root teams only
+      const stats = statsByTeamId.get(team.id)
+      if (!stats) continue
+      counts[stats.health]++
+    }
+    return counts
+  }, [organizationData, statsByTeamId])
+
+  const totalGoals = useMemo(() => {
+    let count = 0
+    for (const t of teamData) count += t.activeGoalCount
+    return count
+  }, [teamData])
 
   // Loading state
   if (overviewQuery.isLoading || !data) {
@@ -1401,13 +1278,44 @@ export function CompanyClient() {
   function renderTree() {
     return (
       <div className="pb-32">
+        {/* Compact health summary */}
+        <div className="flex items-center gap-4 border-b border-zinc-800/40 px-4 py-2 text-xs text-zinc-500">
+          <span className="tabular-nums">{organizationData.length} teams</span>
+          <span className="tabular-nums">{totalGoals} goals</span>
+          <span className="mx-1 h-3 w-px bg-zinc-800" />
+          {healthCounts.green > 0 && (
+            <span className="flex items-center gap-1 tabular-nums">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              {healthCounts.green}
+            </span>
+          )}
+          {healthCounts.amber > 0 && (
+            <span className="flex items-center gap-1 tabular-nums">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400" />
+              {healthCounts.amber}
+            </span>
+          )}
+          {healthCounts.red > 0 && (
+            <span className="flex items-center gap-1 tabular-nums">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-rose-400" />
+              {healthCounts.red}
+            </span>
+          )}
+          {healthCounts.gray > 0 && (
+            <span className="flex items-center gap-1 tabular-nums">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-zinc-500" />
+              {healthCounts.gray}
+            </span>
+          )}
+        </div>
+
         {/* Root drop zone */}
         <TreeRootDropZone
           active={!!draggingId}
           isOver={rootDropOver}
           handlers={getRootDropHandlers()}
         />
-        <div className="space-y-0.5 p-2">
+        <div>
           {rootTeams.map((team) => (
             <OrgTreeRow
               key={team.id}
@@ -1418,12 +1326,11 @@ export function CompanyClient() {
               expandedIds={expanded}
               onToggle={handleToggle}
               selectedId={selected}
-              onSelect={setSelected}
+              onSelect={handleSelect}
               editingId={editingId}
               onStartEdit={startEdit}
               commitEdit={commitEdit}
               cancelEdit={cancelEdit}
-              onDelete={handleDelete}
               draggedId={draggingId}
               dragTargetId={dragTargetId}
               dropPosition={dropPosition}
@@ -1438,10 +1345,7 @@ export function CompanyClient() {
           {!draggingId && !search && (
             <>
               {creatingRootTeam ? (
-                <div
-                  className="flex items-center gap-2 px-2 py-1"
-                  style={{ paddingLeft: '36px' }}
-                >
+                <div className="flex items-center gap-2 px-2 py-1" style={{ paddingLeft: '36px' }}>
                   <Plus className="h-3 w-3 text-zinc-600" />
                   <InlineCreateInput
                     placeholder="Team name..."
@@ -1473,69 +1377,70 @@ export function CompanyClient() {
     )
   }
 
+  function renderOrgChart() {
+    return (
+      <div className="h-full min-h-0">
+        <CompanyOrgChart
+          rootTeams={rootTeams}
+          organizationById={organizationById}
+          childrenByParent={filteredChildrenByParent}
+          portfolioById={portfolioById}
+          statsByTeamId={statsByTeamId}
+          selectedId={selected}
+          onSelect={handleSelect}
+          onClearSelection={clearSelection}
+        />
+      </div>
+    )
+  }
+
+  function renderRoles() {
+    return <RolesView search={search} />
+  }
+
+  const toolbarHeader = (
+    <TreeToolbar
+      title="Company"
+      views={[
+        { id: 'structure', name: 'Structure', icon: GitBranch, href: '/company/structure' },
+        { id: 'org_chart', name: 'Org chart', icon: Network, href: '/company/org-chart' },
+        { id: 'roles', name: 'Roles', icon: Shield, href: '/company/roles' },
+      ]}
+      activeViewId={activeViewId}
+      viewStyle="pills"
+      search={search}
+      onSearchChange={setSearch}
+      searchPlaceholder={activeViewId === 'roles' ? 'Search roles...' : 'Search teams...'}
+      onCreateClick={activeViewId === 'roles' ? undefined : () => setCreatingRootTeam(true)}
+    />
+  )
+
   return (
     <div className="flex h-full flex-col">
-      {/* Toolbar */}
-      <TreeToolbar
-        search={search}
-        onSearchChange={setSearch}
-        searchPlaceholder="Search teams..."
-        onCreateClick={() => setCreatingRootTeam(true)}
-      />
-
-      {/* Breadcrumb context line */}
-      <TreeBreadcrumb
-        root="Company"
-        segments={search ? [{ label: 'Filtered', onClear: () => setSearch('') }] : []}
-        trailingContent={
-          <span className="tabular-nums text-zinc-600">
-            {organizationData.length} team{organizationData.length !== 1 ? 's' : ''}
-          </span>
+      <TreeDetailLayout
+        header={toolbarHeader}
+        tree={
+          activeViewId === 'org_chart'
+            ? renderOrgChart()
+            : activeViewId === 'roles'
+              ? renderRoles()
+              : renderTree()
+        }
+        treeScrollable={activeViewId === 'structure'}
+        detail={
+          activeViewId === 'structure' && selected ? (
+            <DetailPanel
+              selected={selected}
+              portfolioById={portfolioById}
+              organizationById={organizationById}
+              childrenByParent={childrenByParent}
+              onSelect={setSelected}
+              onClose={clearSelection}
+              onDelete={handleDelete}
+            />
+          ) : null
         }
       />
-
-      {/* Health legend + summary bar */}
-      <div className="space-y-3 px-4 pt-3">
-        <div className="flex items-center gap-3 text-[0.65rem] text-white/35">
-          <span className="flex items-center gap-1.5">
-            <HealthDot health="green" /> Healthy
-          </span>
-          <span className="flex items-center gap-1.5">
-            <HealthDot health="amber" /> At risk
-          </span>
-          <span className="flex items-center gap-1.5">
-            <HealthDot health="red" /> Blocked
-          </span>
-          <span className="flex items-center gap-1.5">
-            <HealthDot health="gray" /> No goals
-          </span>
-        </div>
-
-        <HealthSummaryBar
-          data={data}
-          portfolioById={portfolioById}
-          childrenByParent={childrenByParent}
-        />
-      </div>
-
-      {/* Main content: tree + detail panel */}
-      <div className="min-h-0 flex-1">
-        <TreeDetailLayout
-          tree={renderTree()}
-          detail={
-            selected ? (
-              <DetailPanel
-                selected={selected}
-                portfolioById={portfolioById}
-                organizationById={organizationById}
-                childrenByParent={childrenByParent}
-                onSelect={setSelected}
-              />
-            ) : null
-          }
-          detailWidth="400px"
-        />
-      </div>
     </div>
   )
 }

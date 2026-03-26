@@ -22,7 +22,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 interface FormValues {
   handle: string // @mention ID (slug)
   name: string // Display name
-  title: string // Role
+  roleId: string
   emoji?: string
   avatarUrl?: string
   teamId?: string
@@ -35,6 +35,8 @@ export function NewAgentClient() {
   const router = useRouter()
   const { data: teamsData } = trpc.org.listTeams.useQuery()
   const teams = useMemo(() => (teamsData ?? []) as { id: string; name: string }[], [teamsData])
+  const { data: rolesData } = trpc.company.listRoles.useQuery()
+  const roles = useMemo(() => (rolesData ?? []) as { id: string; name: string }[], [rolesData])
   const createAgent = trpc.org.createAgent.useMutation({
     onSuccess: (data: { id: string }) => {
       router.push(`/agents/${data.id}`)
@@ -45,7 +47,7 @@ export function NewAgentClient() {
     defaultValues: {
       handle: '',
       name: '',
-      title: '',
+      roleId: '',
       emoji: getRandomEmoji(),
       avatarUrl: '',
       teamId: '',
@@ -79,10 +81,10 @@ export function NewAgentClient() {
     createAgent.mutate({
       handle,
       name,
-      title: values.title?.trim() || null,
       emoji: values.emoji?.trim() || null,
       avatarUrl: values.avatarUrl?.trim() || null,
       teamId: values.teamId?.trim() || undefined,
+      roleId: values.roleId?.trim() || undefined,
     })
   })
 
@@ -127,12 +129,19 @@ export function NewAgentClient() {
             </p>
           </div>
 
-          {/* Title - the agent's role */}
+          {/* Role */}
           <div className="space-y-2">
-            <Label htmlFor="title">Title</Label>
-            <Input id="title" {...form.register('title')} placeholder="Sr Eng" />
+            <Label htmlFor="roleId">Role</Label>
+            <NativeSelect id="roleId" {...form.register('roleId')} className="w-full max-w-sm">
+              <NativeSelectOption value="">No role assigned</NativeSelectOption>
+              {roles.map((role) => (
+                <NativeSelectOption key={role.id} value={role.id}>
+                  {role.name}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
             <p className="text-xs text-muted-foreground">
-              The agent&apos;s role or job description (optional).
+              Defines this agent&apos;s permissions and policy (optional).
             </p>
           </div>
 

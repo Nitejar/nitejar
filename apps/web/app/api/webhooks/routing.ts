@@ -2,7 +2,7 @@ import {
   DEFAULT_QUEUE_CONFIG,
   type InboundActorEnvelope,
   type QueueConfig,
-} from '@nitejar/plugin-handlers'
+} from '@nitejar/plugin-handlers/types'
 import type { Agent } from '@nitejar/database'
 
 /** Per-agent stagger added on queued dispatch debounce to avoid simultaneous starts. */

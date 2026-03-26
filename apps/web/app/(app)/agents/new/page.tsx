@@ -1,11 +1,14 @@
 import Link from 'next/link'
+import { createPageMetadata } from '@/app/metadata'
+import { PageScrollShell } from '../../components/PageScrollShell'
 import { NewAgentClient } from './NewAgentClient'
 
 export const dynamic = 'force-dynamic'
+export const metadata = createPageMetadata('New Agent')
 
 export default function NewAgentPage() {
   return (
-    <div className="space-y-6">
+    <PageScrollShell className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-[0.65rem] uppercase tracking-[0.35em] text-muted-foreground">Agents</p>
@@ -20,6 +23,6 @@ export default function NewAgentPage() {
       </div>
 
       <NewAgentClient />
-    </div>
+    </PageScrollShell>
   )
 }

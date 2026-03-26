@@ -1,12 +1,15 @@
 import { Suspense } from 'react'
+import { createPageMetadata } from '@/app/metadata'
 import { PageHeader } from '../../../components/PageHeader'
+import { PageScrollShell } from '../../../components/PageScrollShell'
 import { GitHubManifestCallbackClient } from './GitHubManifestCallbackClient'
 
 export const dynamic = 'force-dynamic'
+export const metadata = createPageMetadata('GitHub Setup')
 
 export default function GitHubCallbackPage() {
   return (
-    <div className="space-y-6">
+    <PageScrollShell className="space-y-6">
       <PageHeader
         category="Plugins"
         title="GitHub App Callback"
@@ -23,6 +26,6 @@ export default function GitHubCallbackPage() {
       >
         <GitHubManifestCallbackClient />
       </Suspense>
-    </div>
+    </PageScrollShell>
   )
 }

@@ -1,10 +1,14 @@
+import { createPageMetadata } from '@/app/metadata'
 import { PageHeader } from '../components/PageHeader'
 import { ClientErrorBoundary } from '../components/ClientErrorBoundary'
+import { PageScrollShell } from '../components/PageScrollShell'
 import { CollectionsClient } from './CollectionsClient'
+
+export const metadata = createPageMetadata('Collections')
 
 export default function CollectionsPage() {
   return (
-    <div className="space-y-6">
+    <PageScrollShell className="space-y-6">
       <PageHeader
         category="Organization"
         title="Collections"
@@ -15,6 +19,6 @@ export default function CollectionsPage() {
       <ClientErrorBoundary label="Collections">
         <CollectionsClient />
       </ClientErrorBoundary>
-    </div>
+    </PageScrollShell>
   )
 }

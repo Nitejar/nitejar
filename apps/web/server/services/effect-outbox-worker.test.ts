@@ -78,11 +78,17 @@ vi.mock('@nitejar/database', () => ({
   getDb: mockGetDb,
 }))
 
-vi.mock('@nitejar/plugin-handlers', () => ({
+vi.mock('@nitejar/plugin-handlers/router', () => ({
   getPluginInstanceWithConfig: mockGetPluginInstanceWithConfig,
+}))
+
+vi.mock('@nitejar/plugin-handlers/registry', () => ({
   pluginHandlerRegistry: {
     get: mockPluginHandlerGet,
   },
+}))
+
+vi.mock('@nitejar/plugin-handlers/types', () => ({
   DEFAULT_QUEUE_CONFIG: {
     mode: 'steer',
     debounceMs: 2000,

@@ -1,6 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk'
-import { findAgentById } from '@nitejar/database'
-import { parseAgentConfig } from '../../config'
+import { assertAgentGrant } from '@nitejar/database'
 import {
   createEphemeralSandboxForAgent,
   deleteAgentSandboxByName,
@@ -145,24 +144,17 @@ export const createEphemeralSandboxTool: ToolHandler = async (input, context) =>
     return { success: false, error: 'Missing agent identity.' }
   }
 
-  const agent = await findAgentById(context.agentId)
-  if (!agent) {
-    return { success: false, error: 'Agent not found.' }
-  }
-
-  const config = parseAgentConfig(agent.config)
-  if (config.allowEphemeralSandboxCreation !== true && config.dangerouslyUnrestricted !== true) {
-    return {
-      success: false,
-      error: 'Ephemeral sandbox creation is disabled for this agent.',
-    }
-  }
-
   const name = typeof input.name === 'string' ? input.name : ''
   const description = typeof input.description === 'string' ? input.description : ''
   const switchTo = input.switch_to !== false
 
   try {
+    await assertAgentGrant({
+      agentId: context.agentId,
+      action: 'sandbox.ephemeral.create',
+      resourceType: '*',
+    })
+
     const sandbox = await createEphemeralSandboxForAgent(context.agentId, {
       name,
       description,
@@ -204,6 +196,12 @@ export const deleteSandboxTool: ToolHandler = async (input, context) => {
   }
 
   try {
+    await assertAgentGrant({
+      agentId: context.agentId,
+      action: 'sandbox.ephemeral.create',
+      resourceType: '*',
+    })
+
     const deleted = await deleteAgentSandboxByName(context.agentId, sandboxName)
     const shouldSwitchHome = context.activeSandboxName === deleted.name
 

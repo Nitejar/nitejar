@@ -1,6 +1,6 @@
 import { createGitHubClientWithToken } from '@nitejar/connectors-github'
 import { getDb } from '@nitejar/database'
-import { GitHubCredentialProvider } from '@nitejar/plugin-handlers'
+import { GitHubCredentialProvider } from '@nitejar/plugin-handlers/github/credential-provider'
 import { z } from 'zod'
 
 export type RoutineConditionProbe =

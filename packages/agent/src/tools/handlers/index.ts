@@ -27,7 +27,7 @@ import {
   listSandboxesTool,
   switchSandboxTool,
 } from './sandboxes'
-import { getSelfConfigTool } from './self-config'
+import { getSelfConfigTool, getSelfPolicyTool } from './self-config'
 import {
   createServiceTool,
   getSpriteUrlTool,
@@ -66,12 +66,26 @@ import {
 } from './platform-control'
 import {
   claimTicketTool,
+  createGoalTool,
+  createTicketTool,
+  deleteGoalTool,
+  deleteTicketTool,
   getTicketTool,
   postWorkUpdateTool,
   searchGoalsTool,
   searchTicketsTool,
   updateTicketTool,
 } from './work'
+import { listTeamsTool, getTeamTool, createTeamTool, updateTeamTool, deleteTeamTool } from './teams'
+import {
+  assignRoleTool,
+  createRoleTool,
+  deleteRoleTool,
+  getRoleTool,
+  listRolesTool,
+  unassignRoleTool,
+  updateRoleTool,
+} from './policy'
 import type { ToolHandler } from '../types'
 
 export const toolHandlers: Record<string, ToolHandler> = {
@@ -92,6 +106,7 @@ export const toolHandlers: Record<string, ToolHandler> = {
   manage_service: manageServiceTool,
   get_sprite_url: getSpriteUrlTool,
   get_self_config: getSelfConfigTool,
+  get_self_policy: getSelfPolicyTool,
   list_sandboxes: listSandboxesTool,
   switch_sandbox: switchSandboxTool,
   create_ephemeral_sandbox: createEphemeralSandboxTool,
@@ -140,6 +155,22 @@ export const toolHandlers: Record<string, ToolHandler> = {
   claim_ticket: claimTicketTool,
   update_ticket: updateTicketTool,
   post_work_update: postWorkUpdateTool,
+  create_goal: createGoalTool,
+  delete_goal: deleteGoalTool,
+  create_ticket: createTicketTool,
+  delete_ticket: deleteTicketTool,
+  list_teams: listTeamsTool,
+  get_team: getTeamTool,
+  create_team: createTeamTool,
+  update_team: updateTeamTool,
+  delete_team: deleteTeamTool,
+  list_roles: listRolesTool,
+  get_role: getRoleTool,
+  create_role: createRoleTool,
+  update_role: updateRoleTool,
+  delete_role: deleteRoleTool,
+  assign_role: assignRoleTool,
+  unassign_role: unassignRoleTool,
   // Intentionally disabled: private agent DMs are off while we stabilize
   // public-channel inter-agent communication and routing receipts.
   list_runs: listRunsTool,

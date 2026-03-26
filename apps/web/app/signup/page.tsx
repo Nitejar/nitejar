@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { getDb } from '@nitejar/database'
+import { createPageMetadata } from '@/app/metadata'
 import { signUpApprovedDomainAction } from '@/app/actions/auth'
 import { getServerSession } from '@/lib/auth-server'
 import { getAuthSignupPolicy } from '@/server/services/auth-signup-policy'
@@ -10,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 
 export const dynamic = 'force-dynamic'
+export const metadata = createPageMetadata('Sign Up')
 
 type PageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>

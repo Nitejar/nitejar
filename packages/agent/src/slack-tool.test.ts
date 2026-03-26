@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ToolContext } from './tools/types'
 import type { PluginInstanceRecord } from '@nitejar/database'
 import * as Database from '@nitejar/database'
-import type * as Handlers from '@nitejar/plugin-handlers'
-import { SlackApiError } from '@nitejar/plugin-handlers'
+import type * as SlackHandlers from '@nitejar/plugin-handlers/slack'
+import { SlackApiError } from '@nitejar/plugin-handlers/slack'
 
 import './integrations/slack'
 import { extractIntegrationTools, resolveIntegrationProviders } from './integrations/registry'
@@ -39,8 +39,8 @@ vi.mock('@nitejar/database', async () => {
   }
 })
 
-vi.mock('@nitejar/plugin-handlers', async () => {
-  const actual = await vi.importActual<typeof Handlers>('@nitejar/plugin-handlers')
+vi.mock('@nitejar/plugin-handlers/slack', async () => {
+  const actual = await vi.importActual<typeof SlackHandlers>('@nitejar/plugin-handlers/slack')
   return {
     ...actual,
     createSlackClient: createSlackClientMock,

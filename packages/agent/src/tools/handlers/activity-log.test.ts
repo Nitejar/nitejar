@@ -25,6 +25,8 @@ function makeEntry(overrides: Partial<ActivityLogEntry> = {}): ActivityLogEntry 
     agent_handle: 'scout',
     job_id: 'job-1',
     session_key: null,
+    goal_id: null,
+    goal_snapshot_json: null,
     status: 'completed',
     summary: 'Triaging issue',
     final_summary: null,
@@ -32,7 +34,7 @@ function makeEntry(overrides: Partial<ActivityLogEntry> = {}): ActivityLogEntry 
     embedding: null,
     created_at: Math.floor(Date.now() / 1000) - 60,
     ...overrides,
-  }
+  } as ActivityLogEntry
 }
 
 describe('queryActivityTool', () => {

@@ -8,7 +8,7 @@ import {
   setAgentPluginInstanceAssignment,
   updatePluginInstance,
 } from '@nitejar/database'
-import { pluginHandlerRegistry } from '@nitejar/plugin-handlers'
+import { pluginHandlerRegistry } from '@nitejar/plugin-handlers/registry'
 import type {
   GetPluginInstanceInput,
   ListPluginInstancesInput,

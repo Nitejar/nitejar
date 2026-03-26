@@ -225,17 +225,16 @@ describe('computeDropResult (sparse sort_orders)', () => {
     ],
   }
   const sparseParent = (_id: string) => null
-  const sparseSiblings = (parentId: string | null) =>
-    sparseChildren[parentId ?? '__root__'] ?? []
+  const sparseSiblings = (parentId: string | null) => sparseChildren[parentId ?? '__root__'] ?? []
 
-  it('before Y → sortOrder 3 (Y\'s actual value), NOT 1 (array index)', () => {
+  it("before Y → sortOrder 3 (Y's actual value), NOT 1 (array index)", () => {
     expect(computeDropResult('before', 'Y', sparseParent, sparseSiblings)).toEqual({
       targetParentId: null,
       sortOrder: 3,
     })
   })
 
-  it('after Y → sortOrder 4 (Y\'s value + 1), NOT 2 (index + 1)', () => {
+  it("after Y → sortOrder 4 (Y's value + 1), NOT 2 (index + 1)", () => {
     expect(computeDropResult('after', 'Y', sparseParent, sparseSiblings)).toEqual({
       targetParentId: null,
       sortOrder: 4,
@@ -278,14 +277,24 @@ describe('computeDropResult (sparse sort_orders)', () => {
 describe('computeDropResult edge cases', () => {
   it('target not in sibling list → sortOrder null', () => {
     expect(
-      computeDropResult('before', 'UNKNOWN', () => null, () => [
-        { id: 'A', sortOrder: 0 },
-      ])
+      computeDropResult(
+        'before',
+        'UNKNOWN',
+        () => null,
+        () => [{ id: 'A', sortOrder: 0 }]
+      )
     ).toEqual({ targetParentId: null, sortOrder: null })
   })
 
   it('empty sibling list → sortOrder null', () => {
-    expect(computeDropResult('after', 'A', () => null, () => [])).toEqual({
+    expect(
+      computeDropResult(
+        'after',
+        'A',
+        () => null,
+        () => []
+      )
+    ).toEqual({
       targetParentId: null,
       sortOrder: null,
     })
@@ -314,7 +323,17 @@ describe('applyOptimisticReorder', () => {
   ]
 
   it('moves item to new parent with sortOrder null (append)', () => {
-    const result = applyOptimisticReorder(items, 'C', 'A', null, getId, getParent, getSort, setParent, setSort)
+    const result = applyOptimisticReorder(
+      items,
+      'C',
+      'A',
+      null,
+      getId,
+      getParent,
+      getSort,
+      setParent,
+      setSort
+    )
     const c = result.find((i) => i.id === 'C')!
     expect(c.parentId).toBe('A')
     expect(c.sortOrder).toBe(2) // after A1(0) and A2(1)
@@ -322,7 +341,17 @@ describe('applyOptimisticReorder', () => {
 
   it('moves item before a sibling (shifts others)', () => {
     // Move C before B (sortOrder 1 at root)
-    const result = applyOptimisticReorder(items, 'C', null, 1, getId, getParent, getSort, setParent, setSort)
+    const result = applyOptimisticReorder(
+      items,
+      'C',
+      null,
+      1,
+      getId,
+      getParent,
+      getSort,
+      setParent,
+      setSort
+    )
     const c = result.find((i) => i.id === 'C')!
     const b = result.find((i) => i.id === 'B')!
     expect(c.sortOrder).toBe(1)
@@ -331,7 +360,17 @@ describe('applyOptimisticReorder', () => {
 
   it('does not shift items below the target sortOrder', () => {
     // Move C to sortOrder 1 at root — A(0) should be untouched
-    const result = applyOptimisticReorder(items, 'C', null, 1, getId, getParent, getSort, setParent, setSort)
+    const result = applyOptimisticReorder(
+      items,
+      'C',
+      null,
+      1,
+      getId,
+      getParent,
+      getSort,
+      setParent,
+      setSort
+    )
     const a = result.find((i) => i.id === 'A')!
     expect(a.sortOrder).toBe(0)
   })
@@ -343,7 +382,17 @@ describe('applyOptimisticReorder', () => {
       { id: 'Z', parentId: null, sortOrder: 10 },
     ]
     // Move Z before Y (sortOrder 5)
-    const result = applyOptimisticReorder(sparse, 'Z', null, 5, getId, getParent, getSort, setParent, setSort)
+    const result = applyOptimisticReorder(
+      sparse,
+      'Z',
+      null,
+      5,
+      getId,
+      getParent,
+      getSort,
+      setParent,
+      setSort
+    )
     expect(result.find((i) => i.id === 'Z')!.sortOrder).toBe(5)
     expect(result.find((i) => i.id === 'Y')!.sortOrder).toBe(6) // shifted
     expect(result.find((i) => i.id === 'X')!.sortOrder).toBe(0) // untouched

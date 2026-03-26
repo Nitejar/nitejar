@@ -13,7 +13,7 @@ import {
   inferMimeType,
   telegramHandler,
   type TelegramConfig,
-} from '@nitejar/plugin-handlers'
+} from '@nitejar/plugin-handlers/telegram'
 import { spriteExec } from '@nitejar/sprites'
 import type { ToolHandler } from '../tools/types'
 import { registerIntegrationProvider, type PromptSection } from './registry'

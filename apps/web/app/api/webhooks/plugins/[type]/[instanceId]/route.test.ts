@@ -71,18 +71,32 @@ const {
   }
 })
 
-vi.mock('@nitejar/plugin-handlers', () => ({
+vi.mock('@nitejar/plugin-handlers/router', () => ({
   routeWebhook: mockRouteWebhook,
   getPluginInstanceWithConfig: mockGetPluginInstanceWithConfig,
+}))
+
+vi.mock('@nitejar/plugin-handlers/registry', () => ({
+  pluginHandlerRegistry: {
+    get: mockPluginHandlerGet,
+    has: vi.fn(() => true),
+    register: vi.fn(),
+  },
+}))
+
+vi.mock('@nitejar/plugin-handlers', () => ({
   DEFAULT_QUEUE_CONFIG: {
     mode: 'steer',
     debounceMs: 1000,
     maxQueued: 10,
   },
-  pluginHandlerRegistry: {
-    get: mockPluginHandlerGet,
-    has: vi.fn(() => true),
-    register: vi.fn(),
+}))
+
+vi.mock('@nitejar/plugin-handlers/types', () => ({
+  DEFAULT_QUEUE_CONFIG: {
+    mode: 'steer',
+    debounceMs: 1000,
+    maxQueued: 10,
   },
 }))
 

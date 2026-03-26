@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import {
   getDb,
+  listAgentRoleAssignments,
   createAgent,
   createAgentSandbox,
   createCostLimit,
@@ -8,9 +9,17 @@ import {
   deleteAgent,
   findAgentByHandle,
   findAgentById,
+  findRoleBySlug,
   getPluginInstancesForAgent,
   listCostLimitsForAgent,
+  listRoleGrants,
+  listRoleDefaults,
   listPermanentMemories,
+  resolveEffectivePolicy,
+  assignRoleToAgent,
+  replaceRoleGrants,
+  replaceRoleDefaults,
+  createRole,
   updateAgent,
 } from '@nitejar/database'
 import {
@@ -21,8 +30,8 @@ import {
 } from '@nitejar/agent/config'
 import { DEFAULT_NETWORK_POLICY, getPolicyStatus } from '@nitejar/agent/network-policy'
 import { createInviteToken, hashInviteToken } from '@/lib/invitations'
-import { AgentProfileV1Schema, MAX_SUPPORTED_FORMAT_VERSION } from '@/lib/agent-profile'
-import type { AgentProfileV1 } from '@/lib/agent-profile'
+import { AgentProfileSchema, MAX_SUPPORTED_FORMAT_VERSION } from '@/lib/agent-profile'
+import type { AgentProfileV2 } from '@/lib/agent-profile'
 import { getModelCatalogRecordByExternalId } from '../services/model-catalog'
 import { protectedProcedure, router } from '../trpc'
 
@@ -37,6 +46,148 @@ const emailSchema = z
   .trim()
   .email()
   .transform((value) => value.toLowerCase())
+
+function parsePolicyJsonValue(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown
+  } catch {
+    return value
+  }
+}
+
+async function buildExportedPolicy(agentId: string): Promise<AgentProfileV2['policy']> {
+  const resolved = await resolveEffectivePolicy(agentId)
+  const directRoleAssignments = await listAgentRoleAssignments(agentId)
+  const roleSlugs = [...new Set(resolved.roles.map((role) => role.slug))]
+
+  const roleDetails = await Promise.all(
+    roleSlugs.map(async (slug) => {
+      const role = await findRoleBySlug(slug)
+      if (!role) return null
+      const [grants, defaults] = await Promise.all([
+        listRoleGrants(role.id),
+        listRoleDefaults(role.id),
+      ])
+      return {
+        slug: role.slug,
+        name: role.name,
+        charter: role.charter,
+        jobDescription: role.job_description,
+        escalationPosture: role.escalation_posture,
+        active: role.active === 1,
+        grants: grants.map((g) => ({
+          action: g.action,
+          resourceType: g.resource_type,
+          resourceId: g.resource_id,
+        })),
+        defaults: defaults.map((d) => ({
+          key: d.key,
+          value: parsePolicyJsonValue(d.value_json),
+        })),
+      }
+    })
+  )
+
+  return {
+    assignedRoleSlugs: directRoleAssignments.map((assignment) => assignment.role.slug),
+    roles: roleDetails.filter((role): role is NonNullable<typeof role> => role !== null),
+    resolvedPolicy: {
+      grants: resolved.grants.map((grant) => ({
+        action: grant.action,
+        resourceType: grant.resourceType,
+        resourceId: grant.resourceId,
+      })),
+      defaults: resolved.defaults.map((entry) => ({
+        key: entry.key,
+        value: entry.value,
+      })),
+    },
+  }
+}
+
+async function importPolicyForAgent(agentId: string, policy: AgentProfileV2['policy'] | undefined) {
+  if (!policy) return
+
+  if (policy.roles) {
+    for (const role of policy.roles) {
+      let targetRole = await findRoleBySlug(role.slug)
+      if (!targetRole) {
+        targetRole = await createRole({
+          slug: role.slug,
+          name: role.name,
+          charter: role.charter ?? null,
+          job_description: role.jobDescription ?? null,
+          escalation_posture: role.escalationPosture ?? null,
+          active: role.active === false ? 0 : 1,
+        })
+      }
+
+      if (role.grants) {
+        await replaceRoleGrants(
+          targetRole.id,
+          role.grants.map((g) => ({
+            action: g.action,
+            resource_type: g.resourceType ?? null,
+            resource_id: g.resourceId ?? null,
+          }))
+        )
+      }
+      if (role.defaults) {
+        await replaceRoleDefaults(
+          targetRole.id,
+          normalizePolicyDefaults(role.defaults).map((d) => ({
+            key: d.key,
+            value_json: JSON.stringify(d.value),
+          }))
+        )
+      }
+    }
+  }
+
+  const assignedSlugs = [...new Set(policy.assignedRoleSlugs ?? [])]
+  for (const slug of assignedSlugs) {
+    const role = await findRoleBySlug(slug)
+    if (role) {
+      await assignRoleToAgent(agentId, role.id)
+    }
+  }
+
+  if (assignedSlugs.length === 0 && policy.resolvedPolicy) {
+    const importedRole = await createRole({
+      slug: `imported_role_${agentId}`,
+      name: 'Imported Policy Role',
+      charter: 'Materialized from an imported agent profile.',
+      job_description: null,
+      escalation_posture: null,
+      active: 1,
+    })
+    await replaceRoleGrants(
+      importedRole.id,
+      (policy.resolvedPolicy.grants ?? []).map((g) => ({
+        action: g.action,
+        resource_type: g.resourceType ?? null,
+        resource_id: g.resourceId ?? null,
+      }))
+    )
+    await replaceRoleDefaults(
+      importedRole.id,
+      normalizePolicyDefaults(policy.resolvedPolicy.defaults).map((d) => ({
+        key: d.key,
+        value_json: JSON.stringify(d.value),
+      }))
+    )
+    await assignRoleToAgent(agentId, importedRole.id)
+  }
+}
+
+function normalizePolicyDefaults(
+  defaults: Array<{ key: string; value?: unknown }> | undefined
+): Array<{ key: string; value: unknown }> {
+  return (defaults ?? []).map((entry) => ({
+    key: entry.key,
+    value: entry.value ?? null,
+  }))
+}
 
 export const orgRouter = router({
   listMembers: protectedProcedure.query(async () => {
@@ -208,11 +359,14 @@ export const orgRouter = router({
     const agentLinks = await db
       .selectFrom('agent_teams')
       .innerJoin('agents', 'agents.id', 'agent_teams.agent_id')
+      .leftJoin('agent_role_assignments', 'agent_role_assignments.agent_id', 'agents.id')
+      .leftJoin('roles', 'roles.id', 'agent_role_assignments.role_id')
       .select([
         'agent_teams.team_id as team_id',
         'agents.id as agent_id',
         'agents.name as agent_name',
         'agents.config as agent_config',
+        'roles.name as role_name',
       ])
       .execute()
 
@@ -227,7 +381,7 @@ export const orgRouter = router({
       name: string
       emoji: string | null
       avatarUrl: string | null
-      title: string | null
+      roleName: string | null
     }
 
     const membersByTeam = new Map<string, TeamMember[]>()
@@ -251,7 +405,7 @@ export const orgRouter = router({
         name: link.agent_name,
         emoji: parsed.emoji ?? null,
         avatarUrl: parsed.avatarUrl ?? null,
-        title: parsed.title ?? null,
+        roleName: link.role_name ?? null,
       })
       agentsByTeam.set(link.team_id, list)
     })
@@ -337,7 +491,22 @@ export const orgRouter = router({
 
   listAgents: protectedProcedure.query(async () => {
     const db = getDb()
-    const agents = await db.selectFrom('agents').selectAll().orderBy('created_at', 'desc').execute()
+    const agents = await db
+      .selectFrom('agents')
+      .leftJoin('agent_role_assignments', 'agent_role_assignments.agent_id', 'agents.id')
+      .leftJoin('roles', 'roles.id', 'agent_role_assignments.role_id')
+      .select([
+        'agents.id',
+        'agents.handle',
+        'agents.name',
+        'agents.status',
+        'agents.sprite_id',
+        'agents.config',
+        'roles.id as role_id',
+        'roles.name as role_name',
+      ])
+      .orderBy('agents.created_at', 'desc')
+      .execute()
 
     return agents.map((agent) => {
       const config = parseAgentConfig(agent.config)
@@ -347,7 +516,8 @@ export const orgRouter = router({
         name: agent.name,
         status: agent.status,
         spriteId: agent.sprite_id,
-        title: config.title ?? null,
+        roleId: agent.role_id ?? null,
+        roleName: agent.role_name ?? null,
         emoji: config.emoji ?? null,
         avatarUrl: config.avatarUrl ?? null,
         policyStatus: getPolicyStatus(config.networkPolicy),
@@ -360,10 +530,10 @@ export const orgRouter = router({
       z.object({
         handle: z.string().trim().min(1), // @mention ID (slug)
         name: z.string().trim().min(1), // Display name
-        title: z.string().trim().optional().nullable(), // Role
         emoji: z.string().trim().optional().nullable(),
         avatarUrl: z.string().url().optional().nullable(),
         teamId: z.string().optional().nullable(),
+        roleId: z.string().trim().optional().nullable(),
       })
     )
     .mutation(async ({ input }) => {
@@ -378,7 +548,6 @@ export const orgRouter = router({
           passiveUpdatesEnabled: true,
         },
         allowEphemeralSandboxCreation: true,
-        title: input.title ?? undefined,
         emoji: input.emoji ?? undefined,
         avatarUrl: input.avatarUrl ?? undefined,
         networkPolicy: {
@@ -413,10 +582,13 @@ export const orgRouter = router({
           .values({
             team_id: input.teamId,
             agent_id: agent.id,
-            is_primary: 0,
             created_at: now(),
           })
           .execute()
+      }
+
+      if (input.roleId) {
+        await assignRoleToAgent(agent.id, input.roleId)
       }
 
       return { id: agent.id }
@@ -439,7 +611,6 @@ export const orgRouter = router({
           .values({
             team_id: input.teamId,
             agent_id: input.agentId,
-            is_primary: 0,
             created_at: now(),
           })
           .execute()
@@ -496,7 +667,6 @@ export const orgRouter = router({
       z.object({
         id: z.string(),
         name: z.string().trim().optional().nullable(),
-        title: z.string().trim().optional().nullable(),
         emoji: z.string().trim().optional().nullable(),
         avatarUrl: z.string().url().optional().nullable(),
       })
@@ -509,7 +679,6 @@ export const orgRouter = router({
       const config = parseAgentConfig(agent.config)
       const updatedConfig = serializeAgentConfig({
         ...config,
-        title: input.title ?? config.title,
         emoji: input.emoji ?? config.emoji,
         avatarUrl: input.avatarUrl ?? config.avatarUrl,
       })
@@ -643,9 +812,9 @@ export const orgRouter = router({
         .where('enabled', '=', 1)
         .execute()
 
-      const profile: AgentProfileV1 = {
-        $schema: 'https://nitejar.dev/schemas/agent-profile/v1.json',
-        formatVersion: 1,
+      const profile: AgentProfileV2 = {
+        $schema: 'https://nitejar.dev/schemas/agent-profile/v2.json',
+        formatVersion: 2,
         exportedAt: new Date().toISOString(),
         exportedFrom: 'nitejar/1.0.0',
 
@@ -677,6 +846,7 @@ export const orgRouter = router({
           allowRoutineManagement: config.allowRoutineManagement,
           dangerouslyUnrestricted: config.dangerouslyUnrestricted,
         },
+        policy: await buildExportedPolicy(agent.id),
 
         pluginRequirements: pluginInstances.map((pi) => ({
           pluginId: pi.type,
@@ -701,7 +871,7 @@ export const orgRouter = router({
       }
 
       // Strip undefined values for clean output
-      const clean = JSON.parse(JSON.stringify(profile)) as AgentProfileV1
+      const clean = JSON.parse(JSON.stringify(profile)) as AgentProfileV2
 
       return {
         profile: clean,
@@ -744,7 +914,7 @@ export const orgRouter = router({
       }
 
       // Try Zod parse
-      const parseResult = AgentProfileV1Schema.safeParse(raw)
+      const parseResult = AgentProfileSchema.safeParse(raw)
       if (!parseResult.success) {
         for (const issue of parseResult.error.issues) {
           errors.push(`${issue.path.join('.')}: ${issue.message}`)
@@ -859,7 +1029,7 @@ export const orgRouter = router({
   importAgentProfile: protectedProcedure
     .input(
       z.object({
-        profile: AgentProfileV1Schema,
+        profile: AgentProfileSchema,
         handleOverride: z.string().trim().min(1).optional(),
         modelOverride: z.string().trim().min(1).optional(),
         teamId: z.string().optional(),
@@ -959,7 +1129,6 @@ export const orgRouter = router({
           .values({
             team_id: input.teamId,
             agent_id: agent.id,
-            is_primary: 0,
             created_at: now(),
           })
           .execute()
@@ -1027,6 +1196,10 @@ export const orgRouter = router({
               .execute()
           }
         }
+      }
+
+      if (profile.formatVersion === 2) {
+        await importPolicyForAgent(agent.id, profile.policy)
       }
 
       return { agentId: agent.id }

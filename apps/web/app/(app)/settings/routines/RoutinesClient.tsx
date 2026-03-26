@@ -877,11 +877,47 @@ export function RoutinesClient() {
                           onClick={() => setSelectedRoutineId(isSelected ? null : routine.id)}
                         >
                           <td className="px-3 py-2">
-                            <div className="font-medium text-foreground">{routine.name}</div>
-                            <div className="text-xs text-muted-foreground">{routine.id}</div>
+                            <div className="font-medium text-foreground">
+                              {routine.linkedGoal?.exists ? (
+                                <Link
+                                  href={`/goals/${routine.linkedGoal.id}`}
+                                  className="hover:text-primary hover:underline"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {routine.linkedGoal.title ?? routine.name}
+                                </Link>
+                              ) : (
+                                (routine.linkedGoal?.title ?? routine.name)
+                              )}
+                            </div>
+                            {routine.linkedGoal ? (
+                              <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+                                <span className="rounded bg-sky-500/10 px-1.5 py-0.5 text-[0.65rem] font-medium uppercase tracking-wide text-sky-300/85">
+                                  Goal heartbeat
+                                </span>
+                                {!routine.linkedGoal.exists ? (
+                                  <span className="text-muted-foreground/70">
+                                    Goal {routine.linkedGoal.id} no longer exists
+                                  </span>
+                                ) : null}
+                              </div>
+                            ) : (
+                              <div className="mt-1 text-xs text-muted-foreground">{routine.id}</div>
+                            )}
                           </td>
                           <td className="px-3 py-2 text-xs text-muted-foreground">
-                            {routine.agentName ?? routine.agent_id}
+                            <Link
+                              href={`/agents/${routine.agent_id}`}
+                              className="text-primary hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {routine.agentName ?? routine.agent_id}
+                            </Link>
+                            {routine.agentHandle ? (
+                              <div className="mt-1 text-muted-foreground/70">
+                                @{routine.agentHandle}
+                              </div>
+                            ) : null}
                           </td>
                           <td className="px-3 py-2">
                             <TriggerBadge
@@ -897,7 +933,16 @@ export function RoutinesClient() {
                             )}
                           </td>
                           <td className="px-3 py-2 text-xs text-muted-foreground">
-                            {routine.last_status ?? 'n/a'}
+                            <div>{routine.last_status ?? 'n/a'}</div>
+                            {routine.lastActivity ? (
+                              <Link
+                                href={`/work-items/${routine.lastActivity.workItemId}`}
+                                className="mt-1 inline-block text-primary hover:underline"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                Last activity
+                              </Link>
+                            ) : null}
                           </td>
                           <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                             <Switch

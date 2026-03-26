@@ -144,7 +144,7 @@ function AgentDetailPanel({ agent, onClose }: { agent: AgentData; onClose: () =>
           <AgentAvatar emoji={agent.emoji} avatarUrl={agent.avatarUrl} name={agent.name} />
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold text-zinc-100">{agent.name}</h2>
-            {agent.title && <p className="truncate text-xs text-zinc-500">{agent.title}</p>}
+            {agent.roleName && <p className="truncate text-xs text-zinc-500">{agent.roleName}</p>}
           </div>
         </div>
         <button
@@ -373,7 +373,7 @@ export function AgentsTable({ agents, teams }: AgentsTableProps) {
         (agent) =>
           agent.name.toLowerCase().includes(query) ||
           agent.handle.toLowerCase().includes(query) ||
-          agent.title?.toLowerCase().includes(query) ||
+          agent.roleName?.toLowerCase().includes(query) ||
           agent.teamNames.some((team) => team.toLowerCase().includes(query))
       )
     }

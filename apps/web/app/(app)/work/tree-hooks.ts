@@ -4,6 +4,26 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 // ---------------------------------------------------------------------------
+// 0. useIsDesktop — matches lg breakpoint (1024px) for inbox layout
+// ---------------------------------------------------------------------------
+
+const LG_BREAKPOINT = 1024
+
+export function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(true)
+
+  useEffect(() => {
+    const mq = window.matchMedia(`(min-width: ${LG_BREAKPOINT}px)`)
+    setIsDesktop(mq.matches)
+    const handler = () => setIsDesktop(mq.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+
+  return isDesktop
+}
+
+// ---------------------------------------------------------------------------
 // 1. useTreeSelection
 // ---------------------------------------------------------------------------
 
@@ -11,6 +31,25 @@ export function useTreeSelection<T extends string = string>() {
   const [selectedId, setSelectedId] = useState<T | null>(null)
   const clearSelection = useCallback(() => setSelectedId(null), [])
   return { selectedId, setSelectedId, clearSelection } as const
+}
+
+/**
+ * Auto-select the first item in a list on desktop when nothing is selected.
+ * Call after data loads. Only fires once.
+ */
+export function useAutoSelectFirst(
+  firstId: string | undefined,
+  selectedId: string | null,
+  setSelectedId: (id: string) => void
+) {
+  const isDesktop = useIsDesktop()
+  const didAutoSelect = useRef(false)
+
+  useEffect(() => {
+    if (didAutoSelect.current || !isDesktop || selectedId || !firstId) return
+    didAutoSelect.current = true
+    setSelectedId(firstId)
+  }, [isDesktop, selectedId, firstId, setSelectedId])
 }
 
 // ---------------------------------------------------------------------------
@@ -114,8 +153,7 @@ export function computeDropResult(
   // Use the target's real sort_order value:
   // "before" → use the target's sort_order (backend shifts target and everything after)
   // "after"  → use target's sort_order + 1 (backend shifts everything after)
-  const sortOrder =
-    dropPos === 'before' ? targetEntry.sortOrder : targetEntry.sortOrder + 1
+  const sortOrder = dropPos === 'before' ? targetEntry.sortOrder : targetEntry.sortOrder + 1
   return { targetParentId: targetParent, sortOrder }
 }
 
@@ -123,7 +161,7 @@ export function computeDropResult(
 // Hook
 // ---------------------------------------------------------------------------
 
-export function useTreeDragDrop<T = unknown>(options: {
+export function useTreeDragDrop(options: {
   descendantMap: Map<string, Set<string>>
   onDrop: (draggedId: string, targetParentId: string | null, sortOrder: number | null) => void
   toastErrorMessage?: string
@@ -131,7 +169,14 @@ export function useTreeDragDrop<T = unknown>(options: {
   getParentId?: (itemId: string) => string | null
   isExpandedWithChildren?: (id: string) => boolean
 }) {
-  const { descendantMap, onDrop, toastErrorMessage, getSiblingOrder, getParentId, isExpandedWithChildren } = options
+  const {
+    descendantMap,
+    onDrop,
+    toastErrorMessage,
+    getSiblingOrder,
+    getParentId,
+    isExpandedWithChildren,
+  } = options
 
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dragTargetId, setDragTargetId] = useState<string | null>(null)
@@ -161,8 +206,9 @@ export function useTreeDragDrop<T = unknown>(options: {
     event.dataTransfer.setData('text/plain', id)
     event.dataTransfer.effectAllowed = 'move'
     // Try to set drag image from the closest row element
-    const rowEl = (event.target as HTMLElement).closest('[data-tree-row]') as HTMLElement | null
-    if (rowEl) {
+    const rowEl =
+      event.target instanceof HTMLElement ? event.target.closest('[data-tree-row]') : null
+    if (rowEl instanceof HTMLElement) {
       event.dataTransfer.setDragImage(rowEl, 24, 20)
     }
     // Defer state update so browser commits the drag before React re-renders
@@ -256,7 +302,16 @@ export function useTreeDragDrop<T = unknown>(options: {
         },
       }
     },
-    [draggedId, descendantMap, onDrop, toastErrorMessage, clearDragState, getSiblingOrder, getParentId]
+    [
+      draggedId,
+      descendantMap,
+      onDrop,
+      toastErrorMessage,
+      clearDragState,
+      getSiblingOrder,
+      getParentId,
+      isExpandedWithChildren,
+    ]
   )
 
   // Handlers for the thin drop zone after the last child of an expanded group.
@@ -323,7 +378,8 @@ export function useTreeDragDrop<T = unknown>(options: {
       onDrop: (event: React.DragEvent) => {
         event.preventDefault()
         rootDropCounterRef.current = 0
-        onDrop(draggedId, null, null)
+        // sortOrder 0 = insert at top of root (the zone is visually above the tree)
+        onDrop(draggedId, null, 0)
         clearDragState()
       },
     }
@@ -441,15 +497,17 @@ export function applyOptimisticReorder<T>(
   getParentId: (item: T) => string | null,
   getSortOrder: (item: T) => number,
   withParentId: (item: T, parentId: string | null) => T,
-  withSortOrder: (item: T, sortOrder: number) => T,
+  withSortOrder: (item: T, sortOrder: number) => T
 ): T[] {
   // If sortOrder is null, append at end of new parent's children
-  const effectiveSortOrder = newSortOrder ?? (() => {
-    const maxSibling = items
-      .filter((i) => getId(i) !== draggedId && getParentId(i) === newParentId)
-      .reduce((max, i) => Math.max(max, getSortOrder(i)), -1)
-    return maxSibling + 1
-  })()
+  const effectiveSortOrder =
+    newSortOrder ??
+    (() => {
+      const maxSibling = items
+        .filter((i) => getId(i) !== draggedId && getParentId(i) === newParentId)
+        .reduce((max, i) => Math.max(max, getSortOrder(i)), -1)
+      return maxSibling + 1
+    })()
 
   return items.map((item) => {
     const id = getId(item)

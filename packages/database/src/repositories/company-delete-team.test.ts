@@ -56,7 +56,6 @@ async function createSchema(database: ReturnType<typeof getDb>): Promise<void> {
     .ifNotExists()
     .addColumn('team_id', 'text', (col) => col.notNull())
     .addColumn('agent_id', 'text', (col) => col.notNull())
-    .addColumn('is_primary', 'integer', (col) => col.notNull().defaultTo(0))
     .addColumn('created_at', 'integer', (col) => col.notNull().defaultTo(0))
     .execute()
 
@@ -198,7 +197,7 @@ describe('deleteTeam transaction', () => {
       slug: 'frontend',
     })
 
-    await addAgentToTeam({ agent_id: 'agent-1', team_id: leaf.id, is_primary: 1 })
+    await addAgentToTeam({ agent_id: 'agent-1', team_id: leaf.id })
     await db
       .insertInto('team_members')
       .values({ team_id: leaf.id, user_id: 'user-1', role: 'member' })
@@ -252,7 +251,7 @@ describe('deleteTeam transaction', () => {
       slug: 'backend',
     })
 
-    await addAgentToTeam({ agent_id: 'agent-1', team_id: middle.id, is_primary: 1 })
+    await addAgentToTeam({ agent_id: 'agent-1', team_id: middle.id })
     await db
       .insertInto('team_members')
       .values({ team_id: middle.id, user_id: 'user-1', role: 'lead' })
@@ -300,7 +299,7 @@ describe('deleteTeam transaction', () => {
       slug: 'child',
     })
 
-    await addAgentToTeam({ agent_id: 'agent-1', team_id: root.id, is_primary: 1 })
+    await addAgentToTeam({ agent_id: 'agent-1', team_id: root.id })
     await db
       .insertInto('team_members')
       .values({ team_id: root.id, user_id: 'user-1', role: 'member' })
@@ -405,7 +404,7 @@ describe('deleteTeam transaction', () => {
       slug: 'components',
     })
 
-    await addAgentToTeam({ agent_id: 'agent-1', team_id: child.id, is_primary: 1 })
+    await addAgentToTeam({ agent_id: 'agent-1', team_id: child.id })
 
     // Run a transaction that will fail after reparenting + agent move but before
     // the final delete, simulating a constraint violation or internal error.

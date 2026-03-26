@@ -11,8 +11,8 @@ import {
   createAppAuth,
   getGitHubAppConfig,
   saveGitHubAppConfig,
-  GitHubCredentialProvider,
-} from '@nitejar/plugin-handlers'
+} from '@nitejar/plugin-handlers/github'
+import { GitHubCredentialProvider } from '@nitejar/plugin-handlers/github/credential-provider'
 
 const permissionPresetSchema = z.enum(['minimal', 'robust'])
 type PermissionPreset = z.infer<typeof permissionPresetSchema>

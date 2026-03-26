@@ -140,10 +140,13 @@ async function createTestSchema(database: ReturnType<typeof getDb>): Promise<voi
     .addColumn('agent_handle', 'text', (col) => col.notNull())
     .addColumn('job_id', 'text')
     .addColumn('session_key', 'text')
+    .addColumn('goal_id', 'text')
+    .addColumn('goal_snapshot_json', 'text')
     .addColumn('status', 'text', (col) => col.notNull().defaultTo('starting'))
     .addColumn('summary', 'text')
     .addColumn('resources', 'text')
     .addColumn('embedding', 'blob')
+    .addColumn('final_summary', 'text')
     .addColumn('created_at', 'integer', (col) => col.notNull())
     .execute()
 
@@ -401,6 +404,8 @@ describe('repository search + control operations', () => {
         agent_handle: 'test-agent',
         job_id: runA.id,
         session_key: workItemA.session_key,
+        goal_id: null,
+        goal_snapshot_json: null,
         status: 'completed',
         summary: 'triage summary',
         resources: '[]',

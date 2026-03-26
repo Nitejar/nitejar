@@ -177,8 +177,11 @@ vi.mock('@nitejar/agent/config', () => ({
   parseAgentConfig: mockParseAgentConfig,
 }))
 
-vi.mock('@nitejar/plugin-handlers', () => ({
+vi.mock('@nitejar/plugin-handlers/router', () => ({
   getPluginInstanceWithConfig: mockGetPluginInstanceWithConfig,
+}))
+
+vi.mock('@nitejar/plugin-handlers/registry', () => ({
   pluginHandlerRegistry: {
     get: mockPluginHandlerGet,
   },

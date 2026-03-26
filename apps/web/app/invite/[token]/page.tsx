@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getDb } from '@nitejar/database'
+import { createPageMetadata } from '@/app/metadata'
 import { acceptInviteAction } from '@/app/actions/auth'
 import { hashInviteToken } from '@/lib/invitations'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -12,6 +13,8 @@ type PageProps = {
   params: Promise<{ token: string }>
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }
+
+export const metadata = createPageMetadata('Accept Invite')
 
 export default async function InvitePage({ params, searchParams }: PageProps) {
   const { token } = await params

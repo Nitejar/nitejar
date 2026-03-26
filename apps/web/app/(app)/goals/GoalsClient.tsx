@@ -1,16 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useMemo, useState } from 'react'
+import { Fragment, useCallback, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
-import {
-  ArrowRight,
-  Filter,
-  Target,
-  Trash2,
-  X,
-} from 'lucide-react'
+import { ArrowRight, MoreHorizontal, Target, X } from 'lucide-react'
 import { trpc, type RouterOutputs } from '@/lib/trpc'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -23,6 +17,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
   Combobox,
   ComboboxContent,
   ComboboxEmpty,
@@ -32,7 +32,6 @@ import {
 } from '@/components/ui/combobox'
 import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Textarea } from '@/components/ui/textarea'
 import { RelativeTime } from '../components/RelativeTime'
@@ -56,17 +55,19 @@ import {
 import { SkeletonTreeRows } from '../work/skeletons'
 import {
   useTreeSelection,
+  useAutoSelectFirst,
   useTreeExpand,
   useTreeDragDrop,
   useTreeKeyboardNav,
   useTreeInlineEdit,
+  useIsDesktop,
   applyOptimisticReorder,
 } from '../work/tree-hooks'
+import type { DropPosition } from '../work/tree-hooks'
 import {
   TreeRootDropZone,
   TreeGroupEndDropZone,
   TreeToolbar,
-  TreeBreadcrumb,
   TreeRow,
   TreeDetailLayout,
   InlineEditInput,
@@ -249,21 +250,25 @@ function GoalTreeRow({
   inlineSubGoalPending: boolean
   draggedId: string | null
   dragTargetId: string | null
-  dropPosition: import('../work/tree-hooks').DropPosition
+  dropPosition: DropPosition
   startDrag: (id: string, event: React.DragEvent) => void
   endDrag: () => void
-  getRowDragHandlers: (rowId: string) => {
-    onDragOver: (event: React.DragEvent) => void
-    onDragEnter: (event: React.DragEvent) => void
-    onDragLeave: () => void
-    onDrop: (event: React.DragEvent) => void
-  } | undefined
-  getGroupEndDropHandlers: (parentRowId: string) => {
-    onDragOver: (event: React.DragEvent) => void
-    onDragEnter: (event: React.DragEvent) => void
-    onDragLeave: () => void
-    onDrop: (event: React.DragEvent) => void
-  } | undefined
+  getRowDragHandlers: (rowId: string) =>
+    | {
+        onDragOver: (event: React.DragEvent) => void
+        onDragEnter: (event: React.DragEvent) => void
+        onDragLeave: () => void
+        onDrop: (event: React.DragEvent) => void
+      }
+    | undefined
+  getGroupEndDropHandlers: (parentRowId: string) =>
+    | {
+        onDragOver: (event: React.DragEvent) => void
+        onDragEnter: (event: React.DragEvent) => void
+        onDragLeave: () => void
+        onDrop: (event: React.DragEvent) => void
+      }
+    | undefined
   editingId: string | null
   onStartEdit: (id: string) => void
   onCommitEdit: (id: string, value: string) => void
@@ -286,6 +291,7 @@ function GoalTreeRow({
   return (
     <div className={cn(isRoot && 'border-l-2', isRoot && healthBorderColor(goal.health))}>
       <TreeRow
+        twoLine
         id={goal.id}
         depth={depth}
         isSelected={selectedId === goal.id}
@@ -302,6 +308,77 @@ function GoalTreeRow({
         onDragEnd={endDrag}
         dragHandlers={getRowDragHandlers(goal.id)}
         onAddChild={() => setCreatingChildOf(goal.id)}
+        secondaryContent={
+          <>
+            {/* Metric readout */}
+            {progressSource === 'number' || progressSource === 'currency' ? (
+              <span className="text-xs text-zinc-500 tabular-nums">
+                {progressSource === 'currency' ? '$' : ''}
+                {formatMetricValue(progressCurrent ?? 0)} /{' '}
+                {progressSource === 'currency' ? '$' : ''}
+                {formatMetricValue(progressTarget ?? 0)}
+                {progressUnit ? ` ${progressUnit}` : ''}
+              </span>
+            ) : progressSource === 'percentage' ? (
+              <span className="text-xs text-zinc-500 tabular-nums">
+                {Math.round(progressPercent)}%
+              </span>
+            ) : progressSource === 'boolean' ? (
+              <span className="text-xs text-zinc-500">
+                {(progressCurrent ?? 0) >= 1 ? 'Done' : 'Not done'}
+              </span>
+            ) : progressSource === 'ticket_rollup' && totalTickets > 0 ? (
+              <span className="text-xs text-zinc-500 tabular-nums">
+                {doneTickets}/{totalTickets} tickets
+              </span>
+            ) : progressSource === 'sub_goal_rollup' ? (
+              <span className="text-xs text-zinc-500 tabular-nums">
+                {Math.round(progressPercent)}%
+                {goal.childGoalCount > 0
+                  ? ` (${goal.childGoalCount} sub-goal${goal.childGoalCount !== 1 ? 's' : ''})`
+                  : ''}
+              </span>
+            ) : totalTickets > 0 ? (
+              <span className="text-xs text-zinc-500 tabular-nums">
+                {doneTickets}/{totalTickets} tickets
+              </span>
+            ) : null}
+
+            {goal.childGoalCount > 0 && progressSource !== 'sub_goal_rollup' && (
+              <span className="text-[10px] text-zinc-600 tabular-nums">
+                {goal.childGoalCount} sub-goal{goal.childGoalCount !== 1 ? 's' : ''}
+              </span>
+            )}
+
+            {goal.owner ? <AvatarCircle name={goal.owner.label} /> : null}
+
+            <span className="text-[11px] text-zinc-600 tabular-nums">
+              <RelativeTime timestamp={goal.updatedAt} />
+            </span>
+          </>
+        }
+        actions={
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              aria-label={`Open actions for ${goal.title}`}
+              className="mr-2 inline-flex shrink-0 rounded p-0.5 text-zinc-600 opacity-0 transition-opacity hover:bg-white/[0.04] hover:text-white focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+            >
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={() => {
+                  if (window.confirm(`Archive goal "${goal.title}"?`)) {
+                    onArchive(goal.id)
+                  }
+                }}
+              >
+                Archive goal
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
       >
         <ProgressRing percent={progressPercent} health={goal.health} />
         <InlineStatusPicker
@@ -316,10 +393,7 @@ function GoalTreeRow({
             defaultValue={goal.title}
             onCommit={onCommitEdit}
             onCancel={onCancelEdit}
-            className={cn(
-              'min-w-0 flex-1',
-              isRoot ? 'font-semibold' : 'font-medium'
-            )}
+            className={cn('min-w-0 flex-1', isRoot ? 'font-semibold' : 'font-medium')}
           />
         ) : (
           <span
@@ -331,66 +405,6 @@ function GoalTreeRow({
             {goal.title}
           </span>
         )}
-
-        {/* Metric readout */}
-        {progressSource === 'number' || progressSource === 'currency' ? (
-          <span className="shrink-0 text-xs text-zinc-500 tabular-nums">
-            {progressSource === 'currency' ? '$' : ''}
-            {formatMetricValue(progressCurrent ?? 0)} / {progressSource === 'currency' ? '$' : ''}
-            {formatMetricValue(progressTarget ?? 0)}
-            {progressUnit ? ` ${progressUnit}` : ''}
-          </span>
-        ) : progressSource === 'percentage' ? (
-          <span className="shrink-0 text-xs text-zinc-500 tabular-nums">
-            {Math.round(progressPercent)}%
-          </span>
-        ) : progressSource === 'boolean' ? (
-          <span className="shrink-0 text-xs text-zinc-500">
-            {(progressCurrent ?? 0) >= 1 ? 'Done' : 'Not done'}
-          </span>
-        ) : progressSource === 'ticket_rollup' && totalTickets > 0 ? (
-          <span className="shrink-0 text-xs text-zinc-500 tabular-nums">
-            {doneTickets}/{totalTickets} tickets
-          </span>
-        ) : progressSource === 'sub_goal_rollup' ? (
-          <span className="shrink-0 text-xs text-zinc-500 tabular-nums">
-            {Math.round(progressPercent)}%
-            {goal.childGoalCount > 0
-              ? ` (${goal.childGoalCount} sub-goal${goal.childGoalCount !== 1 ? 's' : ''})`
-              : ''}
-          </span>
-        ) : totalTickets > 0 ? (
-          <span className="shrink-0 text-xs text-zinc-500 tabular-nums">
-            {doneTickets}/{totalTickets} tickets
-          </span>
-        ) : null}
-
-        {goal.childGoalCount > 0 && progressSource !== 'sub_goal_rollup' && (
-          <span className="shrink-0 text-[10px] text-zinc-600 tabular-nums">
-            {goal.childGoalCount} sub-goal{goal.childGoalCount !== 1 ? 's' : ''}
-          </span>
-        )}
-
-        {goal.owner ? <AvatarCircle name={goal.owner.label} /> : null}
-
-        <span className="shrink-0 text-[11px] text-zinc-600 tabular-nums">
-          <RelativeTime timestamp={goal.updatedAt} />
-        </span>
-
-        {/* Archive */}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            if (window.confirm(`Archive goal "${goal.title}"?`)) {
-              onArchive(goal.id)
-            }
-          }}
-          className="inline-flex shrink-0 rounded p-0.5 text-zinc-600 opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-400"
-        >
-          <Trash2 className="h-3 w-3" />
-        </button>
-
       </TreeRow>
 
       {/* Inline create row for adding a child of this goal */}
@@ -485,8 +499,40 @@ function GoalDetailPanel({ goalId, onClose }: { goalId: string; onClose: () => v
     },
   })
 
+  const panelCreateSubGoalMutation = trpc.work.createGoal.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.work.getGoal.invalidate({ goalId }),
+        utils.work.listGoals.invalidate(),
+      ])
+    },
+    onError: () => {
+      toast.error('Failed to create sub-goal')
+    },
+  })
+
   if (goalQuery.isLoading || !goal) {
-    return <div className="p-6 text-sm text-zinc-500">Loading goal...</div>
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex h-11 shrink-0 items-center border-b border-zinc-800 px-4">
+          <div className="h-4 w-32 animate-pulse rounded bg-zinc-800" />
+        </div>
+        <div className="space-y-4 p-4">
+          <div className="h-3 w-20 animate-pulse rounded bg-zinc-800" />
+          <div className="h-3 w-48 animate-pulse rounded bg-zinc-800" />
+          <div className="grid grid-cols-[100px_1fr] gap-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Fragment key={i}>
+                <div className="h-3 w-16 animate-pulse rounded bg-zinc-800" />
+                <div className="h-3 w-32 animate-pulse rounded bg-zinc-800" />
+              </Fragment>
+            ))}
+          </div>
+          <div className="h-3 w-24 animate-pulse rounded bg-zinc-800" />
+          <div className="h-20 animate-pulse rounded bg-zinc-800/50" />
+        </div>
+      </div>
+    )
   }
 
   const totalTickets = goal.ticketCounts.total
@@ -496,36 +542,60 @@ function GoalDetailPanel({ goalId, onClose }: { goalId: string; onClose: () => v
     getProgressFields(goal)
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+      <div className="flex h-11 shrink-0 items-center justify-between border-b border-zinc-800 px-4">
         <div className="flex items-center gap-2 min-w-0">
-          <Target className="h-4 w-4 shrink-0 text-zinc-500" />
-          <h2 className="truncate text-sm font-semibold text-zinc-100">{goal.title}</h2>
+          <InlineStatusPicker
+            currentStatus={goal.status}
+            statuses={ALL_GOAL_STATUSES}
+            onStatusChange={(s) =>
+              updateGoalMutation.mutate({ goalId, patch: { status: s as GoalStatus } })
+            }
+          />
+          <input
+            key={goal.title}
+            defaultValue={goal.title}
+            onBlur={(e) => {
+              const trimmed = e.target.value.trim()
+              if (trimmed && trimmed !== goal.title) {
+                updateGoalMutation.mutate({ goalId, patch: { title: trimmed } })
+              } else {
+                e.target.value = goal.title
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+              if (e.key === 'Escape') {
+                ;(e.target as HTMLInputElement).value = goal.title
+                ;(e.target as HTMLInputElement).blur()
+              }
+            }}
+            className="min-w-0 flex-1 truncate border-0 bg-transparent text-sm font-medium text-zinc-200 outline-none placeholder:text-zinc-600 focus:text-white"
+          />
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="shrink-0 rounded p-1 text-zinc-500 hover:text-white transition"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
+        <div className="flex items-center gap-1">
+          <Link
+            href={`/goals/${goalId}`}
+            className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs text-zinc-400 transition hover:bg-white/[0.06] hover:text-white"
+          >
+            Open
+            <ArrowRight className="h-3 w-3" />
+          </Link>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 rounded p-1 text-zinc-500 hover:text-white transition"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-5 p-4">
           {/* Properties */}
           <div className="grid grid-cols-[100px_1fr] gap-y-2.5 text-sm">
-            <span className="text-zinc-500">Status</span>
-            <InlineStatusPicker
-              currentStatus={goal.status}
-              statuses={ALL_GOAL_STATUSES}
-              onStatusChange={(s) =>
-                updateGoalMutation.mutate({ goalId, patch: { status: s as GoalStatus } })
-              }
-              showLabel
-            />
-
             <span className="text-zinc-500">Health</span>
             <div className="flex items-center gap-1.5">
               <ProgressRing percent={progressPercent} health={goal.health} />
@@ -635,11 +705,12 @@ function GoalDetailPanel({ goalId, onClose }: { goalId: string; onClose: () => v
           </div>
 
           {/* Child goals */}
-          {goal.childGoals && goal.childGoals.length > 0 && (
-            <div>
-              <h3 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-2">
-                Sub-goals ({goal.childGoals.length})
-              </h3>
+          <div>
+            <h3 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-2">
+              Sub-goals
+              {goal.childGoals && goal.childGoals.length > 0 ? ` (${goal.childGoals.length})` : ''}
+            </h3>
+            {goal.childGoals && goal.childGoals.length > 0 && (
               <div className="space-y-1">
                 {goal.childGoals.map((child) => (
                   <div
@@ -657,8 +728,30 @@ function GoalDetailPanel({ goalId, onClose }: { goalId: string; onClose: () => v
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+            )}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                const input = e.currentTarget.querySelector('input')
+                const title = input?.value.trim()
+                if (!title) return
+                panelCreateSubGoalMutation.mutate(
+                  { title, outcome: 'TBD', parentGoalId: goalId },
+                  {
+                    onSuccess: () => {
+                      if (input) input.value = ''
+                    },
+                  }
+                )
+              }}
+              className="mt-1 flex items-center gap-2 px-2"
+            >
+              <input
+                placeholder="Add sub-goal..."
+                className="h-6 flex-1 border-0 bg-transparent text-xs text-zinc-400 placeholder:text-zinc-600 outline-none"
+              />
+            </form>
+          </div>
 
           {/* Updates timeline (compact) */}
           {goal.updates && goal.updates.length > 0 && (
@@ -678,14 +771,6 @@ function GoalDetailPanel({ goalId, onClose }: { goalId: string; onClose: () => v
               </div>
             </div>
           )}
-
-          {/* Full page link */}
-          <Link
-            href={`/goals/${goalId}`}
-            className="inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-white transition"
-          >
-            Open full page <ArrowRight className="h-3 w-3" />
-          </Link>
         </div>
       </ScrollArea>
     </div>
@@ -706,7 +791,6 @@ function CreateGoalDialog({
   const utils = trpc.useUtils()
   const [title, setTitle] = useState('')
   const [outcome, setOutcome] = useState('')
-  const [initiativeId, setInitiativeId] = useState<string | null>(null)
   const [parentGoalId, setParentGoalId] = useState<string | null>(null)
   const [ownerKind, setOwnerKind] = useState<ActorKind | ''>('')
   const [ownerRef, setOwnerRef] = useState<string | null>(null)
@@ -714,7 +798,6 @@ function CreateGoalDialog({
   const [progressTarget, setProgressTarget] = useState('')
   const [progressUnit, setProgressUnit] = useState('')
 
-  const initiativesQuery = trpc.work.listInitiatives.useQuery({ includeArchived: false })
   const goalsForParentQuery = trpc.work.listGoals.useQuery({
     limit: 200,
     includeArchived: false,
@@ -723,10 +806,6 @@ function CreateGoalDialog({
   const membersQuery = trpc.org.listMembers.useQuery()
   const agentsQuery = trpc.org.listAgents.useQuery()
 
-  const initiativeItems = useMemo(
-    () => (initiativesQuery.data ?? []).map((i) => ({ value: i.id, label: i.title })),
-    [initiativesQuery.data]
-  )
   const parentGoalItems = useMemo(
     () => (goalsForParentQuery.data ?? []).map((g) => ({ value: g.id, label: g.title })),
     [goalsForParentQuery.data]
@@ -753,7 +832,6 @@ function CreateGoalDialog({
     onSuccess: async () => {
       setTitle('')
       setOutcome('')
-      setInitiativeId(null)
       setParentGoalId(null)
       setOwnerKind('')
       setOwnerRef(null)
@@ -787,19 +865,6 @@ function CreateGoalDialog({
             placeholder="Desired outcome (optional)"
             rows={2}
           />
-          <Combobox value={initiativeId ?? ''} onValueChange={(v) => setInitiativeId(v || null)}>
-            <ComboboxInput placeholder="No initiative" showClear={!!initiativeId} />
-            <ComboboxContent>
-              <ComboboxList>
-                {initiativeItems.map((item) => (
-                  <ComboboxItem key={item.value} value={item.value}>
-                    {item.label}
-                  </ComboboxItem>
-                ))}
-                <ComboboxEmpty>No initiatives found</ComboboxEmpty>
-              </ComboboxList>
-            </ComboboxContent>
-          </Combobox>
           <Combobox value={parentGoalId ?? ''} onValueChange={(v) => setParentGoalId(v || null)}>
             <ComboboxInput placeholder="No parent goal" showClear={!!parentGoalId} />
             <ComboboxContent>
@@ -887,7 +952,6 @@ function CreateGoalDialog({
               const input = {
                 title,
                 outcome: outcome || 'TBD',
-                initiativeId: initiativeId || null,
                 parentGoalId: parentGoalId || null,
                 ownerKind: ownerKind || null,
                 ownerRef: ownerRef || null,
@@ -923,6 +987,20 @@ export function GoalsClient() {
   const teamIdParam = searchParams.get('teamId')
 
   const { selectedId, setSelectedId, clearSelection } = useTreeSelection()
+  const isDesktop = useIsDesktop()
+
+  // On mobile, clicking a row navigates to the detail page instead of opening the side panel
+  const handleSelect = useCallback(
+    (id: string) => {
+      if (isDesktop) {
+        setSelectedId(id)
+      } else {
+        router.push(`/goals/${id}`)
+      }
+    },
+    [isDesktop, setSelectedId, router]
+  )
+
   const [activeViewId, setActiveViewId] = useState('active')
   const [search, setSearch] = useState('')
   const [filterStatuses, setFilterStatuses] = useState<string[]>([])
@@ -952,7 +1030,13 @@ export function GoalsClient() {
   const descendantGoalMap = useMemo(() => buildDescendantGoalMap(goalTree), [goalTree])
 
   const rootGoalIds = useMemo(() => goalTree.map((n) => n.goal.id), [goalTree])
-  const { expandedIds, toggle: handleToggle, setExpandedIds } = useTreeExpand({
+  useAutoSelectFirst(rootGoalIds[0], selectedId, setSelectedId)
+
+  const {
+    expandedIds,
+    toggle: handleToggle,
+    setExpandedIds,
+  } = useTreeExpand({
     autoExpandIds: rootGoalIds,
   })
 
@@ -1027,8 +1111,8 @@ export function GoalsClient() {
             (g) => g.parentGoalId,
             (g) => g.sortOrder,
             (g, pid) => ({ ...g, parentGoalId: pid }),
-            (g, so) => ({ ...g, sortOrder: so }),
-          ),
+            (g, so) => ({ ...g, sortOrder: so })
+          )
         )
       }
       return { previous }
@@ -1086,18 +1170,27 @@ export function GoalsClient() {
     [goals]
   )
 
-  const { draggedId, dragTargetId, dropPosition, rootDropOver, startDrag, endDrag, getRowDragHandlers, getGroupEndDropHandlers, getRootDropHandlers } =
-    useTreeDragDrop({
-      descendantMap: descendantGoalMap,
-      onDrop: handleGoalDrop,
-      toastErrorMessage: 'A goal cannot be moved under one of its own children',
-      getSiblingOrder,
-      getParentId,
-      isExpandedWithChildren: (id: string) => {
-        const hasKids = (descendantGoalMap.get(id)?.size ?? 0) > 0
-        return hasKids && expandedIds.has(id)
-      },
-    })
+  const {
+    draggedId,
+    dragTargetId,
+    dropPosition,
+    rootDropOver,
+    startDrag,
+    endDrag,
+    getRowDragHandlers,
+    getGroupEndDropHandlers,
+    getRootDropHandlers,
+  } = useTreeDragDrop({
+    descendantMap: descendantGoalMap,
+    onDrop: handleGoalDrop,
+    toastErrorMessage: 'A goal cannot be moved under one of its own children',
+    getSiblingOrder,
+    getParentId,
+    isExpandedWithChildren: (id: string) => {
+      const hasKids = (descendantGoalMap.get(id)?.size ?? 0) > 0
+      return hasKids && expandedIds.has(id)
+    },
+  })
 
   const { editingId, startEdit, cancelEdit, commitEdit } = useTreeInlineEdit({
     onCommit: (goalId, title) => {
@@ -1110,7 +1203,7 @@ export function GoalsClient() {
   useTreeKeyboardNav({
     flatIds,
     selectedId,
-    onSelect: setSelectedId,
+    onSelect: handleSelect,
     onClear: clearSelection,
     onStartEdit: startEdit,
     onOpen: (id) => router.push(`/goals/${id}`),
@@ -1134,8 +1227,6 @@ export function GoalsClient() {
     clearSelection()
     if (ownerParam || teamIdParam) clearUrlParams()
   }
-
-  const hasActiveFilters = filterStatuses.length > 0 || !!filterOwner || !!filterTeam
 
   // ---------------------------------------------------------------------------
   // Render
@@ -1173,7 +1264,7 @@ export function GoalsClient() {
             selectedId={selectedId}
             expandedIds={expandedIds}
             onToggle={handleToggle}
-            onSelect={setSelectedId}
+            onSelect={handleSelect}
             onStatusChange={handleStatusChange}
             onArchive={handleArchive}
             onInlineSubGoalCreate={handleInlineSubGoalCreate}
@@ -1204,99 +1295,29 @@ export function GoalsClient() {
     )
   }
 
-  return (
-    <div className="flex h-full flex-col">
+  const toolbarAndBreadcrumb = (
+    <>
       <TreeToolbar
+        title="Goals"
         views={GOAL_VIEWS}
         activeViewId={activeViewId}
         onViewChange={applyView}
         search={search}
         onSearchChange={setSearch}
         searchPlaceholder="Search goals..."
-        filterSlot={
-          <Popover>
-            <PopoverTrigger
-              className={cn(
-                'inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-xs transition',
-                hasActiveFilters
-                  ? 'border-white/20 bg-white/[0.06] text-white'
-                  : 'border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300'
-              )}
-            >
-              <Filter className="h-3 w-3" />
-              Filter
-              {hasActiveFilters && (
-                <span className="inline-flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-white/15 px-1 text-[9px] font-medium text-white">
-                  {filterStatuses.length + (filterOwner ? 1 : 0) + (filterTeam ? 1 : 0)}
-                </span>
-              )}
-            </PopoverTrigger>
-            <PopoverContent className="w-64 space-y-3 p-3" align="end">
-              <div>
-                <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
-                  Status
-                </label>
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {ALL_GOAL_STATUSES.map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => {
-                        if (filterStatuses.includes(s)) {
-                          setFilterStatuses(filterStatuses.filter((x) => x !== s))
-                        } else {
-                          setFilterStatuses([...filterStatuses, s])
-                        }
-                      }}
-                      className={cn(
-                        'flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] transition',
-                        filterStatuses.includes(s)
-                          ? 'border-white/20 bg-white/10 text-white'
-                          : 'border-zinc-800 text-zinc-500 hover:border-zinc-700'
-                      )}
-                    >
-                      <StatusDot status={s} className="h-1.5 w-1.5" />
-                      {statusLabel(s)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </PopoverContent>
-          </Popover>
-        }
         onCreateClick={() => setCreateGoalOpen(true)}
       />
+    </>
+  )
 
-      <TreeBreadcrumb
-        root="Goals"
-        onRootClick={() => applyView('active')}
-        segments={[
-          { label: activeView.name },
-          ...((hasActiveFilters || search)
-            ? [
-                {
-                  label: `Filtered (${filterStatuses.length + (filterOwner ? 1 : 0) + (filterTeam ? 1 : 0) + (search ? 1 : 0)})`,
-                  onClear: () => {
-                    setSearch('')
-                    setFilterStatuses([])
-                    setFilterOwner('')
-                    setFilterTeam('')
-                    if (ownerParam || teamIdParam) clearUrlParams()
-                  },
-                },
-              ]
-            : []),
-        ]}
-      />
-
+  return (
+    <div className="flex h-full flex-col">
       <TreeDetailLayout
+        header={toolbarAndBreadcrumb}
         tree={goalsQuery.isLoading ? <SkeletonTreeRows /> : renderTree()}
         detail={
-          selectedId ? (
-            <GoalDetailPanel goalId={selectedId} onClose={clearSelection} />
-          ) : null
+          selectedId ? <GoalDetailPanel goalId={selectedId} onClose={clearSelection} /> : null
         }
-        detailWidth="400px"
       />
 
       {/* Dialogs */}
