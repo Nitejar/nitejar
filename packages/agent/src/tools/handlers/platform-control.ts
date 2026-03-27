@@ -6,9 +6,16 @@ import {
   deleteAgent,
   findAgentByHandle,
   findAgentById,
+  findPluginInstanceById,
+  getAgentPluginInstanceAssignment,
+  getPluginInstancesForAgent,
+  listAgentIdsForPluginInstance,
   listAgents,
+  listPluginInstancesWithAgents,
+  setAgentPluginInstanceAssignment,
   updateAgent,
 } from '@nitejar/database'
+import { pluginHandlerRegistry } from '@nitejar/plugin-handlers/registry'
 import {
   getDefaultModel,
   mergeAgentConfig,
@@ -46,6 +53,39 @@ async function assertFleetGrant(input: {
   })
 }
 
+async function assertPluginInstanceGrant(input: {
+  actorAgentId?: string
+  action: string
+  pluginInstanceId?: string | null
+}) {
+  if (!input.actorAgentId) {
+    throw new Error('Missing agent identity.')
+  }
+
+  await assertAgentGrant({
+    agentId: input.actorAgentId,
+    action: input.action,
+    resourceType: 'plugin_instance',
+    resourceId: input.pluginInstanceId ?? null,
+  })
+}
+
+async function canReadPluginInstances(input: {
+  actorAgentId?: string
+  pluginInstanceId?: string | null
+}): Promise<boolean> {
+  try {
+    await assertPluginInstanceGrant({
+      actorAgentId: input.actorAgentId,
+      action: 'plugins.instances.read',
+      pluginInstanceId: input.pluginInstanceId ?? null,
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
 function requireString(input: Record<string, unknown>, key: string): string {
   const value = input[key]
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -72,8 +112,75 @@ function parseConfigUpdates(input: Record<string, unknown>): Partial<AgentConfig
   return updates as Partial<AgentConfig>
 }
 
+function normalizeAssignmentPolicy(
+  value:
+    | {
+        mode?: 'allow_all' | 'allow_list'
+        allowedActions?: string[]
+      }
+    | null
+    | undefined
+): { mode: 'allow_all' | 'allow_list'; allowedActions: string[] } | null | undefined {
+  if (value === undefined) return undefined
+  if (value === null) return null
+
+  const mode = value.mode === 'allow_list' ? 'allow_list' : 'allow_all'
+  const allowedActions = Array.isArray(value.allowedActions)
+    ? [...new Set(value.allowedActions.filter((entry) => typeof entry === 'string'))]
+    : []
+
+  return {
+    mode,
+    allowedActions,
+  }
+}
+
 function toJsonOutput(data: unknown): string {
   return JSON.stringify(data, null, 2)
+}
+
+function isEncryptedValue(value: unknown): boolean {
+  return typeof value === 'string' && value.startsWith('enc:')
+}
+
+function redactConfigValue(
+  value: unknown,
+  sensitiveKeys: Set<string>,
+  currentKey?: string
+): unknown {
+  if (currentKey && sensitiveKeys.has(currentKey)) {
+    return '••••••••'
+  }
+
+  if (isEncryptedValue(value)) {
+    return '••••••••'
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => redactConfigValue(entry, sensitiveKeys))
+  }
+
+  if (value && typeof value === 'object') {
+    const input = value as Record<string, unknown>
+    const output: Record<string, unknown> = {}
+    for (const [key, nested] of Object.entries(input)) {
+      output[key] = redactConfigValue(nested, sensitiveKeys, key)
+    }
+    return output
+  }
+
+  return value
+}
+
+function parseAndRedactPluginConfig(type: string, rawConfig: string | null): unknown {
+  if (!rawConfig) return null
+  try {
+    const parsed = JSON.parse(rawConfig) as unknown
+    const handler = pluginHandlerRegistry.get(type)
+    return redactConfigValue(parsed, new Set(handler?.sensitiveFields ?? []))
+  } catch {
+    return null
+  }
 }
 
 function agentSummaryRow(agent: {
@@ -122,6 +229,51 @@ export const platformControlDefinitions: Anthropic.Tool[] = [
         agent_id: { type: 'string' },
       },
       required: ['agent_id'],
+    },
+  },
+  {
+    name: 'list_plugin_instances',
+    description:
+      'List plugin instances in the fleet along with which agents are assigned to each one.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {},
+    },
+  },
+  {
+    name: 'get_plugin_instance',
+    description:
+      'Get one plugin instance, including redacted config and the IDs of agents assigned to it.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        plugin_instance_id: { type: 'string' },
+      },
+      required: ['plugin_instance_id'],
+    },
+  },
+  {
+    name: 'set_plugin_instance_agent_assignment',
+    description:
+      'Assign or unassign an agent for a plugin instance, with optional action allow-list policy.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        plugin_instance_id: { type: 'string' },
+        agent_id: { type: 'string' },
+        enabled: { type: 'boolean' },
+        policy: {
+          type: 'object' as const,
+          properties: {
+            mode: { type: 'string', enum: ['allow_all', 'allow_list'] },
+            allowedActions: {
+              type: 'array' as const,
+              items: { type: 'string' },
+            },
+          },
+        },
+      },
+      required: ['plugin_instance_id', 'agent_id', 'enabled'],
     },
   },
   {
@@ -219,13 +371,154 @@ export const getAgentConfigTool: ToolHandler = async (input, context) => {
       return { success: false, error: 'Agent not found.' }
     }
 
+    const includePluginInstances = await canReadPluginInstances({
+      actorAgentId: context.agentId,
+    })
+
     return {
       success: true,
       output: toJsonOutput({
         agent: {
           ...agentSummaryRow(agent),
           config: parseAgentConfig(agent.config),
+          ...(includePluginInstances
+            ? {
+                pluginInstances: await getPluginInstancesForAgent(agentId),
+              }
+            : {}),
         },
+      }),
+    }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+export const listPluginInstancesTool: ToolHandler = async (_input, context) => {
+  try {
+    await assertPluginInstanceGrant({
+      actorAgentId: context.agentId,
+      action: 'plugins.instances.read',
+    })
+    const pluginInstances = await listPluginInstancesWithAgents()
+    return {
+      success: true,
+      output: toJsonOutput({
+        pluginInstances: pluginInstances.map((pluginInstance) => ({
+          id: pluginInstance.id,
+          name: pluginInstance.name,
+          type: pluginInstance.type,
+          enabled: pluginInstance.enabled === 1,
+          scope: pluginInstance.scope,
+          agents: pluginInstance.agents,
+        })),
+      }),
+    }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+export const getPluginInstanceTool: ToolHandler = async (input, context) => {
+  try {
+    const pluginInstanceId = requireString(input, 'plugin_instance_id')
+    await assertPluginInstanceGrant({
+      actorAgentId: context.agentId,
+      action: 'plugins.instances.read',
+      pluginInstanceId,
+    })
+    const pluginInstance = await findPluginInstanceById(pluginInstanceId)
+    if (!pluginInstance) {
+      return { success: false, error: 'Plugin instance not found.' }
+    }
+
+    const assignedAgentIds = await listAgentIdsForPluginInstance(pluginInstanceId)
+    return {
+      success: true,
+      output: toJsonOutput({
+        pluginInstance: {
+          id: pluginInstance.id,
+          name: pluginInstance.name,
+          type: pluginInstance.type,
+          enabled: pluginInstance.enabled === 1,
+          scope: pluginInstance.scope,
+          config: parseAndRedactPluginConfig(pluginInstance.type, pluginInstance.config),
+        },
+        assignedAgentIds,
+      }),
+    }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+export const setPluginInstanceAgentAssignmentTool: ToolHandler = async (input, context) => {
+  try {
+    const pluginInstanceId = requireString(input, 'plugin_instance_id')
+    const agentId = requireString(input, 'agent_id')
+    const enabled = Boolean(input.enabled)
+
+    await assertPluginInstanceGrant({
+      actorAgentId: context.agentId,
+      action: 'plugins.instances.write',
+      pluginInstanceId,
+    })
+
+    const pluginInstance = await findPluginInstanceById(pluginInstanceId)
+    if (!pluginInstance) {
+      return { success: false, error: 'Plugin instance not found.' }
+    }
+
+    const agent = await findAgentById(agentId)
+    if (!agent) {
+      return { success: false, error: 'Agent not found.' }
+    }
+
+    const normalizedPolicy =
+      input.policy && typeof input.policy === 'object' && !Array.isArray(input.policy)
+        ? normalizeAssignmentPolicy(
+            input.policy as {
+              mode?: 'allow_all' | 'allow_list'
+              allowedActions?: string[]
+            }
+          )
+        : undefined
+
+    await setAgentPluginInstanceAssignment({
+      pluginInstanceId,
+      agentId,
+      enabled,
+      ...(normalizedPolicy !== undefined
+        ? { policyJson: normalizedPolicy === null ? null : JSON.stringify(normalizedPolicy) }
+        : {}),
+    })
+
+    const assignment = await getAgentPluginInstanceAssignment({
+      pluginInstanceId,
+      agentId,
+    })
+
+    let policy: { mode: 'allow_all' | 'allow_list'; allowedActions: string[] } | null = null
+    if (assignment?.policy_json) {
+      try {
+        const parsed = JSON.parse(assignment.policy_json) as {
+          mode?: 'allow_all' | 'allow_list'
+          allowedActions?: string[]
+        }
+        policy = normalizeAssignmentPolicy(parsed) ?? null
+      } catch {
+        policy = null
+      }
+    }
+
+    return {
+      success: true,
+      output: toJsonOutput({
+        ok: true,
+        pluginInstanceId,
+        agentId,
+        enabled,
+        policy,
       }),
     }
   } catch (error) {

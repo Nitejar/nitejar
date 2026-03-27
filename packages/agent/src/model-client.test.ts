@@ -352,6 +352,38 @@ describe('getOpenAITools', () => {
     expect(names).not.toContain('collection_insert')
     expect(names).not.toContain('collection_describe')
   })
+
+  it('keeps plugin instance tools hidden by default', () => {
+    const names = getOpenAITools().map((t) => (t as { function: { name: string } }).function.name)
+
+    expect(names).not.toContain('list_plugin_instances')
+    expect(names).not.toContain('get_plugin_instance')
+    expect(names).not.toContain('set_plugin_instance_agent_assignment')
+  })
+
+  it('shows plugin instance read tools for plugins.instances.read', () => {
+    const names = getOpenAITools({
+      runtimeToolAccess: {
+        grantedActions: ['plugins.instances.read'],
+      },
+    }).map((t) => (t as { function: { name: string } }).function.name)
+
+    expect(names).toContain('list_plugin_instances')
+    expect(names).toContain('get_plugin_instance')
+    expect(names).not.toContain('set_plugin_instance_agent_assignment')
+  })
+
+  it('shows plugin instance write tool for plugins.instances.write', () => {
+    const names = getOpenAITools({
+      runtimeToolAccess: {
+        grantedActions: ['plugins.instances.write'],
+      },
+    }).map((t) => (t as { function: { name: string } }).function.name)
+
+    expect(names).toContain('set_plugin_instance_agent_assignment')
+    expect(names).not.toContain('list_plugin_instances')
+    expect(names).not.toContain('get_plugin_instance')
+  })
 })
 
 // ---------------------------------------------------------------------------
