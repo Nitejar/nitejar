@@ -313,6 +313,45 @@ describe('getOpenAITools', () => {
     expect(names).toContain('transcribe_audio')
     expect(names).toContain('synthesize_speech')
   })
+
+  it('keeps collection tools hidden by default', () => {
+    const names = getOpenAITools().map((t) => (t as { function: { name: string } }).function.name)
+
+    expect(names).not.toContain('collection_describe')
+    expect(names).not.toContain('collection_insert')
+    expect(names).not.toContain('define_collection')
+  })
+
+  it('shows only collection read tools for collection.read', () => {
+    const names = getOpenAITools({
+      runtimeToolAccess: {
+        grantedActions: ['collection.read'],
+      },
+    }).map((t) => (t as { function: { name: string } }).function.name)
+
+    expect(names).toContain('collection_describe')
+    expect(names).toContain('collection_query')
+    expect(names).toContain('collection_search')
+    expect(names).toContain('collection_get')
+    expect(names).not.toContain('collection_insert')
+    expect(names).not.toContain('define_collection')
+  })
+
+  it('shows collection admin tools for collection.admin.write', () => {
+    const names = getOpenAITools({
+      runtimeToolAccess: {
+        grantedActions: ['collection.admin.write'],
+      },
+    }).map((t) => (t as { function: { name: string } }).function.name)
+
+    expect(names).toContain('define_collection')
+    expect(names).toContain('collection_update_schema')
+    expect(names).toContain('collection_list_reviews')
+    expect(names).toContain('collection_review_schema')
+    expect(names).toContain('collection_update_permission')
+    expect(names).not.toContain('collection_insert')
+    expect(names).not.toContain('collection_describe')
+  })
 })
 
 // ---------------------------------------------------------------------------

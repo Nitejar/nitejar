@@ -28,6 +28,7 @@ import {
 import { closeSpriteSessionForConversation } from '@nitejar/sprites'
 import { ensureRuntimeWorkers } from '../../../../../../server/services/runtime-workers'
 import { publishRoutineEnvelopeFromWorkItem } from '../../../../../../server/services/routines/publish'
+import { ensureBuiltinPluginHandlersLoaded } from '../../../../../../server/services/plugins/ensure-builtin-handlers'
 import {
   extractQueueConfig,
   filterOriginAgent,
@@ -450,6 +451,8 @@ async function dispatchToAgents(
 
 export async function POST(request: Request, context: RouteParams) {
   const { type, instanceId } = await context.params
+
+  await ensureBuiltinPluginHandlersLoaded()
 
   // Ensure runtime workers are active (startup should already do this via instrumentation).
   void ensureRuntimeWorkers().catch((error) => {

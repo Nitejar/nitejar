@@ -133,6 +133,8 @@ type ReplayMeta = {
   isSuperseded: boolean
   dispatchId: string | null
   replayMode: 'restart' | 'resume' | null
+  replayKind: 'manual' | 'auto' | null
+  replaySummary: string | null
 }
 type ModelCatalogEntry = {
   externalId: string
@@ -426,6 +428,7 @@ function JobDetail({
   return (
     <details
       key={job.id}
+      id={`run-${job.id}`}
       data-run-id={job.id}
       open={isOpen ? true : undefined}
       className="group/run"
@@ -456,9 +459,33 @@ function JobDetail({
             </span>
           )}
           {replayMeta?.isReplay && (
-            <span className="rounded bg-blue-400/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-400/80">
-              {replayMeta.replayMode === 'resume' ? 'RESUME' : 'RESTART'}
-            </span>
+            <>
+              <span
+                className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                  replayMeta.replayKind === 'auto'
+                    ? 'bg-emerald-500/10 text-emerald-300/85'
+                    : 'bg-blue-400/10 text-blue-400/80'
+                }`}
+                title={replayMeta.replaySummary ?? undefined}
+              >
+                {replayMeta.replayKind === 'auto'
+                  ? 'AUTO-RESUME'
+                  : replayMeta.replayMode === 'resume'
+                    ? 'RESUME'
+                    : 'RESTART'}
+              </span>
+              {replayMeta.replayOfJobId && (
+                <span className="text-[10px] text-white/45">
+                  from{' '}
+                  <Link
+                    href={`#run-${replayMeta.replayOfJobId}`}
+                    className="font-mono text-white/60 underline-offset-2 hover:text-white/85 hover:underline"
+                  >
+                    {replayMeta.replayOfJobId.slice(0, 8)}
+                  </Link>
+                </span>
+              )}
+            </>
           )}
           {replayMeta?.isSuperseded && (
             <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-medium text-white/40">
@@ -947,9 +974,18 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
     const replayOfJobId = originalDispatch?.job_id ?? null
     const isSuperseded = supersededJobIds.has(job.id)
     const replayMode =
-      dispatch?.control_reason === 'resume_seed' || dispatch?.control_reason === 'restart_seed'
+      dispatch?.control_reason === 'resume_seed'
         ? 'resume'
-        : 'restart'
+        : dispatch?.control_reason === 'retry_replay'
+          ? 'restart'
+          : null
+    const replaySummary = dispatch?.last_error ?? null
+    const replayKind =
+      isReplay && replayMode === 'resume' && /requested by system/i.test(replaySummary ?? '')
+        ? 'auto'
+        : isReplay && replayMode
+          ? 'manual'
+          : null
 
     jobReplayMeta.set(job.id, {
       isReplay,
@@ -957,8 +993,26 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
       isSuperseded,
       dispatchId: dispatch?.id ?? null,
       replayMode: isReplay ? replayMode : null,
+      replayKind,
+      replaySummary,
     })
   }
+
+  const replayJobs = jobs
+    .map((job) => ({ job, replay: jobReplayMeta.get(job.id) }))
+    .filter(
+      (entry): entry is { job: JobType; replay: ReplayMeta } =>
+        entry.replay?.isReplay === true && entry.replay != null
+    )
+  const autoResumeCount = replayJobs.filter((entry) => entry.replay.replayKind === 'auto').length
+  const manualReplayCount = replayJobs.filter((entry) => entry.replay.replayKind === 'manual').length
+  const latestReplayEntry =
+    replayJobs.length > 0
+      ? [...replayJobs].sort(
+          (a, b) =>
+            (b.job.started_at ?? b.job.created_at) - (a.job.started_at ?? a.job.created_at)
+        )[0]
+      : null
 
   // Build model catalog lookup for TraceView tooltips
   const { models: catalogModels } = await listModelCatalog()
@@ -1277,6 +1331,28 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
               </>
             )}
           </div>
+          {replayJobs.length > 0 ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              {autoResumeCount > 0 ? (
+                <span className="rounded bg-emerald-500/10 px-2 py-1 text-emerald-300/85">
+                  {autoResumeCount} auto-resume{autoResumeCount === 1 ? '' : 's'}
+                </span>
+              ) : null}
+              {manualReplayCount > 0 ? (
+                <span className="rounded bg-blue-400/10 px-2 py-1 text-blue-300/85">
+                  {manualReplayCount} manual repl{manualReplayCount === 1 ? 'ay' : 'ays'}
+                </span>
+              ) : null}
+              {latestReplayEntry?.replay.replaySummary ? (
+                <span
+                  className="text-white/55"
+                  title={latestReplayEntry.replay.replaySummary}
+                >
+                  {latestReplayEntry.replay.replaySummary}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
 

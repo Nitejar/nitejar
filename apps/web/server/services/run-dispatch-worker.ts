@@ -20,6 +20,7 @@ import {
   pauseJob,
   resumeJob,
   findRunDispatchById,
+  replayRunDispatch,
   findAgentById,
   findWorkItemById,
   getAgentsForPluginInstance,
@@ -46,6 +47,7 @@ const LEASE_SECONDS = 120
 const HEARTBEAT_MS = 20_000
 const CANCELLED_MARKER = '__RUN_CANCELLED__'
 const DEFAULT_MAX_CONCURRENT_DISPATCHES = 20
+const MAX_AUTO_RESUME_ATTEMPTS = 3
 
 function steeringSignature(messages: { id: string; text: string; senderName: string }[]): string {
   return messages.map((m) => `${m.id}:${m.senderName}:${m.text}`).join('\n')
@@ -101,6 +103,28 @@ function summarizeForPrompt(text: string, maxChars = 160): string {
   if (normalized.length <= maxChars) return normalized
   if (maxChars <= 3) return normalized.slice(0, maxChars)
   return `${normalized.slice(0, maxChars - 3).trimEnd()}...`
+}
+
+function isRetryableProvider429Error(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /\b429\b/.test(message) && /provider returned error/i.test(message)
+}
+
+async function countResumeSeedRetries(dispatchId: string): Promise<number> {
+  let retries = 0
+  let current = await findRunDispatchById(dispatchId)
+
+  while (current) {
+    if (current.control_reason === 'resume_seed') {
+      retries += 1
+    }
+    if (!current.replay_of_dispatch_id) {
+      break
+    }
+    current = await findRunDispatchById(current.replay_of_dispatch_id)
+  }
+
+  return retries
 }
 
 async function resolveTeammateRuntimeStatuses(
@@ -562,6 +586,10 @@ async function executeDispatch(
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
+    const shouldAutoResume =
+      message.includes(CANCELLED_MARKER) === false &&
+      isRetryableProvider429Error(error) &&
+      (await countResumeSeedRetries(dispatch.id)) < MAX_AUTO_RESUME_ATTEMPTS
     if (message.includes(CANCELLED_MARKER)) {
       await finalizeRunDispatch(dispatch.id, {
         status: 'cancelled',
@@ -575,6 +603,23 @@ async function executeDispatch(
         expectedEpoch: dispatch.claimed_epoch,
       })
       if (finalized) {
+        if (shouldAutoResume) {
+          const replay = await replayRunDispatch(
+            dispatch.id,
+            'system',
+            'Auto-resume after provider 429',
+            'resume'
+          )
+          if (replay) {
+            await updateWorkItem(dispatch.work_item_id, { status: 'NEW' })
+            console.info('[RunDispatchWorker] Auto-resume queued after provider 429', {
+              dispatchId: dispatch.id,
+              replayDispatchId: replay.dispatch.id,
+              alreadyQueued: replay.alreadyQueued,
+            })
+            return
+          }
+        }
         await updateWorkItem(dispatch.work_item_id, { status: 'FAILED' })
       }
     }

@@ -33,7 +33,7 @@ const BASE_CAPABILITIES_PROMPT = `You have access to a persistent Linux environm
 You can create managed long-running services (web servers, APIs, background processes) that persist beyond command execution. Use create_service to start one, and get_sprite_url to get a shareable public URL.
 You can also run concurrent background tasks scoped to the current run. Use start_background_task/check_background_task/list_background_tasks/stop_background_task for run-local long commands. Background tasks are auto-cleaned up at run end by default unless cleanup_on_run_end is false.
 Use services for persistent daemons that should survive across runs. Use background tasks for temporary concurrent work during this run.
-For multi-step work, use run_todo to create an ephemeral checklist for the current run. Add items to plan your approach, check them off as you complete each step, and list remaining items to stay on track. The checklist is ephemeral — it only exists for this run and is not persisted across runs.
+For multi-step work, use run_todo to create an ephemeral checklist for the current run. Add items to plan your approach, check them off as you complete each step, and list remaining items to stay on track. The checklist is ephemeral — it is not persisted across unrelated runs, though a "resume from last good turn" replay may inherit it.
 
 Guidelines:
 - Be helpful and complete the task thoroughly
@@ -61,9 +61,9 @@ const MEMORY_PROMPT = `Memory:
 You have persistent long-term memory. If "Things You Remember" appears above, those are your stored memories. Memories marked 📌 are pinned and won't fade.
 Memory is private per-agent: your memories are only yours. add_memory updates your memory only, not your teammates' memory.
 Never imply that storing a memory updates other agents automatically.
-Collections are shared structured data. Use define_collection / collection_describe / collection_query / collection_search / collection_get / collection_insert / collection_upsert for shared org data.
+Collections are shared structured data. Use define_collection / collection_describe / collection_query / collection_search / collection_get / collection_insert / collection_upsert / collection_update_permission / collection_update_schema for shared org data.
 If you need field names or types before writing data, call collection_describe first.
-Schema changes for collections require human review before they become active.
+Collection admin actions require collection.admin.write access.
 
 Use add_memory to store things worth remembering across sessions. Two conventions:
 

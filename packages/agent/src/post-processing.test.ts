@@ -1,7 +1,19 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type OpenAI from 'openai'
+import * as Database from '@nitejar/database'
+
+vi.mock('@nitejar/database', async () => {
+  const actual = await vi.importActual<typeof Database>('@nitejar/database')
+  return {
+    ...actual,
+    findJobById: vi.fn(),
+    listMessagesByJob: vi.fn(),
+  }
+})
+
 import {
   buildRetrySeedPromptFromStoredMessages,
+  buildRetrySeedFromJob,
   formatConversationForPostProcessing,
   getFirstChoiceOrThrow,
   shouldSkipFinalModePostProcessing,
@@ -14,6 +26,9 @@ import {
 } from './prompt-builder'
 import type { Agent, WorkItem } from '@nitejar/database'
 
+const mockedFindJobById = vi.mocked(Database.findJobById)
+const mockedListMessagesByJob = vi.mocked(Database.listMessagesByJob)
+
 const baseAgent: Agent = {
   id: 'agent-1',
   handle: 'pixel',
@@ -24,6 +39,27 @@ const baseAgent: Agent = {
   created_at: 0,
   updated_at: 0,
 }
+
+function makeJob(todoState: string | null = null): Database.Job {
+  return {
+    id: 'job-1',
+    work_item_id: 'work-item-1',
+    agent_id: 'agent-1',
+    status: 'RUNNING',
+    error_text: null,
+    todo_state: todoState,
+    final_response: null,
+    started_at: null,
+    completed_at: null,
+    created_at: 0,
+    updated_at: 0,
+  }
+}
+
+beforeEach(() => {
+  mockedFindJobById.mockReset()
+  mockedListMessagesByJob.mockReset()
+})
 
 describe('formatConversationForPostProcessing', () => {
   it('formats user and assistant messages into a readable transcript', () => {
@@ -268,6 +304,26 @@ describe('buildPostProcessingPrompt', () => {
     // Should still have identity and synthesis instructions
     expect(prompt).toContain('Pixel (@pixel)')
     expect(prompt).toContain('from this run')
+  })
+})
+
+describe('buildRetrySeedFromJob', () => {
+  it('copies todo_state from the source job into the retry seed', async () => {
+    const todoState = JSON.stringify({
+      version: 1,
+      updated_at: 1,
+      items: [{ id: 'todo-1', text: 'Ship the patch', status: 'open', created_at: 1, done_at: null }],
+    })
+    mockedFindJobById.mockResolvedValueOnce(makeJob(todoState))
+    mockedListMessagesByJob.mockResolvedValueOnce([
+      { role: 'user', content: JSON.stringify({ text: 'Finish the patch' }) },
+      { role: 'assistant', content: JSON.stringify({ text: 'Working on it' }) },
+    ] as never)
+
+    const seed = await buildRetrySeedFromJob('job-1', 'Finish the patch')
+
+    expect(seed?.todoState).toBe(todoState)
+    expect(seed?.promptMessages.length).toBeGreaterThan(0)
   })
 })
 

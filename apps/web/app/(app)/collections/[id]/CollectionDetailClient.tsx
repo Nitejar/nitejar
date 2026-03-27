@@ -357,23 +357,14 @@ export function CollectionDetailClient({ collectionId }: { collectionId: string 
     onError: (error) => toast.error(error.message),
   })
 
-  const setPermissionMutation = trpc.collections.setPermission.useMutation({
+  const updatePermissionMutation = trpc.collections.updatePermission.useMutation({
     onSuccess: () => {
-      toast.success('Permission granted')
+      toast.success('Collection access updated')
       void utils.collections.getById.invalidate({ collectionId })
       void utils.collections.listCollections.invalidate()
       setGrantOpen(false)
       setGrantAgentId('')
       setGrantAccessLevel('read')
-    },
-    onError: (error) => toast.error(error.message),
-  })
-
-  const removePermissionMutation = trpc.collections.removePermission.useMutation({
-    onSuccess: () => {
-      toast.success('Permission revoked')
-      void utils.collections.getById.invalidate({ collectionId })
-      void utils.collections.listCollections.invalidate()
       setRevokeTarget(null)
     },
     onError: (error) => toast.error(error.message),
@@ -490,11 +481,10 @@ export function CollectionDetailClient({ collectionId }: { collectionId: string 
 
   const handleGrantPermission = async () => {
     if (!collection || !grantAgentId) return
-    await setPermissionMutation.mutateAsync({
+    await updatePermissionMutation.mutateAsync({
       collectionId: collection.id,
       agentId: grantAgentId,
-      canRead: true,
-      canWrite: grantAccessLevel === 'readwrite',
+      access: grantAccessLevel,
     })
   }
 
@@ -564,8 +554,8 @@ export function CollectionDetailClient({ collectionId }: { collectionId: string 
                 <EmptyTitle>No data yet</EmptyTitle>
                 <EmptyDescription>
                   Agents populate collections using the{' '}
-                  <code className="text-xs">insert_collection_row</code> and{' '}
-                  <code className="text-xs">upsert_collection_row</code> tools.
+                  <code className="text-xs">collection_insert</code> and{' '}
+                  <code className="text-xs">collection_upsert</code> tools.
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
@@ -640,13 +630,21 @@ export function CollectionDetailClient({ collectionId }: { collectionId: string 
 
         {/* Permissions tab */}
         <TabsContent value="permissions" className="mt-4 space-y-4">
+          <div className="rounded-lg border border-white/10 bg-white/[0.02] p-4">
+            <p className="text-xs font-medium text-foreground">Effective access model</p>
+            <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+              <p>No explicit ACL entries means the collection is open by default for ordinary agents.</p>
+              <p>Role grants can still override ACLs. Agents with collection role grants may have effective access even without an explicit row here.</p>
+            </div>
+          </div>
+
           {collection.permissions.length === 0 ? (
             <Empty className="py-8">
               <EmptyHeader>
-                <EmptyTitle>Open access</EmptyTitle>
+                <EmptyTitle>No explicit ACL entries</EmptyTitle>
                 <EmptyDescription>
-                  No explicit permissions are set. Any agent can read and write to this collection.
-                  Grant access to specific agents to restrict it.
+                  Open by default for agents without overriding role grants. Add an explicit ACL row if
+                  you want to pin access for a specific agent.
                 </EmptyDescription>
               </EmptyHeader>
               <Button size="sm" onClick={openGrantDialog}>
@@ -693,7 +691,7 @@ export function CollectionDetailClient({ collectionId }: { collectionId: string 
                             variant="ghost"
                             size="sm"
                             className="text-muted-foreground hover:text-destructive"
-                            disabled={removePermissionMutation.isPending}
+                            disabled={updatePermissionMutation.isPending}
                             onClick={() =>
                               setRevokeTarget({
                                 collectionId: collection.id,
@@ -717,6 +715,63 @@ export function CollectionDetailClient({ collectionId }: { collectionId: string 
               </div>
             </>
           )}
+
+          {collection.effectiveRoleAccess.length > 0 ? (
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">Effective role-based access</p>
+                <p className="text-xs text-muted-foreground">
+                  These agents can reach this collection through role grants, even if they do not appear in the ACL table above.
+                </p>
+              </div>
+              <div className="overflow-x-auto rounded-lg border border-white/10">
+                <table className="w-full text-left text-sm">
+                  <thead className="border-b border-white/10 bg-white/[0.02] text-xs text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-2">Agent</th>
+                      <th className="px-3 py-2">Effective access</th>
+                      <th className="px-3 py-2">Via roles</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {collection.effectiveRoleAccess.map((entry) => (
+                      <tr key={entry.agentId} className="border-b border-white/5">
+                        <td className="px-3 py-2">
+                          <IdentityBadge
+                            name={entry.agentName}
+                            subtitle={`@${entry.agentHandle}`}
+                            size="sm"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-wrap gap-1.5">
+                            {entry.canRead ? (
+                              <Badge variant="secondary" className="text-[11px]">
+                                read
+                              </Badge>
+                            ) : null}
+                            {entry.canContentWrite ? (
+                              <Badge variant="secondary" className="text-[11px]">
+                                content write
+                              </Badge>
+                            ) : null}
+                            {entry.canAdminWrite ? (
+                              <Badge variant="secondary" className="text-[11px]">
+                                admin write
+                              </Badge>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-xs text-muted-foreground">
+                          {entry.viaRoles.join(', ')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
         </TabsContent>
 
         {/* Reviews tab */}
@@ -966,10 +1021,10 @@ export function CollectionDetailClient({ collectionId }: { collectionId: string 
                 Cancel
               </Button>
               <Button
-                disabled={!grantAgentId || setPermissionMutation.isPending}
+                disabled={!grantAgentId || updatePermissionMutation.isPending}
                 onClick={() => void handleGrantPermission()}
               >
-                {setPermissionMutation.isPending ? 'Granting\u2026' : 'Grant Access'}
+                {updatePermissionMutation.isPending ? 'Saving\u2026' : 'Grant Access'}
               </Button>
             </div>
           </div>
@@ -987,25 +1042,27 @@ export function CollectionDetailClient({ collectionId }: { collectionId: string 
           <AlertDialogHeader>
             <AlertDialogTitle>Revoke access?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will remove all permissions for {revokeTarget?.agentName} on this collection. The
-              agent will fall back to open access rules if no other permissions are set.
+              This will remove the explicit ACL entry for {revokeTarget?.agentName}. The agent may
+              still have effective access through role grants, and open-by-default rules still apply
+              when no ACL rows exist.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
-              disabled={removePermissionMutation.isPending}
+              disabled={updatePermissionMutation.isPending}
               onClick={() => {
                 if (revokeTarget) {
-                  removePermissionMutation.mutate({
+                  updatePermissionMutation.mutate({
                     collectionId: revokeTarget.collectionId,
                     agentId: revokeTarget.agentId,
+                    access: 'none',
                   })
                 }
               }}
             >
-              {removePermissionMutation.isPending ? 'Revoking\u2026' : 'Revoke'}
+              {updatePermissionMutation.isPending ? 'Revoking\u2026' : 'Revoke'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -13,6 +13,7 @@ const {
   mockRunAgent,
   mockParseAgentConfig,
   mockPublishRoutineEnvelopeFromWorkItem,
+  mockEnsureBuiltinPluginHandlersLoaded,
   routeResults,
   postedMessages,
   runCalls,
@@ -21,6 +22,7 @@ const {
   const getPluginInstanceWithConfig = vi.fn()
   const pluginHandlerGet = vi.fn()
   const ensureRuntimeWorkers = vi.fn(() => Promise.resolve(undefined))
+  const ensureBuiltinPluginHandlersLoaded = vi.fn(() => Promise.resolve(undefined))
   const getAgentsForPluginInstance = vi.fn()
   const createQueueMessage = vi.fn((_input: Record<string, unknown>) => Promise.resolve(null))
   const upsertQueueLaneOnMessage = vi.fn((_input: { debounceMs: number }) => Promise.resolve(null))
@@ -57,6 +59,7 @@ const {
     mockGetPluginInstanceWithConfig: getPluginInstanceWithConfig,
     mockPluginHandlerGet: pluginHandlerGet,
     mockEnsureRuntimeWorkers: ensureRuntimeWorkers,
+    mockEnsureBuiltinPluginHandlersLoaded: ensureBuiltinPluginHandlersLoaded,
     mockGetAgentsForPluginInstance: getAgentsForPluginInstance,
     mockCreateQueueMessage: createQueueMessage,
     mockUpsertQueueLaneOnMessage: upsertQueueLaneOnMessage,
@@ -125,6 +128,10 @@ vi.mock('../../../../../../server/services/runtime-workers', () => ({
   ensureRuntimeWorkers: mockEnsureRuntimeWorkers,
 }))
 
+vi.mock('../../../../../../server/services/plugins/ensure-builtin-handlers', () => ({
+  ensureBuiltinPluginHandlersLoaded: mockEnsureBuiltinPluginHandlersLoaded,
+}))
+
 vi.mock('../../../../../../server/services/routines/publish', () => ({
   publishRoutineEnvelopeFromWorkItem: mockPublishRoutineEnvelopeFromWorkItem,
 }))
@@ -138,6 +145,7 @@ describe('webhook route agent-origin exclusion collaboration', () => {
     postedMessages.length = 0
     runCalls.length = 0
     mockPublishRoutineEnvelopeFromWorkItem.mockResolvedValue(undefined)
+    mockEnsureBuiltinPluginHandlersLoaded.mockResolvedValue(undefined)
 
     const agents = [
       {
@@ -189,6 +197,23 @@ describe('webhook route agent-origin exclusion collaboration', () => {
       }
       return next
     })
+  })
+
+  it('loads builtin plugin handlers before routing the webhook', async () => {
+    routeResults.push({ status: 200, body: { ignored: true } })
+
+    const req = new Request('http://localhost/api/webhooks/plugins/telegram/instance-1', {
+      method: 'POST',
+      body: JSON.stringify({ update_id: 1 }),
+      headers: { 'content-type': 'application/json' },
+    })
+
+    await POST(req, {
+      params: Promise.resolve({ type: 'telegram', instanceId: 'instance-1' }),
+    })
+
+    expect(mockEnsureBuiltinPluginHandlersLoaded).toHaveBeenCalledTimes(1)
+    expect(mockRouteWebhook).toHaveBeenCalledTimes(1)
   })
 
   it('counts to 10 with alternating agent-origin turns and one run per turn', async () => {

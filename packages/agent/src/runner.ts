@@ -2,6 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk'
 import type OpenAI from 'openai'
 import {
   findAgentById,
+  findJobById,
   findWorkItemById,
   createJob,
   updateJob,
@@ -800,6 +801,9 @@ async function runInferenceLoop(
   const retrySeed = resumeFromJobId
     ? await buildRetrySeedFromJob(resumeFromJobId, userMessage)
     : null
+  if (retrySeed?.todoState != null && job.todo_state !== retrySeed.todoState) {
+    await updateJob(job.id, { todo_state: retrySeed.todoState })
+  }
 
   // Load session context (conversation history from same session_key)
   const sessionContext = await buildSessionContext(
@@ -867,7 +871,7 @@ async function runInferenceLoop(
   // so post-processing can exclude session history and only synthesize current work.
   const currentRunStartIndex = messages.length - 1 // the userModelMessage
 
-  if (retrySeed && retrySeed.promptMessages.length > 0) {
+  if (retrySeed) {
     await appendMessage(job.id, 'system', {
       text: `[Retry seed injected from job ${retrySeed.sourceJobId}: ${retrySeed.promptMessages.length} prompt message(s), dropped incomplete trailing turn=${retrySeed.droppedIncompleteTrailingTurn}, skipped initial duplicate user message=${retrySeed.skippedInitialDuplicateUser}]`,
     })
@@ -2530,18 +2534,20 @@ export function buildRetrySeedPromptFromStoredMessages(
 
 interface RetrySeedBuildResult extends RetrySeedPromptResult {
   sourceJobId: string
+  todoState: string | null
 }
 
-async function buildRetrySeedFromJob(
+export async function buildRetrySeedFromJob(
   sourceJobId: string,
   currentUserText: string
 ): Promise<RetrySeedBuildResult | null> {
   try {
+    const sourceJob = await findJobById(sourceJobId)
     const sourceMessages = await listMessagesByJob(sourceJobId)
-    if (sourceMessages.length === 0) return null
+    const todoState = sourceJob?.todo_state ?? null
     const seed = buildRetrySeedPromptFromStoredMessages(sourceMessages, currentUserText)
-    if (seed.promptMessages.length === 0) return null
-    return { sourceJobId, ...seed }
+    if (seed.promptMessages.length === 0 && todoState == null) return null
+    return { sourceJobId, todoState, ...seed }
   } catch (error) {
     agentWarn('Failed to load retry seed context, continuing without resume seed', {
       sourceJobId,

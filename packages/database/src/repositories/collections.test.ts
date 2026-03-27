@@ -7,8 +7,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { closeDb, getDb } from '../db'
 import {
   approveCollectionSchemaReview,
+  canAgentAdminWriteCollection,
+  canAgentAdminWriteCollectionResource,
   canAgentReadCollection,
   canAgentWriteCollection,
+  defineCollection,
   findCollectionByName,
   getCollectionSchemaReviewById,
   insertCollectionRow,
@@ -17,7 +20,7 @@ import {
   queryCollectionRows,
   requestCollectionSchemaReview,
   searchCollectionRows,
-  setCollectionPermission,
+  updateCollectionPermission,
   upsertCollectionRow,
 } from './collections'
 
@@ -36,6 +39,75 @@ async function createTestSchema(database: ReturnType<typeof getDb>): Promise<voi
     .addColumn('status', 'text', (col) => col.notNull().defaultTo('idle'))
     .addColumn('created_at', 'integer', (col) => col.notNull())
     .addColumn('updated_at', 'integer', (col) => col.notNull())
+    .execute()
+
+  await database.schema
+    .createTable('roles')
+    .ifNotExists()
+    .addColumn('id', 'text', (col) => col.primaryKey())
+    .addColumn('slug', 'text', (col) => col.notNull())
+    .addColumn('name', 'text', (col) => col.notNull())
+    .addColumn('charter', 'text')
+    .addColumn('escalation_posture', 'text')
+    .addColumn('active', 'integer', (col) => col.notNull().defaultTo(1))
+    .addColumn('created_at', 'integer', (col) => col.notNull())
+    .addColumn('updated_at', 'integer', (col) => col.notNull())
+    .addUniqueConstraint('roles_slug_unique', ['slug'])
+    .execute()
+
+  await database.schema
+    .createTable('role_grants')
+    .ifNotExists()
+    .addColumn('id', 'text', (col) => col.primaryKey())
+    .addColumn('role_id', 'text', (col) => col.notNull())
+    .addColumn('action', 'text', (col) => col.notNull())
+    .addColumn('resource_type', 'text')
+    .addColumn('resource_id', 'text')
+    .addColumn('created_at', 'integer', (col) => col.notNull())
+    .execute()
+
+  await database.schema
+    .createTable('role_defaults')
+    .ifNotExists()
+    .addColumn('id', 'text', (col) => col.primaryKey())
+    .addColumn('role_id', 'text', (col) => col.notNull())
+    .addColumn('key', 'text', (col) => col.notNull())
+    .addColumn('value_json', 'text', (col) => col.notNull())
+    .addColumn('created_at', 'integer', (col) => col.notNull())
+    .execute()
+
+  await database.schema
+    .createTable('agent_role_assignments')
+    .ifNotExists()
+    .addColumn('agent_id', 'text', (col) => col.notNull())
+    .addColumn('role_id', 'text', (col) => col.notNull())
+    .addColumn('created_at', 'integer', (col) => col.notNull())
+    .execute()
+
+  await database.schema
+    .createTable('teams')
+    .ifNotExists()
+    .addColumn('id', 'text', (col) => col.primaryKey())
+    .addColumn('name', 'text', (col) => col.notNull())
+    .addColumn('description', 'text')
+    .addColumn('created_at', 'integer', (col) => col.notNull())
+    .addColumn('updated_at', 'integer', (col) => col.notNull())
+    .execute()
+
+  await database.schema
+    .createTable('agent_teams')
+    .ifNotExists()
+    .addColumn('agent_id', 'text', (col) => col.notNull())
+    .addColumn('team_id', 'text', (col) => col.notNull())
+    .addColumn('created_at', 'integer', (col) => col.notNull())
+    .execute()
+
+  await database.schema
+    .createTable('team_role_defaults')
+    .ifNotExists()
+    .addColumn('team_id', 'text', (col) => col.notNull())
+    .addColumn('role_id', 'text', (col) => col.notNull())
+    .addColumn('created_at', 'integer', (col) => col.notNull())
     .execute()
 
   await database.schema
@@ -117,6 +189,13 @@ async function clearTables(database: ReturnType<typeof getDb>): Promise<void> {
   await database.deleteFrom('collection_permissions').execute()
   await database.deleteFrom('collection_schema_reviews').execute()
   await database.deleteFrom('collections').execute()
+  await database.deleteFrom('agent_role_assignments').execute()
+  await database.deleteFrom('role_grants').execute()
+  await database.deleteFrom('role_defaults').execute()
+  await database.deleteFrom('team_role_defaults').execute()
+  await database.deleteFrom('agent_teams').execute()
+  await database.deleteFrom('teams').execute()
+  await database.deleteFrom('roles').execute()
   await database.deleteFrom('users').execute()
   await database.deleteFrom('agents').execute()
 }
@@ -161,6 +240,41 @@ async function seedPrincipals(database: ReturnType<typeof getDb>): Promise<void>
       status: 'active',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+    })
+    .execute()
+
+  await database
+    .insertInto('roles')
+    .values({
+      id: 'role-ceo',
+      slug: 'ceo',
+      name: 'CEO',
+      charter: 'Run the company.',
+      escalation_posture: null,
+      active: 1,
+      created_at: timestamp,
+      updated_at: timestamp,
+    })
+    .execute()
+
+  await database
+    .insertInto('role_grants')
+    .values({
+      id: 'grant-ceo-manage-collections',
+      role_id: 'role-ceo',
+      action: '*',
+      resource_type: '*',
+      resource_id: null,
+      created_at: timestamp,
+    })
+    .execute()
+
+  await database
+    .insertInto('agent_role_assignments')
+    .values({
+      agent_id: 'agent-1',
+      role_id: 'role-ceo',
+      created_at: timestamp,
     })
     .execute()
 }
@@ -229,6 +343,173 @@ describe('collections repository', () => {
     expect(permissions[0]?.can_write).toBe(true)
   })
 
+  it('defines collections directly for admin writers', async () => {
+    const defined = await defineCollection({
+      name: 'content_log',
+      description: 'Tracks content lifecycle',
+      agentId: 'agent-1',
+      schema: {
+        fields: [
+          { name: 'topic', type: 'string', required: true },
+          { name: 'script_body', type: 'longtext' },
+        ],
+      },
+    })
+
+    expect(defined.status).toBe('created')
+    expect(defined.collection.name).toBe('content_log')
+    expect(defined.collection.schema.fields).toHaveLength(2)
+
+    const noop = await defineCollection({
+      name: 'content_log',
+      description: 'Tracks content lifecycle',
+      agentId: 'agent-1',
+      schema: {
+        fields: [
+          { name: 'topic', type: 'string', required: true },
+          { name: 'script_body', type: 'longtext' },
+        ],
+      },
+    })
+
+    expect(noop.status).toBe('noop')
+    expect(noop.collection.schema_version).toBe(1)
+  })
+
+  it('honors explicit collection read, content write, and admin write grants independently', async () => {
+    const defined = await defineCollection({
+      name: 'content_log',
+      description: 'Tracks content lifecycle',
+      agentId: 'agent-1',
+      schema: {
+        fields: [
+          { name: 'topic', type: 'string', required: true },
+          { name: 'script_body', type: 'longtext' },
+        ],
+      },
+    })
+
+    await updateCollectionPermission({
+      collectionId: defined.collection.id,
+      agentId: 'agent-1',
+      access: 'readwrite',
+    })
+
+    const timestamp = Math.floor(Date.now() / 1000)
+    await db
+      .insertInto('agents')
+      .values([
+        {
+          id: 'agent-3',
+          handle: 'agent_three',
+          name: 'Agent Three',
+          sprite_id: null,
+          config: null,
+          status: 'idle',
+          created_at: timestamp,
+          updated_at: timestamp,
+        },
+        {
+          id: 'agent-4',
+          handle: 'agent_four',
+          name: 'Agent Four',
+          sprite_id: null,
+          config: null,
+          status: 'idle',
+          created_at: timestamp,
+          updated_at: timestamp,
+        },
+      ])
+      .execute()
+
+    await db
+      .insertInto('roles')
+      .values([
+        {
+          id: 'role-read',
+          slug: 'collection-read',
+          name: 'Collection Read',
+          charter: 'Read collections.',
+          escalation_posture: null,
+          active: 1,
+          created_at: timestamp,
+          updated_at: timestamp,
+        },
+        {
+          id: 'role-content',
+          slug: 'collection-content-write',
+          name: 'Collection Content Write',
+          charter: 'Write collection content.',
+          escalation_posture: null,
+          active: 1,
+          created_at: timestamp,
+          updated_at: timestamp,
+        },
+        {
+          id: 'role-admin',
+          slug: 'collection-admin-write',
+          name: 'Collection Admin Write',
+          charter: 'Administer collections.',
+          escalation_posture: null,
+          active: 1,
+          created_at: timestamp,
+          updated_at: timestamp,
+        },
+      ])
+      .execute()
+
+    await db
+      .insertInto('role_grants')
+      .values([
+        {
+          id: 'grant-read',
+          role_id: 'role-read',
+          action: 'collection.read',
+          resource_type: 'collection',
+          resource_id: null,
+          created_at: timestamp,
+        },
+        {
+          id: 'grant-content',
+          role_id: 'role-content',
+          action: 'collection.content.write',
+          resource_type: 'collection',
+          resource_id: null,
+          created_at: timestamp,
+        },
+        {
+          id: 'grant-admin',
+          role_id: 'role-admin',
+          action: 'collection.admin.write',
+          resource_type: 'collection',
+          resource_id: null,
+          created_at: timestamp,
+        },
+      ])
+      .execute()
+
+    await db
+      .insertInto('agent_role_assignments')
+      .values([
+        { agent_id: 'agent-2', role_id: 'role-read', created_at: timestamp },
+        { agent_id: 'agent-3', role_id: 'role-content', created_at: timestamp },
+        { agent_id: 'agent-4', role_id: 'role-admin', created_at: timestamp },
+      ])
+      .execute()
+
+    expect(await canAgentReadCollection(defined.collection.id, 'agent-2')).toBe(true)
+    expect(await canAgentWriteCollection(defined.collection.id, 'agent-2')).toBe(false)
+    expect(await canAgentAdminWriteCollection(defined.collection.id, 'agent-2')).toBe(false)
+
+    expect(await canAgentReadCollection(defined.collection.id, 'agent-3')).toBe(false)
+    expect(await canAgentWriteCollection(defined.collection.id, 'agent-3')).toBe(true)
+    expect(await canAgentAdminWriteCollection(defined.collection.id, 'agent-3')).toBe(false)
+
+    expect(await canAgentReadCollection(defined.collection.id, 'agent-4')).toBe(false)
+    expect(await canAgentWriteCollection(defined.collection.id, 'agent-4')).toBe(false)
+    expect(await canAgentAdminWriteCollection(defined.collection.id, 'agent-4')).toBe(true)
+  })
+
   it('ignores stray enumValues on non-enum fields', async () => {
     const requested = await requestCollectionSchemaReview({
       name: 'hook_library',
@@ -290,11 +571,10 @@ describe('collections repository', () => {
     expect(await canAgentWriteCollection(collection.id, 'agent-1')).toBe(true)
     expect(await canAgentReadCollection(collection.id, 'agent-2')).toBe(false)
 
-    await setCollectionPermission({
+    await updateCollectionPermission({
       collectionId: collection.id,
       agentId: 'agent-2',
-      canRead: true,
-      canWrite: false,
+      access: 'read',
     })
 
     expect(await canAgentReadCollection(collection.id, 'agent-2')).toBe(true)
@@ -347,5 +627,34 @@ describe('collections repository', () => {
 
     expect(search).toHaveLength(1)
     expect(search[0]!.score).toBeGreaterThan(0)
+  })
+
+  it('honors wildcard collection authority even when ACL rows exist', async () => {
+    const requested = await requestCollectionSchemaReview({
+      name: 'policy_notes',
+      requestedByAgentId: 'agent-1',
+      schema: {
+        fields: [
+          { name: 'title', type: 'string', required: true },
+          { name: 'notes', type: 'longtext' },
+        ],
+      },
+    })
+
+    const { collection } = await approveCollectionSchemaReview({
+      reviewId: requested.review!.id,
+      reviewerUserId: 'user-1',
+    })
+
+    await updateCollectionPermission({
+      collectionId: collection.id,
+      agentId: 'agent-1',
+      access: 'none',
+    })
+
+    expect(await canAgentReadCollection(collection.id, 'agent-1')).toBe(true)
+    expect(await canAgentWriteCollection(collection.id, 'agent-1')).toBe(true)
+    expect(await canAgentAdminWriteCollection(collection.id, 'agent-1')).toBe(true)
+    expect(await canAgentAdminWriteCollectionResource('agent-1', collection.id)).toBe(true)
   })
 })

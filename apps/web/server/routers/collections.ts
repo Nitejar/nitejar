@@ -11,8 +11,8 @@ import {
   projectCollectionRow,
   queryCollectionRows,
   rejectCollectionSchemaReview,
-  setCollectionPermission,
-  removeCollectionPermission,
+  resolveEffectivePolicy,
+  updateCollectionPermission,
   updateCollectionSchema,
 } from '@nitejar/database'
 import { protectedProcedure, router } from '../trpc'
@@ -84,6 +84,50 @@ async function enrichPermissions(db: ReturnType<typeof getDb>, collectionId: str
   })
 }
 
+function hasCollectionGrant(
+  grants: Array<{ action: string; resourceType: string | null; resourceId: string | null }>,
+  actions: string[],
+  collectionId: string
+): boolean {
+  return grants.some((grant) => {
+    const actionMatch = grant.action === '*' || actions.includes(grant.action)
+    const resourceTypeMatch =
+      grant.resourceType == null || grant.resourceType === '*' || grant.resourceType === 'collection'
+    const resourceIdMatch =
+      grant.resourceId == null || grant.resourceId === '*' || grant.resourceId === collectionId
+    return actionMatch && resourceTypeMatch && resourceIdMatch
+  })
+}
+
+async function enrichEffectiveRoleAccess(db: ReturnType<typeof getDb>, collectionId: string) {
+  const agents = await db.selectFrom('agents').select(['id', 'name', 'handle']).orderBy('name', 'asc').execute()
+
+  const resolvedPolicies = await Promise.all(
+    agents.map(async (agent) => ({
+      agent,
+      resolved: await resolveEffectivePolicy(agent.id),
+    }))
+  )
+
+  return resolvedPolicies
+    .map(({ agent, resolved }) => {
+      const canRead = hasCollectionGrant(resolved.grants, ['collection.read'], collectionId)
+      const canContentWrite = hasCollectionGrant(resolved.grants, ['collection.content.write'], collectionId)
+      const canAdminWrite = hasCollectionGrant(resolved.grants, ['collection.admin.write'], collectionId)
+      if (!canRead && !canContentWrite && !canAdminWrite) return null
+      return {
+        agentId: agent.id,
+        agentName: agent.name,
+        agentHandle: agent.handle,
+        canRead,
+        canContentWrite,
+        canAdminWrite,
+        viaRoles: resolved.roles.map((role) => role.name),
+      }
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+}
+
 export const collectionsRouter = router({
   listCollections: protectedProcedure.query(async () => {
     const db = getDb()
@@ -130,13 +174,15 @@ export const collectionsRouter = router({
       const collection = await findCollectionById(input.collectionId)
       if (!collection) throw new Error('Collection not found.')
 
-      const rowCount = await countCollectionRows(input.collectionId)
-      const permissions = await enrichPermissions(db, input.collectionId)
-
-      const pendingReviews = await listCollectionSchemaReviews({
-        collectionId: input.collectionId,
-        status: 'pending',
-      })
+      const [rowCount, permissions, pendingReviews, effectiveRoleAccess] = await Promise.all([
+        countCollectionRows(input.collectionId),
+        enrichPermissions(db, input.collectionId),
+        listCollectionSchemaReviews({
+          collectionId: input.collectionId,
+          status: 'pending',
+        }),
+        enrichEffectiveRoleAccess(db, input.collectionId),
+      ])
 
       return {
         ...collection,
@@ -144,6 +190,7 @@ export const collectionsRouter = router({
         permissionCount: permissions.length,
         pendingReviewCount: pendingReviews.length,
         permissions,
+        effectiveRoleAccess,
       }
     }),
 
@@ -296,36 +343,22 @@ export const collectionsRouter = router({
       }
     }),
 
-  setPermission: protectedProcedure
+  updatePermission: protectedProcedure
     .input(
       z.object({
         collectionId: z.string().trim().min(1),
         agentId: z.string().trim().min(1),
-        canRead: z.boolean(),
-        canWrite: z.boolean(),
+        access: z.enum(['none', 'read', 'readwrite']),
       })
     )
     .mutation(async ({ input }) => {
-      const permission = await setCollectionPermission({
+      const permission = await updateCollectionPermission({
         collectionId: input.collectionId,
         agentId: input.agentId,
-        canRead: input.canRead,
-        canWrite: input.canWrite,
+        access: input.access,
       })
 
       return { permission }
-    }),
-
-  removePermission: protectedProcedure
-    .input(
-      z.object({
-        collectionId: z.string().trim().min(1),
-        agentId: z.string().trim().min(1),
-      })
-    )
-    .mutation(async ({ input }) => {
-      const removed = await removeCollectionPermission(input.collectionId, input.agentId)
-      return { removed }
     }),
 
   updateSchema: protectedProcedure

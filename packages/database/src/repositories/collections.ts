@@ -1,5 +1,6 @@
 import { sql, type Kysely } from 'kysely'
 import { getDb } from '../db'
+import { resolveEffectivePolicy } from './policy'
 import type {
   Collection,
   CollectionPermission,
@@ -785,6 +786,34 @@ async function upsertPermissionWithDb(
     .execute()
 }
 
+function hasCollectionPolicyGrant(
+  grants: Array<{
+    action: string
+    resourceType: string | null
+    resourceId: string | null
+  }>,
+  actions: string[],
+  resourceId?: string | null
+): boolean {
+  return grants.some((grant) => {
+    const actionMatch = grant.action === '*' || actions.includes(grant.action)
+    const resourceTypeMatch =
+      grant.resourceType == null || grant.resourceType === '*' || grant.resourceType === 'collection'
+    const resourceIdMatch =
+      resourceId == null || grant.resourceId == null || grant.resourceId === resourceId
+    return actionMatch && resourceTypeMatch && resourceIdMatch
+  })
+}
+
+async function hasCollectionAccessGrant(params: {
+  agentId: string
+  actions: string[]
+  resourceId?: string | null
+}): Promise<boolean> {
+  const resolved = await resolveEffectivePolicy(params.agentId)
+  return hasCollectionPolicyGrant(resolved.grants, params.actions, params.resourceId)
+}
+
 export async function findCollectionByName(name: string): Promise<CollectionDefinition | null> {
   const db = getDb()
   const row = await findCollectionByNameWithDb(db, name)
@@ -817,14 +846,28 @@ export async function listCollectionPermissions(
   return rows.map(toCollectionPermissionRecord)
 }
 
-export async function setCollectionPermission(params: {
+export async function updateCollectionPermission(params: {
   collectionId: string
   agentId: string
-  canRead: boolean
-  canWrite: boolean
-}): Promise<CollectionPermissionRecord> {
+  access: 'none' | 'read' | 'readwrite'
+}): Promise<CollectionPermissionRecord | null> {
   const db = getDb()
-  await upsertPermissionWithDb(db, params)
+
+  if (params.access === 'none') {
+    await db
+      .deleteFrom('collection_permissions')
+      .where('collection_id', '=', params.collectionId)
+      .where('agent_id', '=', params.agentId)
+      .executeTakeFirst()
+    return null
+  }
+
+  await upsertPermissionWithDb(db, {
+    collectionId: params.collectionId,
+    agentId: params.agentId,
+    canRead: true,
+    canWrite: params.access === 'readwrite',
+  })
 
   const row = await db
     .selectFrom('collection_permissions')
@@ -836,24 +879,20 @@ export async function setCollectionPermission(params: {
   return toCollectionPermissionRecord(row)
 }
 
-export async function removeCollectionPermission(
-  collectionId: string,
-  agentId: string
-): Promise<boolean> {
-  const db = getDb()
-  const result = await db
-    .deleteFrom('collection_permissions')
-    .where('collection_id', '=', collectionId)
-    .where('agent_id', '=', agentId)
-    .executeTakeFirst()
-
-  return (result.numDeletedRows ?? 0n) > 0n
-}
-
 export async function canAgentReadCollection(
   collectionId: string,
   agentId: string
 ): Promise<boolean> {
+  if (
+    await hasCollectionAccessGrant({
+      agentId,
+      actions: ['collection.read'],
+      resourceId: collectionId,
+    })
+  ) {
+    return true
+  }
+
   const db = getDb()
 
   const permission = await db
@@ -881,6 +920,16 @@ export async function canAgentWriteCollection(
   collectionId: string,
   agentId: string
 ): Promise<boolean> {
+  if (
+    await hasCollectionAccessGrant({
+      agentId,
+      actions: ['collection.content.write'],
+      resourceId: collectionId,
+    })
+  ) {
+    return true
+  }
+
   const db = getDb()
 
   const permission = await db
@@ -902,6 +951,121 @@ export async function canAgentWriteCollection(
 
   // Backwards-compatible fallback: if no ACL entries exist yet, keep the collection open.
   return !anyPermission
+}
+
+export async function canAgentAdminWriteCollection(
+  collectionId: string,
+  agentId: string
+): Promise<boolean> {
+  return canAgentAdminWriteCollectionResource(agentId, collectionId)
+}
+
+export async function canAgentAdminWriteCollectionResource(
+  agentId: string,
+  resourceId?: string | null
+): Promise<boolean> {
+  return hasCollectionAccessGrant({
+    agentId,
+    actions: ['collection.admin.write'],
+    resourceId,
+  })
+}
+
+export interface DefineCollectionResult {
+  status: 'created' | 'updated' | 'noop'
+  action: CollectionReviewAction
+  collection: CollectionDefinition
+}
+
+export async function defineCollection(params: {
+  name: string
+  description?: string | null
+  schema: CollectionSchemaInput
+  agentId?: string | null
+}): Promise<DefineCollectionResult> {
+  const db = getDb()
+  const collectionName = normalizeCollectionName(params.name)
+  const description =
+    typeof params.description === 'string' ? params.description.trim() || null : null
+  const normalizedSchema = normalizeSchemaInput(params.schema)
+  const schemaJson = JSON.stringify(toPublicSchema(normalizedSchema))
+  const timestamp = now()
+
+  return db.transaction().execute(async (trx) => {
+    const existing = await findCollectionByNameWithDb(trx, collectionName)
+    const action: CollectionReviewAction = existing ? 'update' : 'create'
+
+    if (existing) {
+      const currentSchema = parseStoredSchema(existing.schema_json)
+      const sameSchema = stableSchemaHash(currentSchema) === stableSchemaHash(normalizedSchema)
+      const sameDescription = (existing.description ?? null) === description
+
+      if (sameSchema && sameDescription) {
+        return {
+          status: 'noop' as const,
+          action,
+          collection: toCollectionDefinition(existing),
+        }
+      }
+
+      const updated = await trx
+        .updateTable('collections')
+        .set({
+          description,
+          schema_json: schemaJson,
+          schema_version: existing.schema_version + 1,
+          updated_at: timestamp,
+        } as CollectionUpdate)
+        .where('id', '=', existing.id)
+        .returningAll()
+        .executeTakeFirstOrThrow()
+
+      if (params.agentId) {
+        await upsertPermissionWithDb(trx, {
+          collectionId: updated.id,
+          agentId: params.agentId,
+          canRead: true,
+          canWrite: true,
+        })
+      }
+
+      return {
+        status: 'updated' as const,
+        action,
+        collection: toCollectionDefinition(updated),
+      }
+    }
+
+    const created = await trx
+      .insertInto('collections')
+      .values({
+        id: uuid(),
+        name: collectionName,
+        description,
+        schema_json: schemaJson,
+        schema_version: 1,
+        created_by_agent_id: params.agentId ?? null,
+        created_at: timestamp,
+        updated_at: timestamp,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow()
+
+    if (params.agentId) {
+      await upsertPermissionWithDb(trx, {
+        collectionId: created.id,
+        agentId: params.agentId,
+        canRead: true,
+        canWrite: true,
+      })
+    }
+
+    return {
+      status: 'created' as const,
+      action,
+      collection: toCollectionDefinition(created),
+    }
+  })
 }
 
 export interface RequestCollectionSchemaReviewResult {

@@ -5,7 +5,7 @@ import type { ToolHandler } from '../types'
 export const runTodoDefinition: Anthropic.Tool = {
   name: 'run_todo',
   description:
-    'Manage an ephemeral todo checklist scoped to the current run. Use this to plan multi-step work: add items at the start, check them off as you go, and list remaining items to stay on track. The checklist is discarded when the run ends — it is NOT persistent across runs. For persistent tracking, use add_memory instead.',
+    'Manage an ephemeral todo checklist scoped to the current run. Use this to plan multi-step work: add items at the start, check them off as you go, and list remaining items to stay on track. The checklist is not persistent across unrelated runs, though a "resume from last good turn" replay may inherit it. For persistent tracking, use add_memory instead.',
   input_schema: {
     type: 'object' as const,
     properties: {

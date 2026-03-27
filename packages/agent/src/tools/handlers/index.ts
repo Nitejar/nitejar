@@ -50,8 +50,12 @@ import {
   defineCollectionTool,
   collectionGetTool,
   collectionInsertTool,
+  collectionListReviewsTool,
   collectionQueryTool,
   collectionSearchTool,
+  collectionReviewSchemaTool,
+  collectionUpdatePermissionTool,
+  collectionUpdateSchemaTool,
   collectionUpsertTool,
 } from './collections'
 import { listCredentialsTool, secureHttpRequestTool } from './credentials'
@@ -125,6 +129,10 @@ export const toolHandlers: Record<string, ToolHandler> = {
   delete_routine: deleteRoutineTool,
   run_routine_now: runRoutineNowTool,
   define_collection: defineCollectionTool,
+  collection_list_reviews: collectionListReviewsTool,
+  collection_review_schema: collectionReviewSchemaTool,
+  collection_update_permission: collectionUpdatePermissionTool,
+  collection_update_schema: collectionUpdateSchemaTool,
   collection_describe: collectionDescribeTool,
   collection_query: collectionQueryTool,
   collection_search: collectionSearchTool,

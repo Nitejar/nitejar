@@ -31,6 +31,7 @@ const {
   mockPauseJob,
   mockResumeJob,
   mockFindRunDispatchById,
+  mockReplayRunDispatch,
   mockFindAgentById,
   mockFindWorkItemById,
   mockGetAgentsForPluginInstance,
@@ -69,6 +70,7 @@ const {
   const pauseJob = vi.fn()
   const resumeJob = vi.fn()
   const findRunDispatchById = vi.fn()
+  const replayRunDispatch = vi.fn()
   const findAgentById = vi.fn()
   const findWorkItemById = vi.fn()
   const getAgentsForPluginInstance = vi.fn()
@@ -112,6 +114,7 @@ const {
     mockPauseJob: pauseJob,
     mockResumeJob: resumeJob,
     mockFindRunDispatchById: findRunDispatchById,
+    mockReplayRunDispatch: replayRunDispatch,
     mockFindAgentById: findAgentById,
     mockFindWorkItemById: findWorkItemById,
     mockGetAgentsForPluginInstance: getAgentsForPluginInstance,
@@ -153,6 +156,7 @@ vi.mock('@nitejar/database', () => ({
   pauseJob: mockPauseJob,
   resumeJob: mockResumeJob,
   findRunDispatchById: mockFindRunDispatchById,
+  replayRunDispatch: mockReplayRunDispatch,
   findAgentById: mockFindAgentById,
   findWorkItemById: mockFindWorkItemById,
   getAgentsForPluginInstance: mockGetAgentsForPluginInstance,
@@ -327,6 +331,7 @@ describe('run dispatch worker control flow', () => {
     mockSetRunDispatchPaused.mockResolvedValue(undefined)
     mockSetRunDispatchRunningFromPause.mockResolvedValue(undefined)
     mockFindRunDispatchById.mockResolvedValue(null)
+    mockReplayRunDispatch.mockResolvedValue(null)
 
     mockRunAgent.mockResolvedValue(makeRunResult(null))
   })
@@ -687,6 +692,71 @@ describe('run dispatch worker control flow', () => {
         expect.objectContaining({ status: 'failed', error: 'model crashed' })
       )
       expect(mockUpdateWorkItem).toHaveBeenCalledWith('wi-1', { status: 'FAILED' })
+    })
+
+    it('auto-resumes provider 429 failures up to three resume retries', async () => {
+      mockRunAgent.mockRejectedValue(new Error('429 Provider returned error'))
+      mockFindRunDispatchById.mockImplementation(async (id: string) => {
+        if (id === 'dispatch-1') {
+          return {
+            ...baseDispatch,
+            id: 'dispatch-1',
+            control_reason: null,
+            replay_of_dispatch_id: null,
+          } as never
+        }
+        return null
+      })
+      mockReplayRunDispatch.mockResolvedValue({
+        dispatch: { ...baseDispatch, id: 'dispatch-replay', control_reason: 'resume_seed' },
+        alreadyQueued: false,
+      })
+
+      await __dispatchWorkerTest.executeDispatch(makeClaimedDispatch(), runtimeControl)
+
+      expect(mockReplayRunDispatch).toHaveBeenCalledWith(
+        'dispatch-1',
+        'system',
+        'Auto-resume after provider 429',
+        'resume'
+      )
+      expect(mockUpdateWorkItem).toHaveBeenCalledWith('wi-1', { status: 'NEW' })
+      expect(mockUpdateWorkItem).not.toHaveBeenCalledWith('wi-1', { status: 'FAILED' })
+    })
+
+    it('does not auto-resume provider 429 failures after three resume retries', async () => {
+      mockRunAgent.mockRejectedValue(new Error('429 Provider returned error'))
+      mockFindRunDispatchById.mockImplementation(async (id: string) => {
+        if (id === 'dispatch-1') {
+          return {
+            ...baseDispatch,
+            id: 'dispatch-1',
+            control_reason: 'resume_seed',
+            replay_of_dispatch_id: 'dispatch-parent-2',
+          } as never
+        }
+        if (id === 'dispatch-parent-2') {
+          return {
+            ...baseDispatch,
+            id: 'dispatch-parent-2',
+            control_reason: 'resume_seed',
+            replay_of_dispatch_id: 'dispatch-parent-1',
+          } as never
+        }
+        if (id === 'dispatch-parent-1') {
+          return {
+            ...baseDispatch,
+            id: 'dispatch-parent-1',
+            control_reason: 'resume_seed',
+            replay_of_dispatch_id: null,
+          } as never
+        }
+        return null
+      })
+
+      await __dispatchWorkerTest.executeDispatch(makeClaimedDispatch(), runtimeControl)
+
+      expect(mockReplayRunDispatch).not.toHaveBeenCalled()
     })
   })
 

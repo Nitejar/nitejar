@@ -132,6 +132,10 @@ export function RetryRunButton({ dispatchId }: Props) {
           >
             Restart from scratch
           </button>
+          <p className="px-2 py-1.5 text-[10px] leading-relaxed text-white/45">
+            Resume carries the last good turn and todo state forward. Provider 429s auto-resume up
+            to 3 times.
+          </p>
         </div>
       )}
     </div>
