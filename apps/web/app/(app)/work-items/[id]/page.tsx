@@ -23,6 +23,8 @@ import {
 import { parseAgentConfig, getSessionSettings } from '@nitejar/agent/config'
 import { buildSessionContext, formatSessionMessages } from '@nitejar/agent/session'
 import { createPageMetadata } from '@/app/metadata'
+import { getWorkItemDisplayTitle, getWorkItemSourceLabel } from '@/lib/work-item-display'
+import { resolveWorkItemTicketContexts } from '@/server/services/work-item-display'
 import { listModelCatalog } from '@/server/services/model-catalog'
 import { IdentityBadge } from '../../components/IdentityBadge'
 import { PageScrollShell } from '../../components/PageScrollShell'
@@ -56,7 +58,14 @@ interface PageProps {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params
   const item = await findWorkItemById(id)
-  return createPageMetadata(item?.title ?? 'Event')
+  const linkedContext = item
+    ? (await resolveWorkItemTicketContexts([
+        { workItemId: item.id, sourceRef: item.source_ref, sessionKey: item.session_key },
+      ])).get(id) ?? null
+    : null
+  return createPageMetadata(
+    getWorkItemDisplayTitle({ title: item?.title, linkedTicketTitle: linkedContext?.ticketTitle ?? null })
+  )
 }
 
 const workItemStatusVariant = (status: string) => {
@@ -717,6 +726,14 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
   const pluginInstance = item.plugin_instance_id
     ? await findPluginInstanceById(item.plugin_instance_id)
     : null
+  const linkedTicketContext =
+    (await resolveWorkItemTicketContexts([
+      { workItemId: item.id, sourceRef: item.source_ref, sessionKey: item.session_key },
+    ])).get(item.id) ?? null
+  const displayTitle = getWorkItemDisplayTitle({
+    title: item.title,
+    linkedTicketTitle: linkedTicketContext?.ticketTitle ?? null,
+  })
 
   const jobs = await listJobsByWorkItem(id)
   const [dispatches, effects, queueMessages, ingressReceipts] = await Promise.all([
@@ -863,6 +880,20 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
       )
     )
     .find((context): context is GoalHeartbeatContext => context !== null)
+  const linkedGoal =
+    workItemGoalContext?.liveGoalId != null
+      ? {
+          id: workItemGoalContext.liveGoalId,
+          title: workItemGoalContext.goalTitle,
+        }
+      : linkedTicketContext?.goalId
+        ? ((await findGoalById(linkedTicketContext.goalId)) ?? null)
+        : null
+  const displaySource = getWorkItemSourceLabel({
+    source: item.source,
+    linkedTicketTitle: linkedTicketContext?.ticketTitle ?? null,
+    linkedGoalTitle: linkedGoal?.title ?? null,
+  })
   const totalExternalCost = Array.from(externalCallsByJob.values())
     .flat()
     .reduce((sum, c) => sum + (c.cost_usd ?? 0), 0)
@@ -1154,7 +1185,7 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
         </div>
         <div>
           <div className="flex items-center gap-3">
-            <h2 className="text-2xl font-semibold">{item.title}</h2>
+            <h2 className="text-2xl font-semibold">{displayTitle}</h2>
             <Badge variant={workItemStatusVariant(item.status)} className="text-xs">
               {item.status.replace('_', ' ')}
             </Badge>
@@ -1192,6 +1223,26 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
               ) : null}
             </div>
           ) : null}
+          {linkedTicketContext?.ticketId || linkedGoal ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              {linkedTicketContext?.ticketId && linkedTicketContext.ticketTitle ? (
+                <Link
+                  href={`/tickets/${linkedTicketContext.ticketId}`}
+                  className="rounded border border-white/10 bg-white/[0.03] px-2 py-1 text-foreground/80 transition-colors hover:bg-white/[0.06] hover:text-foreground"
+                >
+                  Ticket: {linkedTicketContext.ticketTitle}
+                </Link>
+              ) : null}
+              {linkedGoal && !workItemGoalContext ? (
+                <Link
+                  href={`/goals/${linkedGoal.id}`}
+                  className="rounded border border-white/10 bg-white/[0.03] px-2 py-1 text-foreground/70 transition-colors hover:bg-white/[0.06] hover:text-foreground"
+                >
+                  Goal: {linkedGoal.title}
+                </Link>
+              ) : null}
+            </div>
+          ) : null}
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             {pluginInstance ? (
               <Link
@@ -1202,7 +1253,7 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
                 {pluginInstance.name}
               </Link>
             ) : (
-              <span className="capitalize">{item.source}</span>
+              <span className="capitalize">{displaySource}</span>
             )}
             <span className="text-white/20">·</span>
             <span className="flex items-center gap-1">

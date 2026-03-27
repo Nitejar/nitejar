@@ -1,7 +1,9 @@
 import Link from 'next/link'
-import { listRecentActivity, type RecentActivityEntry } from '@nitejar/database'
+import { findGoalById, listRecentActivity, type RecentActivityEntry } from '@nitejar/database'
 import { parseAgentConfig } from '@nitejar/agent/config'
 import { createPageMetadata } from '@/app/metadata'
+import { getWorkItemDisplayTitle, getWorkItemSourceLabel } from '@/lib/work-item-display'
+import { resolveWorkItemTicketContexts } from '@/server/services/work-item-display'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader } from '../components/PageHeader'
 import { PageScrollShell } from '../components/PageScrollShell'
@@ -206,11 +208,22 @@ interface WorkItemEvent {
   queueDroppedCount: number
   queueCancelledCount: number
   goalContext: GoalHeartbeatContext | null
+  linkedTicket: { id: string; title: string } | null
+  linkedGoal: { id: string; title: string } | null
   runs: AgentRun[]
   children: WorkItemEvent[] // agent-relay work items spawned from this one
 }
 
-function groupByWorkItem(entries: RecentActivityEntry[]): WorkItemEvent[] {
+function groupByWorkItem(
+  entries: RecentActivityEntry[],
+  linkedContexts: Map<
+    string,
+    {
+      linkedTicket: { id: string; title: string } | null
+      linkedGoal: { id: string; title: string } | null
+    }
+  >
+): WorkItemEvent[] {
   const map = new Map<string, WorkItemEvent>()
   for (const entry of entries) {
     const config = parseAgentConfig(entry.agent_config)
@@ -225,6 +238,7 @@ function groupByWorkItem(entries: RecentActivityEntry[]): WorkItemEvent[] {
     }
 
     const goalContext = parseGoalHeartbeatContext(entry.goal_snapshot_json, entry.live_goal_id)
+    const linkedContext = linkedContexts.get(entry.work_item_id)
     const run: AgentRun = {
       jobId: entry.job_id,
       agentId: entry.agent_id,
@@ -261,11 +275,16 @@ function groupByWorkItem(entries: RecentActivityEntry[]): WorkItemEvent[] {
         entry.queue_cancelled_count
       )
       existing.goalContext ??= goalContext
+      existing.linkedTicket ??= linkedContext?.linkedTicket ?? null
+      existing.linkedGoal ??= linkedContext?.linkedGoal ?? null
       existing.runs.push(run)
     } else {
       map.set(entry.work_item_id, {
         workItemId: entry.work_item_id,
-        title: entry.title,
+        title: getWorkItemDisplayTitle({
+          title: entry.title,
+          linkedTicketTitle: linkedContext?.linkedTicket?.title ?? null,
+        }),
         source: entry.source,
         sourceRef: entry.source_ref,
         sessionKey: entry.session_key,
@@ -276,6 +295,8 @@ function groupByWorkItem(entries: RecentActivityEntry[]): WorkItemEvent[] {
         queueDroppedCount: entry.queue_dropped_count,
         queueCancelledCount: entry.queue_cancelled_count,
         goalContext,
+        linkedTicket: linkedContext?.linkedTicket ?? null,
+        linkedGoal: linkedContext?.linkedGoal ?? null,
         runs: [run],
         children: [],
       })
@@ -412,12 +433,19 @@ function EventCard({ event }: { event: WorkItemEvent }) {
   const { label: overallLabel, className: overallClass } = statusText(overallStatus)
   const totalCost = allRuns.reduce((s, r) => s + r.totalCost, 0)
   const sourceKey = event.source.toLowerCase()
-  const sourceIcon = sourceIcons[sourceKey] ?? '\u00B7'
+  const displaySource = getWorkItemSourceLabel({
+    source: event.source,
+    linkedTicketTitle: event.linkedTicket?.title ?? null,
+    linkedGoalTitle: event.linkedGoal?.title ?? null,
+  })
+  const sourceIcon = sourceIcons[displaySource.toLowerCase()] ?? sourceIcons[sourceKey] ?? '\u00B7'
   const githubUrl = sourceKey === 'github' ? githubUrlFromSourceRef(event.sourceRef) : null
   const visibleRuns = event.runs.slice(0, MAX_VISIBLE_AVATARS)
   const overflowCount = event.runs.length - MAX_VISIBLE_AVATARS
   const goalContext = event.goalContext
   const goalStatusLabel = formatGoalStatus(goalContext?.goalStatus)
+  const linkedGoal = event.linkedGoal
+  const linkedTicket = event.linkedTicket
 
   const integrationHref = event.pluginInstanceId
     ? `/plugins/instances/${event.pluginInstanceId}`
@@ -450,12 +478,12 @@ function EventCard({ event }: { event: WorkItemEvent }) {
               className="flex min-w-0 items-center gap-1 rounded bg-white/[0.07] px-1.5 py-0.5 text-[0.6rem] text-white/40 transition-colors hover:bg-white/[0.12] hover:text-white/60"
             >
               <span className="shrink-0">{sourceIcon}</span>
-              <span className="truncate">{event.source}</span>
+              <span className="truncate">{displaySource}</span>
             </a>
           ) : (
             <span className="flex min-w-0 items-center gap-1 rounded bg-white/[0.07] px-1.5 py-0.5 text-[0.6rem] text-white/40">
               <span className="shrink-0">{sourceIcon}</span>
-              <span className="truncate">{event.source}</span>
+              <span className="truncate">{displaySource}</span>
             </span>
           )}
           {githubUrl && (
@@ -511,13 +539,47 @@ function EventCard({ event }: { event: WorkItemEvent }) {
                     {goalContext.cadenceLabel}
                   </span>
                 )}
+                {linkedTicket ? (
+                  <>
+                    <span className="shrink-0">·</span>
+                    <Link
+                      href={`/tickets/${linkedTicket.id}`}
+                      className="truncate text-white/55 transition-colors hover:text-white/80"
+                    >
+                      {linkedTicket.title}
+                    </Link>
+                  </>
+                ) : null}
                 <span className="truncate text-white/28">{event.title}</span>
               </div>
             </div>
           ) : (
-            <span className="block truncate text-[0.8rem] font-medium text-foreground/85 group-hover:text-foreground">
-              {event.title}
-            </span>
+            <div className="min-w-0">
+              <span className="block truncate text-[0.8rem] font-medium text-foreground/85 group-hover:text-foreground">
+                {event.title}
+              </span>
+              {(linkedTicket || linkedGoal) && (
+                <div className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden text-[0.6rem] text-white/38">
+                  {linkedTicket ? (
+                    <Link
+                      href={`/tickets/${linkedTicket.id}`}
+                      className="truncate text-white/55 transition-colors hover:text-white/80"
+                    >
+                      {linkedTicket.title}
+                    </Link>
+                  ) : null}
+                  {linkedTicket && linkedGoal ? <span className="shrink-0">·</span> : null}
+                  {linkedGoal ? (
+                    <Link
+                      href={`/goals/${linkedGoal.id}`}
+                      className="truncate text-white/50 transition-colors hover:text-white/75"
+                    >
+                      {linkedGoal.title}
+                    </Link>
+                  ) : null}
+                </div>
+              )}
+            </div>
           )}
         </div>
 
@@ -774,7 +836,37 @@ function deriveOverallStatus(runs: AgentRun[]): string {
 
 export default async function ActivityPage() {
   const activity = await listRecentActivity(80)
-  const events = nestAgentRelayEvents(groupByWorkItem(activity))
+  const ticketContexts = await resolveWorkItemTicketContexts(
+    activity.map((entry) => ({
+      workItemId: entry.work_item_id,
+      sourceRef: entry.source_ref,
+      sessionKey: entry.session_key,
+    }))
+  )
+  const goalIds = Array.from(
+    new Set(
+      [...ticketContexts.values()]
+        .map((context) => context.goalId)
+        .filter((goalId): goalId is string => Boolean(goalId))
+    )
+  )
+  const linkedGoals = await Promise.all(goalIds.map((goalId) => findGoalById(goalId)))
+  const linkedGoalMap = new Map(
+    linkedGoals.filter(Boolean).map((goal) => [goal!.id, { id: goal!.id, title: goal!.title }])
+  )
+  const linkedContextMap = new Map(
+    [...ticketContexts.entries()].map(([workItemId, context]) => [
+      workItemId,
+      {
+        linkedTicket:
+          context.ticketId && context.ticketTitle
+            ? { id: context.ticketId, title: context.ticketTitle }
+            : null,
+        linkedGoal: context.goalId ? (linkedGoalMap.get(context.goalId) ?? null) : null,
+      },
+    ])
+  )
+  const events = nestAgentRelayEvents(groupByWorkItem(activity, linkedContextMap))
 
   // Group events by day (use the work item event time)
   const grouped = new Map<string, WorkItemEvent[]>()

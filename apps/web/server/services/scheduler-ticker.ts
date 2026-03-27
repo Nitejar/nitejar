@@ -1,4 +1,5 @@
 import {
+  createTicketLink,
   getDb,
   listPendingScheduledItems,
   claimScheduledItem,
@@ -8,6 +9,8 @@ import {
   createWorkItem,
   enqueueToLane,
   findAgentById,
+  findRoutineRunById,
+  findTicketById,
   linkRoutineRunToWorkItemByScheduledItem,
   updateRoutine,
   archiveRoutine,
@@ -31,6 +34,12 @@ type TickerState = {
 
 function now(): number {
   return Math.floor(Date.now() / 1000)
+}
+
+function extractTicketIdFromTriggerRef(triggerRef: string | null): string | null {
+  if (!triggerRef?.startsWith('ticket:')) return null
+  const ticketId = triggerRef.slice('ticket:'.length).trim()
+  return ticketId || null
 }
 
 function getTickerState(): TickerState {
@@ -83,6 +92,9 @@ async function tick(): Promise<void> {
       // Scheduler-specific queue_key — isolates from conversation lanes so mode='followup'
       // sticks (upsertQueueLaneOnMessage doesn't overwrite mode on existing lanes)
       let effectiveSessionKey = item.session_key
+      const routineRun = item.routine_run_id ? await findRoutineRunById(item.routine_run_id) : null
+      const linkedTicketId = extractTicketIdFromTriggerRef(routineRun?.trigger_ref ?? item.source_ref)
+      const linkedTicket = linkedTicketId ? await findTicketById(linkedTicketId) : null
       if (item.routine_id) {
         const parsed = parseAppSessionKey(item.session_key)
         if (parsed.isAppSession) {
@@ -114,13 +126,46 @@ async function tick(): Promise<void> {
               : `scheduled:${item.id}`,
             session_key: effectiveSessionKey,
             status: 'NEW',
-            title: `Scheduled: ${item.type}`,
+            title: linkedTicket ? `Scheduled ticket: ${linkedTicket.title}` : `Scheduled: ${item.type}`,
             payload: item.payload,
             plugin_instance_id: item.plugin_instance_id ?? undefined,
           },
           trx
         )
         createdWorkItemId = workItem.id
+
+        if (linkedTicketId) {
+          const receiptMetadata = JSON.stringify({
+            receiptKind: 'deferred_ticket_execution',
+            scheduledItemId: item.id,
+            routineId: item.routine_id ?? null,
+            routineRunId: item.routine_run_id ?? null,
+          })
+          await createTicketLink(
+            {
+              ticket_id: linkedTicketId,
+              kind: 'session',
+              ref: effectiveSessionKey,
+              label: linkedTicket?.title ?? `Scheduled follow-up ${item.id}`,
+              metadata_json: receiptMetadata,
+              created_by_kind: 'system',
+              created_by_ref: 'scheduler',
+            },
+            trx
+          )
+          await createTicketLink(
+            {
+              ticket_id: linkedTicketId,
+              kind: 'work_item',
+              ref: workItem.id,
+              label: workItem.title,
+              metadata_json: receiptMetadata,
+              created_by_kind: 'system',
+              created_by_ref: 'scheduler',
+            },
+            trx
+          )
+        }
 
         await enqueueToLane(
           {

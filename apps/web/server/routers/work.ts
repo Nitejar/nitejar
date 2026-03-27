@@ -38,6 +38,7 @@ import {
   updateGoal,
   updateTicket,
   updateWorkView,
+  type WorkItem,
 } from '@nitejar/database'
 import { z } from 'zod'
 import { validateCronSchedule } from '../services/routines/cron'
@@ -1104,14 +1105,47 @@ async function enrichTickets(rows: Awaited<ReturnType<typeof listTickets>>) {
 }
 
 async function buildTicketReceiptSummary(ticketId: string) {
-  const db = getDb()
-  const [links, workItems] = await Promise.all([
+  const [links, linkedWorkItems, typedSessionWorkItems] = await Promise.all([
     listTicketLinksByTicket(ticketId),
     listLinkedWorkItemsForTicket(ticketId),
+    listWorkItemsBySessionPrefix(`app:ticket:${ticketId}`),
   ])
+  const workItems = dedupeWorkItemsById([...linkedWorkItems, ...typedSessionWorkItems])
 
-  const workItemIds = workItems.map((item) => item.id)
-  const sessionKeys = [...new Set(workItems.map((item) => item.session_key))]
+  return buildReceiptSummaryFromWorkItems({
+    links,
+    workItems,
+  })
+}
+
+function dedupeWorkItemsById(items: WorkItem[]): WorkItem[] {
+  const seen = new Set<string>()
+  const deduped: WorkItem[] = []
+  for (const item of items) {
+    if (seen.has(item.id)) continue
+    seen.add(item.id)
+    deduped.push(item)
+  }
+  return deduped
+}
+
+async function listWorkItemsBySessionPrefix(sessionPrefix: string): Promise<WorkItem[]> {
+  const db = getDb()
+  return db
+    .selectFrom('work_items')
+    .selectAll()
+    .where('session_key', 'like', `${sessionPrefix}:%`)
+    .orderBy('created_at', 'desc')
+    .execute()
+}
+
+async function buildReceiptSummaryFromWorkItems(args: {
+  links?: Awaited<ReturnType<typeof listTicketLinksByTicket>>
+  workItems: WorkItem[]
+}) {
+  const db = getDb()
+  const workItemIds = args.workItems.map((item) => item.id)
+  const sessionKeys = [...new Set(args.workItems.map((item) => item.session_key))]
 
   const [jobs, activityEntries, costRow] = await Promise.all([
     workItemIds.length > 0
@@ -1155,7 +1189,7 @@ async function buildTicketReceiptSummary(ticketId: string) {
   ])
 
   return {
-    links: links.map((link) => ({
+    links: (args.links ?? []).map((link) => ({
       id: link.id,
       kind: link.kind,
       ref: link.ref,
@@ -1163,7 +1197,7 @@ async function buildTicketReceiptSummary(ticketId: string) {
       metadataJson: link.metadata_json,
       createdAt: link.created_at,
     })),
-    workItems: workItems.map((item) => ({
+    workItems: args.workItems.map((item) => ({
       id: item.id,
       title: item.title,
       source: item.source,
@@ -1190,6 +1224,34 @@ async function buildTicketReceiptSummary(ticketId: string) {
       sessionKey: entry.session_key,
     })),
     totalCostUsd: Number(costRow?.total ?? 0),
+  }
+}
+
+function mergeReceiptSummaryRollups(
+  summaries: Array<{
+    totalCostUsd: number
+    workItems: Array<{ id: string }>
+    jobs: Array<{ id: string }>
+  }>
+) {
+  const workItemIds = new Set<string>()
+  const jobIds = new Set<string>()
+  let totalCostUsd = 0
+
+  for (const summary of summaries) {
+    totalCostUsd += summary.totalCostUsd
+    for (const workItem of summary.workItems) {
+      workItemIds.add(workItem.id)
+    }
+    for (const job of summary.jobs) {
+      jobIds.add(job.id)
+    }
+  }
+
+  return {
+    totalCostUsd,
+    totalWorkItems: workItemIds.size,
+    totalJobs: jobIds.size,
   }
 }
 
@@ -1534,6 +1596,13 @@ export const workRouter = router({
           summary: await buildTicketReceiptSummary(ticket.id),
         }))
       )
+      const directGoalReceiptSummary = await buildReceiptSummaryFromWorkItems({
+        workItems: await listWorkItemsBySessionPrefix(`app:goal:${goal.id}`),
+      })
+      const goalRollup = mergeReceiptSummaryRollups([
+        ...ticketReceiptSummaries.map((entry) => entry.summary),
+        directGoalReceiptSummary,
+      ])
 
       return {
         ...goalRow,
@@ -1544,20 +1613,7 @@ export const workRouter = router({
             ticketReceiptSummaries.find((entry) => entry.ticketId === ticket.id)?.summary ?? null,
         })),
         updates: updates.map((update) => presentWorkUpdate(update, updateActors)),
-        rollup: {
-          totalCostUsd: ticketReceiptSummaries.reduce(
-            (sum, entry) => sum + entry.summary.totalCostUsd,
-            0
-          ),
-          totalWorkItems: ticketReceiptSummaries.reduce(
-            (sum, entry) => sum + entry.summary.workItems.length,
-            0
-          ),
-          totalJobs: ticketReceiptSummaries.reduce(
-            (sum, entry) => sum + entry.summary.jobs.length,
-            0
-          ),
-        },
+        rollup: goalRollup,
       }
     }),
 

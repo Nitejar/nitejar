@@ -13,6 +13,7 @@ const mockTransaction = { execute: vi.fn((cb: (trx: never) => Promise<unknown>) 
 
 vi.mock('@nitejar/database', () => ({
   getDb: vi.fn(() => ({ transaction: () => mockTransaction })),
+  createTicketLink: vi.fn(),
   listPendingScheduledItems: vi.fn(),
   claimScheduledItem: vi.fn(),
   confirmScheduledItemFired: vi.fn(),
@@ -21,6 +22,8 @@ vi.mock('@nitejar/database', () => ({
   createWorkItem: vi.fn(),
   enqueueToLane: vi.fn(),
   findAgentById: vi.fn(),
+  findRoutineRunById: vi.fn(),
+  findTicketById: vi.fn(),
   linkRoutineRunToWorkItemByScheduledItem: vi.fn(),
   parseAppSessionKey: vi.fn(() => ({
     isAppSession: false,
@@ -50,6 +53,7 @@ vi.mock('./app-session-context', () => ({
 }))
 
 import {
+  createTicketLink,
   archiveRoutine,
   listPendingScheduledItems,
   claimScheduledItem,
@@ -59,6 +63,8 @@ import {
   createWorkItem,
   enqueueToLane,
   findAgentById,
+  findRoutineRunById,
+  findTicketById,
   parseAppSessionKey,
 } from '@nitejar/database'
 import { createRoutineAppSessionFromSeed } from './app-session-context'
@@ -94,9 +100,12 @@ const mockedClaim = vi.mocked(claimScheduledItem)
 const mockedConfirmFired = vi.mocked(confirmScheduledItemFired)
 const mockedRelease = vi.mocked(releaseScheduledItem)
 const mockedRecoverStale = vi.mocked(recoverStaleFiringItems)
+const mockedCreateTicketLink = vi.mocked(createTicketLink)
 const mockedCreateWorkItem = vi.mocked(createWorkItem)
 const mockedEnqueueToLane = vi.mocked(enqueueToLane)
 const mockedFindAgent = vi.mocked(findAgentById)
+const mockedFindRoutineRunById = vi.mocked(findRoutineRunById)
+const mockedFindTicketById = vi.mocked(findTicketById)
 const mockedParseAppSessionKey = vi.mocked(parseAppSessionKey)
 const mockedCreateRoutineAppSessionFromSeed = vi.mocked(createRoutineAppSessionFromSeed)
 const mockedArchiveRoutine = vi.mocked(archiveRoutine)
@@ -198,6 +207,8 @@ describe('scheduler-ticker', () => {
       ownerUserId: null,
     })
     mockedCreateRoutineAppSessionFromSeed.mockResolvedValue(null)
+    mockedFindRoutineRunById.mockResolvedValue(null)
+    mockedFindTicketById.mockResolvedValue(null)
     mockExecuteTakeFirst.mockResolvedValue(null)
     // Default: transaction runs callback synchronously with mockTrx
     mockTransaction.execute.mockImplementation((cb: (trx: never) => Promise<unknown>) =>
@@ -227,6 +238,96 @@ describe('scheduler-ticker', () => {
     await runTick()
 
     expect(mockedRecoverStale).toHaveBeenCalledWith(300)
+  })
+
+  it('links deferred ticket executions back to the ticket and uses the ticket title', async () => {
+    const item = makeScheduledItem({
+      id: 'si-ticket',
+      routine_id: 'routine-1',
+      routine_run_id: 'rr-1',
+      session_key: 'app:routine:routine-1:seed',
+    })
+    const agent = makeAgent()
+    const workItem = makeWorkItem({ id: 'wi-ticket', title: 'Scheduled ticket: Prune Revenue Ops' })
+
+    setupHappyPath(item, agent, workItem)
+    mockedParseAppSessionKey.mockReturnValue({
+      isAppSession: true,
+      isLegacy: false,
+      raw: item.session_key,
+      contextKind: 'routine',
+      contextId: 'routine-1',
+      sessionId: 'seed',
+      familyKey: 'app:routine:routine-1',
+      ownerUserId: null,
+    })
+    mockedCreateRoutineAppSessionFromSeed.mockResolvedValue({
+      session_key: 'app:routine:routine-1:fresh',
+      owner_user_id: 'user-1',
+      primary_agent_id: 'agent-1',
+      title: 'Deferred execution',
+      forked_from_session_key: item.session_key,
+      created_at: 1,
+      updated_at: 1,
+      last_activity_at: 1,
+    } as any)
+    mockedFindRoutineRunById.mockResolvedValue({
+      id: 'rr-1',
+      routine_id: 'routine-1',
+      trigger_origin: 'oneshot',
+      trigger_ref: 'ticket:ticket-1',
+      envelope_json: null,
+      decision: 'enqueue',
+      decision_reason: null,
+      scheduled_item_id: 'si-ticket',
+      work_item_id: null,
+      evaluated_at: 1,
+      created_at: 1,
+    } as any)
+    mockedFindTicketById.mockResolvedValue({
+      id: 'ticket-1',
+      goal_id: null,
+      parent_ticket_id: null,
+      title: 'Prune Revenue Ops team to core 3 agents',
+      body: null,
+      status: 'in_progress',
+      assignee_kind: 'agent',
+      assignee_ref: 'agent-1',
+      created_by_user_id: 'user-1',
+      claimed_at: null,
+      claimed_by_kind: null,
+      claimed_by_ref: null,
+      created_at: 1,
+      updated_at: 1,
+      archived_at: null,
+      sort_order: 1,
+    } as any)
+
+    await runTick()
+
+    expect(mockedCreateWorkItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Scheduled ticket: Prune Revenue Ops team to core 3 agents',
+        session_key: 'app:routine:routine-1:fresh',
+      }),
+      expect.anything()
+    )
+    expect(mockedCreateTicketLink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ticket_id: 'ticket-1',
+        kind: 'session',
+        ref: 'app:routine:routine-1:fresh',
+      }),
+      expect.anything()
+    )
+    expect(mockedCreateTicketLink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ticket_id: 'ticket-1',
+        kind: 'work_item',
+        ref: 'wi-ticket',
+      }),
+      expect.anything()
+    )
   })
 
   it('skips item already claimed by another process', async () => {

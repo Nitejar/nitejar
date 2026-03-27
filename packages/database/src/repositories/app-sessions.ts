@@ -110,6 +110,32 @@ export async function listAppSessionsByOwnerAndPrefix(
     .execute()
 }
 
+export async function listAppSessionsByOwnerAndKeys(
+  ownerUserId: string,
+  sessionKeys: string[],
+  opts?: { limit?: number; excludeSessionKey?: string | null }
+): Promise<AppSession[]> {
+  if (sessionKeys.length === 0) return []
+
+  const db = getDb()
+  const limit = Math.min(Math.max(opts?.limit ?? 20, 1), 100)
+  let query = db
+    .selectFrom('app_sessions')
+    .selectAll()
+    .where('owner_user_id', '=', ownerUserId)
+    .where('session_key', 'in', [...new Set(sessionKeys)])
+
+  if (opts?.excludeSessionKey) {
+    query = query.where('session_key', '!=', opts.excludeSessionKey)
+  }
+
+  return query
+    .orderBy('last_activity_at', 'desc')
+    .orderBy('created_at', 'desc')
+    .limit(limit)
+    .execute()
+}
+
 export async function listAppSessionParticipants(
   sessionKey: string
 ): Promise<AppSessionParticipant[]> {

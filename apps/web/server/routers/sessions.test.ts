@@ -23,10 +23,12 @@ vi.mock('@nitejar/database', () => ({
   findTicketById: vi.fn(),
   findTicketBySessionKey: vi.fn(),
   getDb: vi.fn(),
+  listAppSessionsByOwnerAndKeys: vi.fn(),
   listAgents: vi.fn(),
   listAppSessionParticipantAgents: vi.fn(),
   listAppSessionsByOwnerAndPrefix: vi.fn(),
   listAppSessionsByOwner: vi.fn(),
+  listTicketLinksByTicket: vi.fn(),
   parseAppSessionKey: vi.fn((sessionKey: string) => {
     const typed = sessionKey.match(/^app:(standalone|ticket|goal|routine):([^:]+):([^:]+)$/)
     if (typed) {
@@ -83,8 +85,11 @@ import {
   findGoalById,
   findTicketById,
   findTicketBySessionKey,
+  getDb,
+  listAppSessionsByOwnerAndKeys,
   listAppSessionParticipantAgents,
   listAppSessionsByOwnerAndPrefix,
+  listTicketLinksByTicket,
 } from '@nitejar/database'
 import { enqueueAppSessionMessage } from '../services/app-session-enqueue'
 import { sessionsRouter } from './sessions'
@@ -100,8 +105,11 @@ const mockedFindAppSessionByKeyAndOwner = vi.mocked(findAppSessionByKeyAndOwner)
 const mockedFindGoalById = vi.mocked(findGoalById)
 const mockedFindTicketById = vi.mocked(findTicketById)
 const mockedFindTicketBySessionKey = vi.mocked(findTicketBySessionKey)
+const mockedGetDb = vi.mocked(getDb)
+const mockedListAppSessionsByOwnerAndKeys = vi.mocked(listAppSessionsByOwnerAndKeys)
 const mockedListAppSessionParticipantAgents = vi.mocked(listAppSessionParticipantAgents)
 const mockedListAppSessionsByOwnerAndPrefix = vi.mocked(listAppSessionsByOwnerAndPrefix)
+const mockedListTicketLinksByTicket = vi.mocked(listTicketLinksByTicket)
 const mockedEnqueueAppSessionMessage = vi.mocked(enqueueAppSessionMessage)
 
 const caller = sessionsRouter.createCaller({
@@ -194,6 +202,20 @@ describe('sessions router sendMessage', () => {
       last_activity_at: 1,
     }))
     mockedListAppSessionsByOwnerAndPrefix.mockResolvedValue([])
+    mockedListAppSessionsByOwnerAndKeys.mockResolvedValue([])
+    mockedListTicketLinksByTicket.mockResolvedValue([])
+    mockedGetDb.mockImplementation(() => {
+      const query = {
+        select: () => query,
+        where: () => query,
+        orderBy: () => query,
+        limit: () => query,
+        executeTakeFirst: async () => null,
+      }
+      return {
+        selectFrom: () => query,
+      } as any
+    })
   })
 
   it('routes to primary agent when no mention is present', async () => {
@@ -235,6 +257,63 @@ describe('sessions router sendMessage', () => {
     const targetIds =
       mockedEnqueueAppSessionMessage.mock.calls[0]?.[0].targetAgents.map((agent) => agent.id) ?? []
     expect(targetIds.sort()).toEqual(['agent-1', 'agent-2'])
+  })
+})
+
+describe('sessions router listRelated', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockedListAppSessionsByOwnerAndPrefix.mockResolvedValue([])
+    mockedListAppSessionsByOwnerAndKeys.mockResolvedValue([])
+    mockedListTicketLinksByTicket.mockResolvedValue([])
+  })
+
+  it('includes ticket-linked routine sessions alongside typed ticket sessions', async () => {
+    mockedListAppSessionsByOwnerAndPrefix.mockResolvedValue([
+      {
+        session_key: 'app:ticket:ticket-1:sibling',
+        owner_user_id: 'user-1',
+        primary_agent_id: 'agent-1',
+        title: 'Main ticket session',
+        forked_from_session_key: null,
+        created_at: 10,
+        updated_at: 10,
+        last_activity_at: 12,
+      },
+    ] as any)
+    mockedListTicketLinksByTicket.mockResolvedValue([
+      {
+        id: 'link-1',
+        ticket_id: 'ticket-1',
+        kind: 'session',
+        ref: 'app:routine:routine-1:deferred',
+        label: 'Deferred execution',
+        metadata_json: null,
+        created_by_kind: 'system',
+        created_by_ref: 'scheduler',
+        created_at: 11,
+      },
+    ] as any)
+    mockedListAppSessionsByOwnerAndKeys.mockResolvedValue([
+      {
+        session_key: 'app:routine:routine-1:deferred',
+        owner_user_id: 'user-1',
+        primary_agent_id: 'agent-1',
+        title: 'Deferred execution',
+        forked_from_session_key: null,
+        created_at: 11,
+        updated_at: 11,
+        last_activity_at: 13,
+      },
+    ] as any)
+
+    const result = await caller.listRelated({ ticketId: 'ticket-1', limit: 6 })
+
+    expect(mockedListTicketLinksByTicket).toHaveBeenCalledWith('ticket-1')
+    expect(result.items.map((item) => item.sessionKey)).toEqual([
+      'app:routine:routine-1:deferred',
+      'app:ticket:ticket-1:sibling',
+    ])
   })
 })
 

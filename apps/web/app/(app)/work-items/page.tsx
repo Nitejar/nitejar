@@ -17,6 +17,12 @@ import {
 } from '@/components/ui/table'
 import { PageHeader } from '../components/PageHeader'
 import { PageScrollShell } from '../components/PageScrollShell'
+import {
+  getWorkItemDisplayTitle,
+  getWorkItemSourceLabel,
+  isGenericDeferredWorkItemTitle,
+} from '@/lib/work-item-display'
+import { resolveDeferredTicketTitles } from '@/server/services/work-item-display'
 import { formatCost } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -45,6 +51,15 @@ export default async function WorkItemsPage() {
   const inboundReceipts = await listRecentWebhookIngressEvents(25)
   const costData = await getCostByWorkItems(workItems.map((w) => w.id))
   const costMap = new Map(costData.map((c) => [c.work_item_id, c]))
+  const deferredTicketMap = await resolveDeferredTicketTitles(
+    workItems
+      .filter((item) => isGenericDeferredWorkItemTitle(item.title))
+      .map((item) => ({
+        workItemId: item.id,
+        sourceRef: item.source_ref,
+        sessionKey: item.session_key,
+      }))
+  )
 
   return (
     <PageScrollShell className="space-y-6">
@@ -79,6 +94,14 @@ export default async function WorkItemsPage() {
               <TableBody>
                 {workItems.map((item) => {
                   const cost = costMap.get(item.id)
+                  const displayTitle = getWorkItemDisplayTitle({
+                    title: item.title,
+                    linkedTicketTitle: deferredTicketMap.get(item.id),
+                  })
+                  const displaySource = getWorkItemSourceLabel({
+                    source: item.source,
+                    linkedTicketTitle: deferredTicketMap.get(item.id),
+                  })
                   return (
                     <TableRow key={item.id}>
                       <TableCell>
@@ -88,12 +111,12 @@ export default async function WorkItemsPage() {
                       </TableCell>
                       <TableCell className="max-w-[320px] truncate text-sm font-medium text-foreground">
                         <Link href={`/work-items/${item.id}`} className="hover:text-primary">
-                          {item.title}
+                          {displayTitle}
                         </Link>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         <div className="flex flex-col">
-                          <span className="text-xs font-medium text-foreground">{item.source}</span>
+                          <span className="text-xs font-medium text-foreground">{displaySource}</span>
                           <span className="text-[0.65rem] text-muted-foreground">
                             {item.source_ref}
                           </span>

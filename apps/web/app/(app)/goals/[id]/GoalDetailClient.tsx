@@ -875,6 +875,11 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
 
   const doneTicketCount = goal.tickets.filter((t) => t.status === 'done').length
   const doneChildGoalCount = goal.childGoals.filter((c) => c.status === 'done').length
+  const ticketSubtotalCostUsd = goal.tickets.reduce(
+    (sum, ticket) => sum + (ticket.receiptSummary?.totalCostUsd ?? 0),
+    0
+  )
+  const goalTotalCostUsd = goal.rollup?.totalCostUsd ?? ticketSubtotalCostUsd
   const goalConversationAgentId = goal.owner?.kind === 'agent' ? goal.owner.ref : null
   const progressSummary = formatGoalProgressSummary(goal)
   const ownerTitle = goal.owner?.kind === 'agent' ? (goal.owner.title ?? null) : null
@@ -1388,10 +1393,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
                   </div>
                   {goal.tickets.length > 0 && (
                     <span className="text-xs text-zinc-500 tabular-nums">
-                      $
-                      {goal.tickets
-                        .reduce((sum, t) => sum + (t.receiptSummary?.totalCostUsd ?? 0), 0)
-                        .toFixed(2)}{' '}
+                      ${ticketSubtotalCostUsd.toFixed(2)}{' '}
                       cost
                     </span>
                   )}
@@ -1624,9 +1626,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
                       <span className="text-white/40">Cost</span>
                       <span className="tabular-nums text-white/60">
                         $
-                        {goal.tickets
-                          .reduce((sum, t) => sum + (t.receiptSummary?.totalCostUsd ?? 0), 0)
-                          .toFixed(2)}
+                        {goalTotalCostUsd.toFixed(2)}
                       </span>
                     </div>
                     {/* Progress bar */}

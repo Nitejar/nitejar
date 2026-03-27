@@ -776,6 +776,47 @@ export async function findTicketByWorkItemId(workItemId: string): Promise<Ticket
   return findTicketByLink('work_item', workItemId)
 }
 
+export async function listTicketsByWorkItemIds(
+  workItemIds: string[]
+): Promise<Array<{ work_item_id: string; ticket_id: string; ticket_title: string; goal_id: string | null }>> {
+  if (workItemIds.length === 0) return []
+
+  const db = getDb()
+  const rows = await db
+    .selectFrom('ticket_links')
+    .innerJoin('tickets', 'tickets.id', 'ticket_links.ticket_id')
+    .select([
+      'ticket_links.ref as work_item_id',
+      'tickets.id as ticket_id',
+      'tickets.title as ticket_title',
+      'tickets.goal_id as goal_id',
+    ])
+    .where('ticket_links.kind', '=', 'work_item')
+    .where('ticket_links.ref', 'in', workItemIds)
+    .orderBy('ticket_links.created_at', 'desc')
+    .execute()
+
+  const seen = new Set<string>()
+  const results: Array<{
+    work_item_id: string
+    ticket_id: string
+    ticket_title: string
+    goal_id: string | null
+  }> = []
+  for (const row of rows) {
+    if (seen.has(row.work_item_id)) continue
+    seen.add(row.work_item_id)
+    results.push({
+      work_item_id: row.work_item_id,
+      ticket_id: row.ticket_id,
+      ticket_title: row.ticket_title,
+      goal_id: row.goal_id,
+    })
+  }
+
+  return results
+}
+
 export async function listLinkedWorkItemsForTicket(ticketId: string): Promise<WorkItem[]> {
   const db = getDb()
   const links = await listTicketLinksByTicket(ticketId)

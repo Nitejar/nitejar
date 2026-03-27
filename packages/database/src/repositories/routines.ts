@@ -244,6 +244,19 @@ export async function linkRoutineRunToWorkItemByScheduledItem(
   return row ?? null
 }
 
+export async function findRoutineRunByScheduledItemId(
+  scheduledItemId: string
+): Promise<RoutineRun | null> {
+  const db = getDb()
+  const row = await db
+    .selectFrom('routine_runs')
+    .selectAll()
+    .where('scheduled_item_id', '=', scheduledItemId)
+    .executeTakeFirst()
+
+  return row ?? null
+}
+
 export async function listRoutineRunsByRoutine(
   routineId: string,
   opts?: { limit?: number; offset?: number }

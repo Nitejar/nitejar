@@ -12,10 +12,12 @@ import {
   findTicketById,
   findTicketBySessionKey,
   getDb,
+  listAppSessionsByOwnerAndKeys,
   listAppSessionsByOwnerAndPrefix,
   listAgents,
   listAppSessionParticipantAgents,
   listAppSessionsByOwner,
+  listTicketLinksByTicket,
   parseAppSessionKey,
 } from '@nitejar/database'
 import { z } from 'zod'
@@ -607,6 +609,7 @@ export const sessionsRouter = router({
       const db = getDb()
 
       let prefix: string | null = null
+      let linkedSessionKeys: string[] = []
       if (input.sessionKey) {
         const session = await findAppSessionByKeyAndOwner(input.sessionKey, userId)
         if (!session) {
@@ -615,20 +618,43 @@ export const sessionsRouter = router({
         prefix = parseAppSessionKey(session.session_key).familyKey
       } else if (input.ticketId) {
         prefix = `app:ticket:${input.ticketId}`
+        const links = await listTicketLinksByTicket(input.ticketId)
+        linkedSessionKeys = links.filter((link) => link.kind === 'session').map((link) => link.ref)
       } else if (input.goalId) {
         prefix = `app:goal:${input.goalId}`
       } else if (input.routineId) {
         prefix = `app:routine:${input.routineId}`
       }
 
-      if (!prefix) {
+      if (!prefix && linkedSessionKeys.length === 0) {
         return { items: [] as Awaited<ReturnType<typeof buildSessionListItem>>[] }
       }
 
-      const sessions = await listAppSessionsByOwnerAndPrefix(userId, prefix, {
-        limit: input.limit,
-        excludeSessionKey: input.sessionKey ?? null,
-      })
+      const [prefixedSessions, linkedSessions] = await Promise.all([
+        prefix
+          ? listAppSessionsByOwnerAndPrefix(userId, prefix, {
+              limit: input.limit,
+              excludeSessionKey: input.sessionKey ?? null,
+            })
+          : Promise.resolve([]),
+        linkedSessionKeys.length > 0
+          ? listAppSessionsByOwnerAndKeys(userId, linkedSessionKeys, {
+              limit: input.limit,
+              excludeSessionKey: input.sessionKey ?? null,
+            })
+          : Promise.resolve([]),
+      ])
+
+      const sessions = [...prefixedSessions, ...linkedSessions]
+        .filter(
+          (session, index, all) =>
+            all.findIndex((candidate) => candidate.session_key === session.session_key) === index
+        )
+        .sort((a, b) => {
+          if (b.last_activity_at !== a.last_activity_at) return b.last_activity_at - a.last_activity_at
+          return b.created_at - a.created_at
+        })
+        .slice(0, input.limit)
 
       const items = await Promise.all(sessions.map((session) => buildSessionListItem(db, session)))
       return { items }
