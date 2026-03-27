@@ -2,7 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ScheduledItem, WorkItem, Agent, QueueMessage } from '@nitejar/database'
 
 // Mock transaction: execute runs the callback with mockTrx, simulating db.transaction().execute()
-const mockTrx = {} as never
+const mockExecuteTakeFirst = vi.fn<() => Promise<{ trigger_kind: string } | null>>(async () => null)
+const mockWhere = vi.fn(() => ({ executeTakeFirst: mockExecuteTakeFirst }))
+const mockSelect = vi.fn(() => ({ where: mockWhere }))
+const mockSelectFrom = vi.fn(() => ({ select: mockSelect }))
+const mockTrx = {
+  selectFrom: mockSelectFrom,
+} as never
 const mockTransaction = { execute: vi.fn((cb: (trx: never) => Promise<unknown>) => cb(mockTrx)) }
 
 vi.mock('@nitejar/database', () => ({
@@ -16,8 +22,18 @@ vi.mock('@nitejar/database', () => ({
   enqueueToLane: vi.fn(),
   findAgentById: vi.fn(),
   linkRoutineRunToWorkItemByScheduledItem: vi.fn(),
+  parseAppSessionKey: vi.fn(() => ({
+    isAppSession: false,
+    isLegacy: false,
+    raw: 'sess-1',
+    contextKind: null,
+    contextId: null,
+    sessionId: null,
+    familyKey: null,
+    ownerUserId: null,
+  })),
   updateRoutine: vi.fn(),
-  setRoutineEnabled: vi.fn(),
+  archiveRoutine: vi.fn(),
 }))
 
 vi.mock('./routines/publish', () => ({
@@ -29,7 +45,12 @@ vi.mock('./routines/publish', () => ({
   ),
 }))
 
+vi.mock('./app-session-context', () => ({
+  createRoutineAppSessionFromSeed: vi.fn(() => Promise.resolve(null)),
+}))
+
 import {
+  archiveRoutine,
   listPendingScheduledItems,
   claimScheduledItem,
   confirmScheduledItemFired,
@@ -38,7 +59,9 @@ import {
   createWorkItem,
   enqueueToLane,
   findAgentById,
+  parseAppSessionKey,
 } from '@nitejar/database'
+import { createRoutineAppSessionFromSeed } from './app-session-context'
 
 const TICKER_STATE_KEY = '__nitejarSchedulerTicker'
 
@@ -74,6 +97,9 @@ const mockedRecoverStale = vi.mocked(recoverStaleFiringItems)
 const mockedCreateWorkItem = vi.mocked(createWorkItem)
 const mockedEnqueueToLane = vi.mocked(enqueueToLane)
 const mockedFindAgent = vi.mocked(findAgentById)
+const mockedParseAppSessionKey = vi.mocked(parseAppSessionKey)
+const mockedCreateRoutineAppSessionFromSeed = vi.mocked(createRoutineAppSessionFromSeed)
+const mockedArchiveRoutine = vi.mocked(archiveRoutine)
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -161,6 +187,18 @@ describe('scheduler-ticker', () => {
     const g = globalThis as Record<string, unknown>
     delete g[TICKER_STATE_KEY]
     mockedRecoverStale.mockResolvedValue(0)
+    mockedParseAppSessionKey.mockReturnValue({
+      isAppSession: false,
+      isLegacy: false,
+      raw: 'sess-1',
+      contextKind: null,
+      contextId: null,
+      sessionId: null,
+      familyKey: null,
+      ownerUserId: null,
+    })
+    mockedCreateRoutineAppSessionFromSeed.mockResolvedValue(null)
+    mockExecuteTakeFirst.mockResolvedValue(null)
     // Default: transaction runs callback synchronously with mockTrx
     mockTransaction.execute.mockImplementation((cb: (trx: never) => Promise<unknown>) =>
       cb(mockTrx)
@@ -298,6 +336,65 @@ describe('scheduler-ticker', () => {
     expect(mockedRelease).not.toHaveBeenCalled()
   })
 
+  it('creates a fresh routine app session before enqueueing app-targeted routine work', async () => {
+    const item = makeScheduledItem({
+      session_key: 'app:standalone:user-1:seed',
+      routine_id: 'routine-1',
+    })
+    const agent = makeAgent()
+    const workItem = makeWorkItem({
+      session_key: 'app:routine:routine-1:fresh',
+      source: 'routine',
+      source_ref: 'routine:routine-1:scheduled:si-1',
+    })
+
+    mockedParseAppSessionKey.mockReturnValue({
+      isAppSession: true,
+      isLegacy: false,
+      raw: item.session_key,
+      contextKind: 'standalone',
+      contextId: 'user-1',
+      sessionId: 'seed',
+      familyKey: 'app:standalone:user-1',
+      ownerUserId: 'user-1',
+    })
+    mockedCreateRoutineAppSessionFromSeed.mockResolvedValue({
+      session_key: 'app:routine:routine-1:fresh',
+      owner_user_id: 'user-1',
+      primary_agent_id: 'agent-1',
+      title: 'Routine conversation',
+      forked_from_session_key: null,
+      created_at: 1,
+      updated_at: 1,
+      last_activity_at: 1,
+    })
+    setupHappyPath(item, agent, workItem)
+
+    await runTick()
+
+    expect(mockedCreateRoutineAppSessionFromSeed).toHaveBeenCalledWith({
+      routineId: 'routine-1',
+      seedSessionKey: 'app:standalone:user-1:seed',
+      agentId: 'agent-1',
+    })
+    expect(mockedCreateWorkItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        session_key: 'app:routine:routine-1:fresh',
+        source: 'routine',
+      }),
+      mockTrx
+    )
+    expect(mockedEnqueueToLane).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queue_key: 'sched:app:routine:routine-1:fresh:agent-1',
+      }),
+      expect.objectContaining({
+        sessionKey: 'app:routine:routine-1:fresh',
+      }),
+      mockTrx
+    )
+  })
+
   it('handles items with no plugin_instance_id', async () => {
     const item = makeScheduledItem({ plugin_instance_id: null, response_context: null })
     const agent = makeAgent()
@@ -311,6 +408,19 @@ describe('scheduler-ticker', () => {
       expect.objectContaining({ pluginInstanceId: null }),
       mockTrx
     )
+  })
+
+  it('archives one-shot routines after they fire', async () => {
+    const item = makeScheduledItem({ routine_id: 'routine-1' })
+    const agent = makeAgent()
+    const workItem = makeWorkItem()
+    setupHappyPath(item, agent, workItem)
+    mockExecuteTakeFirst.mockResolvedValue({ trigger_kind: 'oneshot' })
+
+    await runTick()
+
+    expect(mockedArchiveRoutine).toHaveBeenCalledWith('routine-1', mockTrx)
+    expect(mockedConfirmFired).toHaveBeenCalledWith(item.id, mockTrx)
   })
 
   // -------------------------------------------------------------------------

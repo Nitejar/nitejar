@@ -10,6 +10,7 @@ vi.mock('@nitejar/database', async () => {
   return {
     ...actual,
     listAgentSandboxes: vi.fn(),
+    resolveEffectivePolicy: vi.fn(),
   }
 })
 
@@ -50,14 +51,21 @@ const baseWorkItem: WorkItem = {
 }
 
 const mockedListAgentSandboxes = vi.mocked(Database.listAgentSandboxes)
+const mockedResolveEffectivePolicy = vi.mocked(Database.resolveEffectivePolicy)
 const mockedGetSpritesTokenSettings = vi.mocked(Sprites.getSpritesTokenSettings)
 const mockedIsSpritesExecutionAvailable = vi.mocked(Sprites.isSpritesExecutionAvailable)
 
 beforeEach(() => {
   mockedListAgentSandboxes.mockReset()
+  mockedResolveEffectivePolicy.mockReset()
   mockedGetSpritesTokenSettings.mockReset()
   mockedIsSpritesExecutionAvailable.mockReset()
   mockedListAgentSandboxes.mockResolvedValue([])
+  mockedResolveEffectivePolicy.mockResolvedValue({
+    roles: [],
+    grants: [],
+    defaults: [],
+  })
   mockedGetSpritesTokenSettings.mockResolvedValue({
     enabled: true,
     token: 'test-token',
@@ -533,6 +541,53 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('You are Agent One (@agent).')
     expect(prompt).toContain('Guidelines:')
     expect(prompt).toContain('Memory:')
+  })
+
+  it('includes a dedicated role section from agent title', async () => {
+    const agentWithTitle: Agent = {
+      ...baseAgent,
+      config: JSON.stringify({ title: 'Chief Executive Officer', memorySettings: { enabled: false } }),
+    }
+
+    const prompt = await buildSystemPrompt(agentWithTitle, baseWorkItem)
+    expect(prompt).toContain('<context')
+    expect(prompt).toContain('## Your Role')
+    expect(prompt).toContain('Title: Chief Executive Officer')
+    expect(prompt).toContain('</context>')
+  })
+
+  it('includes resolved organizational role charter and escalation posture', async () => {
+    mockedResolveEffectivePolicy.mockResolvedValue({
+      roles: [
+        {
+          id: 'role-1',
+          slug: 'ceo',
+          name: 'Chief Executive Officer',
+          charter: 'Own company direction and keep the whole portfolio moving.',
+          escalationPosture: 'Escalate only for irreversible risk or true blockers.',
+          sourceType: 'agent_role',
+        },
+      ],
+      grants: [],
+      defaults: [],
+    })
+
+    const prompt = await buildSystemPrompt(baseAgent, baseWorkItem)
+    expect(prompt).toContain('## Your Role')
+    expect(prompt).toContain('Organizational mandate:')
+    expect(prompt).toContain('- Chief Executive Officer (direct assignment)')
+    expect(prompt).toContain('Charter: Own company direction and keep the whole portfolio moving.')
+    expect(prompt).toContain(
+      'Escalation posture: Escalate only for irreversible risk or true blockers.'
+    )
+  })
+
+  it('still builds when policy resolution fails', async () => {
+    mockedResolveEffectivePolicy.mockRejectedValue(new Error('policy unavailable'))
+
+    const prompt = await buildSystemPrompt(baseAgent, baseWorkItem)
+    expect(prompt).toContain('You are Agent One (@agent).')
+    expect(prompt).toContain('Guidelines:')
   })
 
   it('includes sandbox catalog when agent has sandboxes', async () => {

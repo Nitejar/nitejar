@@ -8,6 +8,7 @@ import {
   createAppSession,
   findAppSessionByKeyAndOwner,
   listAppSessionParticipantAgents,
+  listAppSessionsByOwnerAndPrefix,
   listAppSessionsByOwner,
 } from './app-sessions'
 
@@ -53,6 +54,7 @@ async function createTestSchema(database: ReturnType<typeof getDb>): Promise<voi
     .addColumn('owner_user_id', 'text', (col) => col.notNull())
     .addColumn('primary_agent_id', 'text', (col) => col.notNull())
     .addColumn('title', 'text')
+    .addColumn('forked_from_session_key', 'text')
     .addColumn('created_at', 'integer', (col) => col.notNull().defaultTo(now()))
     .addColumn('updated_at', 'integer', (col) => col.notNull().defaultTo(now()))
     .addColumn('last_activity_at', 'integer', (col) => col.notNull().defaultTo(now()))
@@ -154,12 +156,14 @@ describe('app session repository', () => {
       owner_user_id: 'user-1',
       primary_agent_id: 'agent-1',
       title: null,
+      forked_from_session_key: null,
     })
     await createAppSession({
       session_key: 'app:user-2:def',
       owner_user_id: 'user-2',
       primary_agent_id: 'agent-1',
       title: null,
+      forked_from_session_key: null,
     })
 
     const user1Sessions = await listAppSessionsByOwner('user-1')
@@ -173,6 +177,7 @@ describe('app session repository', () => {
       owner_user_id: 'user-1',
       primary_agent_id: 'agent-1',
       title: null,
+      forked_from_session_key: null,
     })
 
     const owned = await findAppSessionByKeyAndOwner('app:user-1:abc', 'user-1')
@@ -188,6 +193,7 @@ describe('app session repository', () => {
       owner_user_id: 'user-1',
       primary_agent_id: 'agent-1',
       title: null,
+      forked_from_session_key: null,
     })
 
     await addAppSessionParticipants({
@@ -198,5 +204,35 @@ describe('app session repository', () => {
 
     const participants = await listAppSessionParticipantAgents('app:user-1:abc')
     expect(participants.map((p) => p.id)).toEqual(['agent-1', 'agent-2'])
+  })
+
+  it('lists typed sibling sessions by owner and prefix', async () => {
+    await createAppSession({
+      session_key: 'app:ticket:ticket-1:s1',
+      owner_user_id: 'user-1',
+      primary_agent_id: 'agent-1',
+      title: 'Ticket session 1',
+      forked_from_session_key: null,
+    })
+    await createAppSession({
+      session_key: 'app:ticket:ticket-1:s2',
+      owner_user_id: 'user-1',
+      primary_agent_id: 'agent-1',
+      title: 'Ticket session 2',
+      forked_from_session_key: null,
+    })
+    await createAppSession({
+      session_key: 'app:ticket:ticket-2:s3',
+      owner_user_id: 'user-1',
+      primary_agent_id: 'agent-1',
+      title: 'Different ticket',
+      forked_from_session_key: null,
+    })
+
+    const sessions = await listAppSessionsByOwnerAndPrefix('user-1', 'app:ticket:ticket-1')
+    expect(sessions.map((session) => session.session_key)).toEqual([
+      'app:ticket:ticket-1:s1',
+      'app:ticket:ticket-1:s2',
+    ])
   })
 })

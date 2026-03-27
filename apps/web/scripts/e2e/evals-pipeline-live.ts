@@ -5,6 +5,7 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import {
   addAppSessionParticipants,
+  buildStandaloneAppSessionKey,
   closeDb,
   createAppSession,
   createEvaluator,
@@ -452,7 +453,7 @@ async function main(): Promise<number> {
   const repoRoot = path.resolve(scriptDir, '../../../..')
   await loadEnvFile(path.resolve(scriptDir, '../../.env'))
   const userId = `e2e-evals-user-${runId}`
-  const sessionKey = `app:${userId}:evals-live-${runId}`
+  const sessionKey = buildStandaloneAppSessionKey(userId, `evals-live-${runId}`)
   const artifactPath =
     args.artifactPath ??
     path.join(repoRoot, 'artifacts', 'e2e', 'evals-pipeline-live', `${runId}.json`)
@@ -487,6 +488,7 @@ async function main(): Promise<number> {
       owner_user_id: userId,
       primary_agent_id: targetAgent.id,
       title: `Evals live E2E ${runId}`,
+      forked_from_session_key: null,
     })
     await addAppSessionParticipants({
       sessionKey,

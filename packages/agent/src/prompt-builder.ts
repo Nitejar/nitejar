@@ -1,4 +1,4 @@
-import { listAgentSandboxes, type Agent, type WorkItem } from '@nitejar/database'
+import { listAgentSandboxes, resolveEffectivePolicy, type Agent, type WorkItem } from '@nitejar/database'
 import { getSpritesTokenSettings, isSpritesExecutionAvailable } from '@nitejar/sprites'
 import { parseAgentConfig, DEFAULT_SOUL_TEMPLATE } from './config'
 import { retrieveMemories, formatMemoriesForPrompt } from './memory'
@@ -98,6 +98,45 @@ export interface RequesterIdentity {
   source: string | null
 }
 
+async function buildAgentRolePrompt(agent: Agent, config: AgentConfig): Promise<string | null> {
+  const lines: string[] = []
+  const title = typeof config.title === 'string' ? config.title.trim() : ''
+  if (title) {
+    lines.push(`Title: ${sanitize(title)}`)
+  }
+
+  try {
+    const policy = await resolveEffectivePolicy(agent.id)
+    if (policy.roles.length > 0) {
+      if (lines.length > 0) {
+        lines.push('')
+      }
+      lines.push('Organizational mandate:')
+      for (const role of policy.roles) {
+        const sourceBits: string[] = []
+        if (role.sourceType === 'team_role_default' && role.teamName) {
+          sourceBits.push(`default for team ${sanitize(role.teamName)}`)
+        } else if (role.sourceType === 'agent_role') {
+          sourceBits.push('direct assignment')
+        }
+        const sourceSuffix = sourceBits.length > 0 ? ` (${sourceBits.join(', ')})` : ''
+        lines.push(`- ${sanitize(role.name)}${sourceSuffix}`)
+        if (role.charter) {
+          lines.push(`  Charter: ${sanitize(role.charter)}`)
+        }
+        if (role.escalationPosture) {
+          lines.push(`  Escalation posture: ${sanitize(role.escalationPosture)}`)
+        }
+      }
+    }
+  } catch {
+    // Role/policy resolution is helpful context, not a hard dependency for prompt building.
+  }
+
+  if (lines.length === 0) return null
+  return wrapBoundary('context', `## Your Role\n${lines.join('\n')}`, { source: 'agent-role' })
+}
+
 /**
  * Build the complete system prompt for an agent
  * Assembles: agent identity + soul + memories + capabilities + channel context
@@ -114,6 +153,11 @@ export async function buildSystemPrompt(
 
   // Section 1: Agent identity
   sections.push(`You are ${agent.name} (@${agent.handle}).`)
+
+  const roleSection = await buildAgentRolePrompt(agent, config)
+  if (roleSection) {
+    sections.push(roleSection)
+  }
 
   // Inter-agent context: if this is a private DM or @mention, note it
   const payload = safeParsePayload(workItem.payload)

@@ -49,16 +49,6 @@ beforeEach(() => {
 })
 
 describe('scheduleCheckTool', () => {
-  it('fails when integration target is missing', async () => {
-    const result = await scheduleCheckTool(
-      { delay_minutes: 10, instructions: 'follow up' },
-      { ...baseContext, pluginInstanceId: undefined }
-    )
-
-    expect(result.success).toBe(false)
-    expect(result.error).toContain('plugin instance delivery target')
-  })
-
   it('creates a one-shot routine and linked scheduled item', async () => {
     mockedCreateOneShotRoutineSchedule.mockResolvedValue({
       routine: {
@@ -84,6 +74,33 @@ describe('scheduleCheckTool', () => {
       expect.objectContaining({
         agentId: 'agent-1',
         targetPluginInstanceId: 'integration-1',
+        targetSessionKey: 'telegram:123',
+        createdByKind: 'agent',
+      })
+    )
+  })
+
+  it('creates a scheduled check for app-session delivery with no plugin instance', async () => {
+    mockedCreateOneShotRoutineSchedule.mockResolvedValue({
+      routine: {
+        id: 'routine-1',
+      } as never,
+      run: {
+        id: 'run-1',
+      } as never,
+      scheduledItem: makeScheduledItem({ plugin_instance_id: null }),
+    })
+
+    const result = await scheduleCheckTool(
+      { delay_minutes: 10, instructions: 'follow up in this app session' },
+      { ...baseContext, pluginInstanceId: undefined }
+    )
+
+    expect(result.success).toBe(true)
+    expect(mockedCreateOneShotRoutineSchedule).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: 'agent-1',
+        targetPluginInstanceId: null,
         targetSessionKey: 'telegram:123',
         createdByKind: 'agent',
       })

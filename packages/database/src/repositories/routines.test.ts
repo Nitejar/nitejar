@@ -8,6 +8,7 @@ import { closeDb, getDb } from '../db'
 import {
   claimNextRoutineEvent,
   createRoutine,
+  createOneShotRoutineSchedule,
   enqueueRoutineEvent,
   enqueueRoutineRun,
   listDueRoutines,
@@ -50,6 +51,14 @@ async function createSchema(database: ReturnType<typeof getDb>): Promise<void> {
     .execute()
 
   await database.schema
+    .createTable('tickets')
+    .ifNotExists()
+    .addColumn('id', 'text', (col) => col.primaryKey())
+    .addColumn('title', 'text', (col) => col.notNull())
+    .addColumn('status', 'text', (col) => col.notNull())
+    .execute()
+
+  await database.schema
     .createTable('routines')
     .ifNotExists()
     .addColumn('id', 'text', (col) => col.primaryKey())
@@ -63,7 +72,7 @@ async function createSchema(database: ReturnType<typeof getDb>): Promise<void> {
     .addColumn('rule_json', 'text', (col) => col.notNull())
     .addColumn('condition_probe', 'text')
     .addColumn('condition_config', 'text')
-    .addColumn('target_plugin_instance_id', 'text', (col) => col.notNull())
+    .addColumn('target_plugin_instance_id', 'text')
     .addColumn('target_session_key', 'text', (col) => col.notNull())
     .addColumn('target_response_context', 'text')
     .addColumn('action_prompt', 'text', (col) => col.notNull())
@@ -136,6 +145,7 @@ async function clearTables(database: ReturnType<typeof getDb>): Promise<void> {
   await database.deleteFrom('routine_runs').execute()
   await database.deleteFrom('scheduled_items').execute()
   await database.deleteFrom('routines').execute()
+  await database.deleteFrom('tickets').execute()
   await database.deleteFrom('plugin_instances').execute()
   await database.deleteFrom('agents').execute()
 }
@@ -283,6 +293,89 @@ describe('routines repository', () => {
     expect(runs).toHaveLength(1)
     expect(runs[0]?.scheduled_item_id).toBe(materialized.scheduledItem.id)
     expect(materialized.scheduledItem.routine_id).toBe(routine.id)
+  })
+
+  it('clears stale bounded frontier fields when enqueueing a routine for a completed ticket', async () => {
+    await db
+      .insertInto('tickets')
+      .values({ id: 'ticket-done', title: 'Done ticket', status: 'done' })
+      .execute()
+
+    const routine = await createRoutine({
+      agent_id: 'agent-1',
+      name: 'sanitize stale frontier',
+      description: null,
+      enabled: 1,
+      trigger_kind: 'cron',
+      cron_expr: '*/5 * * * *',
+      timezone: 'UTC',
+      rule_json: '{}',
+      condition_probe: null,
+      condition_config: null,
+      target_plugin_instance_id: null,
+      target_session_key: 'app:user-1:proof',
+      target_response_context: JSON.stringify({
+        goal_id: 'goal-1',
+        parent_ticket_id: 'parent-ticket',
+        platform_fix_ticket_id: 'platform-ticket',
+        active_bounded_ticket_id: 'ticket-done',
+        frontier_name: 'stale frontier',
+        expected_proof: 'should be cleared',
+      }),
+      action_prompt: 'advance proof lane',
+      next_run_at: now(),
+      last_evaluated_at: null,
+      last_fired_at: null,
+      last_status: null,
+      created_by_kind: 'admin',
+      created_by_ref: 'user-1',
+      archived_at: null,
+    })
+
+    const materialized = await enqueueRoutineRun({
+      routine,
+      triggerOrigin: 'manual',
+      triggerRef: 'manual:sanitize',
+      runAt: now(),
+    })
+
+    expect(JSON.parse(materialized.scheduledItem.response_context ?? '{}')).toEqual({
+      goal_id: 'goal-1',
+      parent_ticket_id: 'parent-ticket',
+      platform_fix_ticket_id: 'platform-ticket',
+    })
+
+    const persistedRoutine = await db
+      .selectFrom('routines')
+      .select(['target_response_context'])
+      .where('id', '=', routine.id)
+      .executeTakeFirstOrThrow()
+
+    expect(JSON.parse(persistedRoutine.target_response_context ?? '{}')).toEqual({
+      goal_id: 'goal-1',
+      parent_ticket_id: 'parent-ticket',
+      platform_fix_ticket_id: 'platform-ticket',
+    })
+  })
+
+  it('creates one-shot schedules with a null plugin delivery target', async () => {
+    const scheduled = await createOneShotRoutineSchedule({
+      agentId: 'agent-1',
+      name: 'app session follow-up',
+      description: null,
+      actionPrompt: 'resume this thread',
+      runAt: now() + 300,
+      sourceRef: 'session:test',
+      targetPluginInstanceId: null,
+      targetSessionKey: 'app:user-1:s1',
+      targetResponseContext: '{"source":"app"}',
+      createdByKind: 'agent',
+      createdByRef: 'agent-1',
+    })
+
+    expect(scheduled.routine.target_plugin_instance_id).toBeNull()
+    expect(scheduled.scheduledItem.plugin_instance_id).toBeNull()
+    expect(scheduled.scheduledItem.session_key).toBe('app:user-1:s1')
   })
 
   it('claims and completes routine event queue items', async () => {

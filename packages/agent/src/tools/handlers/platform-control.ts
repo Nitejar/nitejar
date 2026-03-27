@@ -90,14 +90,13 @@ function agentSummaryRow(agent: {
     name: agent.name,
     status: agent.status,
     title: config.title ?? null,
-    dangerouslyUnrestricted: config.dangerouslyUnrestricted === true,
   }
 }
 
 export const platformControlDefinitions: Anthropic.Tool[] = [
   {
     name: 'list_agents',
-    description: 'List every agent in this fleet, including status and dangerous-mode posture.',
+    description: 'List every agent in this fleet, including status and identity metadata.',
     input_schema: {
       type: 'object' as const,
       properties: {},

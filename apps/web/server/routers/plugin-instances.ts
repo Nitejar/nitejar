@@ -24,6 +24,7 @@ import {
   setPluginInstanceAgentAssignmentInputSchema,
   setPluginInstanceEnabledInputSchema,
 } from '../services/ops/schemas'
+import { ensureBuiltinPluginHandlersLoaded } from '../services/plugins/ensure-builtin-handlers'
 
 const REDACTED_SECRET_VALUE = '••••••••'
 
@@ -39,6 +40,7 @@ export const pluginInstancesRouter = router({
   setupConfig: protectedProcedure
     .input(z.object({ type: z.string().trim().min(1) }))
     .query(async ({ input }) => {
+      await ensureBuiltinPluginHandlersLoaded()
       let handler = pluginHandlerRegistry.get(input.type)
 
       // If the handler isn't in the in-memory registry, attempt on-demand load
@@ -83,6 +85,7 @@ export const pluginInstancesRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      await ensureBuiltinPluginHandlersLoaded()
       let handler = pluginHandlerRegistry.get(input.type)
 
       // Try on-demand load if handler isn't registered yet
@@ -166,6 +169,7 @@ export const pluginInstancesRouter = router({
   testConnection: protectedProcedure
     .input(z.object({ pluginInstanceId: z.string().trim().min(1) }))
     .mutation(async ({ input }) => {
+      await ensureBuiltinPluginHandlersLoaded()
       const pluginInstance = await findPluginInstanceById(input.pluginInstanceId)
       if (!pluginInstance) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Plugin instance not found' })
@@ -221,6 +225,7 @@ export const pluginInstancesRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      await ensureBuiltinPluginHandlersLoaded()
       const handler = pluginHandlerRegistry.get(input.type)
       if (!handler?.testConnection) {
         throw new TRPCError({
@@ -264,6 +269,7 @@ export const pluginInstancesRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      await ensureBuiltinPluginHandlersLoaded()
       const pluginInstance = await findPluginInstanceById(input.pluginInstanceId)
       if (!pluginInstance) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Plugin instance not found' })

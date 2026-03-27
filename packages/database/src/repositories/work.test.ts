@@ -20,6 +20,7 @@ import {
   listTickets,
   listTicketWorkloadRollups,
   listWorkViews,
+  updateTicket,
   updateWorkView,
 } from './work'
 
@@ -97,6 +98,7 @@ async function createSchema(database: ReturnType<typeof getDb>): Promise<void> {
     .ifNotExists()
     .addColumn('id', 'text', (col) => col.primaryKey())
     .addColumn('goal_id', 'text')
+    .addColumn('parent_ticket_id', 'text')
     .addColumn('title', 'text', (col) => col.notNull())
     .addColumn('body', 'text')
     .addColumn('status', 'text', (col) => col.notNull())
@@ -106,6 +108,36 @@ async function createSchema(database: ReturnType<typeof getDb>): Promise<void> {
     .addColumn('claimed_by_kind', 'text')
     .addColumn('claimed_by_ref', 'text')
     .addColumn('claimed_at', 'integer')
+    .addColumn('sort_order', 'integer', (col) => col.notNull().defaultTo(0))
+    .addColumn('created_at', 'integer', (col) => col.notNull())
+    .addColumn('updated_at', 'integer', (col) => col.notNull())
+    .addColumn('archived_at', 'integer')
+    .execute()
+
+  await database.schema
+    .createTable('routines')
+    .ifNotExists()
+    .addColumn('id', 'text', (col) => col.primaryKey())
+    .addColumn('agent_id', 'text', (col) => col.notNull())
+    .addColumn('name', 'text', (col) => col.notNull())
+    .addColumn('description', 'text')
+    .addColumn('enabled', 'integer', (col) => col.notNull())
+    .addColumn('trigger_kind', 'text', (col) => col.notNull())
+    .addColumn('cron_expr', 'text')
+    .addColumn('timezone', 'text')
+    .addColumn('rule_json', 'text', (col) => col.notNull())
+    .addColumn('condition_probe', 'text')
+    .addColumn('condition_config', 'text')
+    .addColumn('target_plugin_instance_id', 'text')
+    .addColumn('target_session_key', 'text', (col) => col.notNull())
+    .addColumn('target_response_context', 'text')
+    .addColumn('action_prompt', 'text', (col) => col.notNull())
+    .addColumn('next_run_at', 'integer')
+    .addColumn('last_evaluated_at', 'integer')
+    .addColumn('last_fired_at', 'integer')
+    .addColumn('last_status', 'text')
+    .addColumn('created_by_kind', 'text', (col) => col.notNull())
+    .addColumn('created_by_ref', 'text')
     .addColumn('created_at', 'integer', (col) => col.notNull())
     .addColumn('updated_at', 'integer', (col) => col.notNull())
     .addColumn('archived_at', 'integer')
@@ -145,6 +177,7 @@ async function createSchema(database: ReturnType<typeof getDb>): Promise<void> {
 async function clearTables(database: ReturnType<typeof getDb>): Promise<void> {
   await database.deleteFrom('work_updates').execute()
   await database.deleteFrom('work_views').execute()
+  await database.deleteFrom('routines').execute()
   await database.deleteFrom('goal_agent_allocations').execute()
   await database.deleteFrom('agent_teams').execute()
   await database.deleteFrom('team_members').execute()
@@ -398,6 +431,148 @@ describe('work repository', () => {
     expect(agentRollups[0]?.owned_goal_count).toBe(1)
   })
 
+  it('clears stale routine bounded frontier context when a ticket is completed', async () => {
+    const goal = await createGoal({
+      parent_goal_id: null,
+      title: 'Proof loop',
+      outcome: 'Completed frontiers do not stay hot.',
+      status: 'active',
+      owner_kind: 'agent',
+      owner_ref: 'agent-ceo',
+      created_by_user_id: 'user-1',
+      archived_at: null,
+    })
+
+    const ticket = await createTicket({
+      goal_id: goal.id,
+      parent_ticket_id: null,
+      title: 'Dispatch context stabilization',
+      body: null,
+      status: 'in_progress',
+      assignee_kind: 'agent',
+      assignee_ref: 'agent-ceo',
+      created_by_user_id: 'user-1',
+      claimed_by_kind: 'agent',
+      claimed_by_ref: 'agent-ceo',
+      claimed_at: 10,
+      archived_at: null,
+    })
+
+    await db
+      .insertInto('routines')
+      .values({
+        id: 'routine-1',
+        agent_id: 'agent-ceo',
+        name: 'CEO proof lane',
+        description: null,
+        enabled: 1,
+        trigger_kind: 'cron',
+        cron_expr: '*/5 * * * *',
+        timezone: 'UTC',
+        rule_json: '{}',
+        condition_probe: null,
+        condition_config: null,
+        target_plugin_instance_id: null,
+        target_session_key: 'app:proof',
+        target_response_context: JSON.stringify({
+          goal_id: goal.id,
+          parent_ticket_id: 'parent-ticket',
+          platform_fix_ticket_id: 'platform-ticket',
+          active_bounded_ticket_id: ticket.id,
+          frontier_name: 'dispatch context stabilization',
+          expected_proof: 'next unattended run rotates to a fresh frontier',
+        }),
+        action_prompt: 'keep going',
+        next_run_at: null,
+        last_evaluated_at: null,
+        last_fired_at: null,
+        last_status: null,
+        created_by_kind: 'agent',
+        created_by_ref: 'agent-ceo',
+        created_at: 1,
+        updated_at: 1,
+        archived_at: null,
+      })
+      .execute()
+
+    const untouchedTicket = await createTicket({
+      goal_id: goal.id,
+      parent_ticket_id: null,
+      title: 'Other ticket',
+      body: null,
+      status: 'ready',
+      assignee_kind: 'agent',
+      assignee_ref: 'agent-other',
+      created_by_user_id: 'user-1',
+      claimed_by_kind: null,
+      claimed_by_ref: null,
+      claimed_at: null,
+      archived_at: null,
+    })
+
+    await db
+      .insertInto('routines')
+      .values({
+        id: 'routine-2',
+        agent_id: 'agent-other',
+        name: 'Other proof lane',
+        description: null,
+        enabled: 1,
+        trigger_kind: 'cron',
+        cron_expr: '*/5 * * * *',
+        timezone: 'UTC',
+        rule_json: '{}',
+        condition_probe: null,
+        condition_config: null,
+        target_plugin_instance_id: null,
+        target_session_key: 'app:other',
+        target_response_context: JSON.stringify({
+          goal_id: goal.id,
+          active_bounded_ticket_id: untouchedTicket.id,
+          frontier_name: 'other frontier',
+          expected_proof: 'should remain untouched',
+        }),
+        action_prompt: 'keep going',
+        next_run_at: null,
+        last_evaluated_at: null,
+        last_fired_at: null,
+        last_status: null,
+        created_by_kind: 'agent',
+        created_by_ref: 'agent-other',
+        created_at: 1,
+        updated_at: 1,
+        archived_at: null,
+      })
+      .execute()
+
+    const updated = await updateTicket(ticket.id, { status: 'done' })
+
+    expect(updated?.status).toBe('done')
+
+    const cleanedRoutine = await db
+      .selectFrom('routines')
+      .selectAll()
+      .where('id', '=', 'routine-1')
+      .executeTakeFirstOrThrow()
+    const untouchedRoutine = await db
+      .selectFrom('routines')
+      .selectAll()
+      .where('id', '=', 'routine-2')
+      .executeTakeFirstOrThrow()
+
+    expect(JSON.parse(cleanedRoutine.target_response_context ?? '{}')).toEqual({
+      goal_id: goal.id,
+      parent_ticket_id: 'parent-ticket',
+      platform_fix_ticket_id: 'platform-ticket',
+    })
+    expect(JSON.parse(untouchedRoutine.target_response_context ?? '{}')).toEqual({
+      goal_id: goal.id,
+      active_bounded_ticket_id: untouchedTicket.id,
+      frontier_name: 'other frontier',
+      expected_proof: 'should remain untouched',
+    })
+  })
+
   it('derives goal health, heartbeat freshness, and stale signals', async () => {
     const goal = await createGoal({
       parent_goal_id: null,
@@ -599,6 +774,46 @@ describe('work repository', () => {
     expect(overview.overloaded_goal_count).toBe(1)
     expect(overview.active_team_count).toBe(2)
     expect(overview.overloaded_agent_count).toBe(1)
+  })
+
+  it('normalizes ticket-scoped work updates to the ticket goal', async () => {
+    const goal = await createGoal({
+      parent_goal_id: null,
+      title: 'Keep the proof lane moving',
+      outcome: 'Ticket-scoped receipts always land on the right goal.',
+      status: 'active',
+      owner_kind: 'agent',
+      owner_ref: 'agent-1',
+      created_by_user_id: 'user-1',
+      archived_at: null,
+    })
+    const ticket = await createTicket({
+      goal_id: goal.id,
+      title: 'Repair the successor lane',
+      body: null,
+      status: 'in_progress',
+      assignee_kind: 'agent',
+      assignee_ref: 'agent-1',
+      created_by_user_id: 'user-1',
+      claimed_by_kind: 'agent',
+      claimed_by_ref: 'agent-1',
+      claimed_at: null,
+      archived_at: null,
+    })
+
+    const update = await createWorkUpdate({
+      goal_id: 'mistyped-goal-id',
+      ticket_id: ticket.id,
+      team_id: null,
+      author_kind: 'agent',
+      author_ref: 'agent-1',
+      kind: 'note',
+      body: 'Cycle moved.',
+      metadata_json: null,
+    })
+
+    expect(update.goal_id).toBe(goal.id)
+    expect(update.ticket_id).toBe(ticket.id)
   })
 
   it('builds team portfolio rollups from active goals and staffing gaps', async () => {

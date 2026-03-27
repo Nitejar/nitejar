@@ -209,7 +209,9 @@ async function executeDispatch(
     }, HEARTBEAT_MS)
 
     const workItem = await findWorkItemById(dispatch.work_item_id)
-    const skipTriage = workItem?.source === 'app_chat'
+    // App-chat turns and scheduled routines are already direct, agent-owned work.
+    // Re-triaging them can suppress unattended execution when session history is noisy.
+    const skipTriage = workItem?.source === 'app_chat' || workItem?.source === 'routine'
 
     const pluginInstance = dispatch.plugin_instance_id
       ? await getPluginInstanceWithConfig(dispatch.plugin_instance_id)
@@ -302,6 +304,7 @@ async function executeDispatch(
       resumeFromJobId,
       skipTriage,
       responseMode,
+      responseContext: safeParseJson(dispatch.response_context),
       teamContext,
       hookDispatch: createRunnerHookDispatch(),
       onEvent: (event) => {

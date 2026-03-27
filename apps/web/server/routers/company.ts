@@ -20,10 +20,12 @@ import {
   getDb,
   getTeamSpendInWindow,
   listAgentRoleAssignments,
+  listRoleGitHubRepoPolicies,
   listRoleDefaults,
   listRoleGrants,
   listRoles,
   listTeamRoleDefaults,
+  GITHUB_REPO_CAPABILITY_IDS,
   sql,
   listAgentAllocationRollups,
   listGoalCoverageRollups,
@@ -31,6 +33,7 @@ import {
   listWorkViews,
   removeDefaultRoleFromTeam,
   removeRoleFromAgent,
+  replaceRoleGitHubRepoPolicies,
   replaceRoleDefaults,
   replaceRoleGrants,
   resolveEffectivePolicy,
@@ -116,6 +119,13 @@ const policyGrantInputSchema = z.object({
 const policyDefaultInputSchema = z.object({
   key: z.string().trim().min(1),
   value: z.unknown(),
+})
+
+const gitHubRepoCapabilitySchema = z.enum(GITHUB_REPO_CAPABILITY_IDS)
+
+const roleGitHubRepoPolicyInputSchema = z.object({
+  githubRepoId: z.number().int(),
+  capabilities: z.array(gitHubRepoCapabilitySchema),
 })
 
 function now(): number {
@@ -1762,7 +1772,8 @@ export const companyRouter = router({
         .execute(),
     ])
 
-    const [roleGrantsAll, roleDefaultsAll, teamDefaults, agentAssignments] = await Promise.all([
+    const [roleGrantsAll, roleDefaultsAll, roleGitHubPoliciesAll, teamDefaults, agentAssignments] =
+      await Promise.all([
       Promise.all(
         roles.map(async (role) => ({
           roleId: role.id,
@@ -1773,6 +1784,12 @@ export const companyRouter = router({
         roles.map(async (role) => ({
           roleId: role.id,
           defaults: await listRoleDefaults(role.id),
+        }))
+      ),
+      Promise.all(
+        roles.map(async (role) => ({
+          roleId: role.id,
+          githubRepoPolicies: await listRoleGitHubRepoPolicies(role.id),
         }))
       ),
       Promise.all(
@@ -1841,16 +1858,29 @@ export const companyRouter = router({
       ])
     )
 
+    const githubRepoPoliciesByRoleId = new Map(
+      roleGitHubPoliciesAll.map((row) => [
+        row.roleId,
+        row.githubRepoPolicies.map((policy) => ({
+          githubRepoId: policy.githubRepoId,
+          repoFullName: policy.repoFullName,
+          repoHtmlUrl: policy.repoHtmlUrl,
+          installationAccountLogin: policy.installationAccountLogin,
+          capabilities: policy.capabilities,
+        })),
+      ])
+    )
+
     return roles.map((role) => ({
       id: role.id,
       slug: role.slug,
       name: role.name,
       charter: role.charter,
-      jobDescription: role.job_description,
       escalationPosture: role.escalation_posture,
       active: role.active === 1,
       grants: grantsByRoleId.get(role.id) ?? [],
       defaults: defaultsDataByRoleId.get(role.id) ?? [],
+      githubRepoPolicies: githubRepoPoliciesByRoleId.get(role.id) ?? [],
       defaultTeams: defaultsByRoleId.get(role.id) ?? [],
       assignedAgents: agentsByRoleId.get(role.id) ?? [],
     }))
@@ -1864,9 +1894,10 @@ export const companyRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Role not found.' })
       }
 
-      const [grants, defaults, allTeams, allAgents] = await Promise.all([
+      const [grants, defaults, githubRepoPolicies, allTeams, allAgents] = await Promise.all([
         listRoleGrants(role.id),
         listRoleDefaults(role.id),
+        listRoleGitHubRepoPolicies(role.id),
         getDb().selectFrom('teams').select(['id', 'name']).orderBy('name', 'asc').execute(),
         getDb()
           .selectFrom('agents')
@@ -1895,7 +1926,6 @@ export const companyRouter = router({
         slug: role.slug,
         name: role.name,
         charter: role.charter,
-        jobDescription: role.job_description,
         escalationPosture: role.escalation_posture,
         active: role.active === 1,
         grants: grants.map((grant) => ({
@@ -1908,6 +1938,13 @@ export const companyRouter = router({
           id: entry.id,
           key: entry.key,
           value: parsePolicyJsonValue(entry.value_json),
+        })),
+        githubRepoPolicies: githubRepoPolicies.map((policy) => ({
+          githubRepoId: policy.githubRepoId,
+          repoFullName: policy.repoFullName,
+          repoHtmlUrl: policy.repoHtmlUrl,
+          installationAccountLogin: policy.installationAccountLogin,
+          capabilities: policy.capabilities,
         })),
         defaultTeams: teamDefaults
           .filter((row) => row.assignments.some((assignment) => assignment.role.id === role.id))
@@ -1928,11 +1965,11 @@ export const companyRouter = router({
         slug: z.string().trim().min(1),
         name: z.string().trim().min(1),
         charter: z.string().trim().optional().nullable(),
-        jobDescription: z.string().trim().optional().nullable(),
         escalationPosture: z.string().trim().optional().nullable(),
         active: z.boolean().optional(),
         grants: z.array(policyGrantInputSchema).optional(),
         defaults: z.array(policyDefaultInputSchema).optional(),
+        githubRepoPolicies: z.array(roleGitHubRepoPolicyInputSchema).optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -1940,7 +1977,6 @@ export const companyRouter = router({
         slug: input.slug,
         name: input.name,
         charter: input.charter ?? null,
-        job_description: input.jobDescription ?? null,
         escalation_posture: input.escalationPosture ?? null,
         active: input.active === false ? 0 : 1,
       })
@@ -1963,6 +1999,9 @@ export const companyRouter = router({
           }))
         )
       }
+      if (input.githubRepoPolicies) {
+        await replaceRoleGitHubRepoPolicies(role.id, input.githubRepoPolicies)
+      }
       await writePolicyAuditLog({
         eventType: 'POLICY_ROLE_CREATED',
         capability: 'policy.write',
@@ -1982,11 +2021,11 @@ export const companyRouter = router({
         slug: z.string().trim().min(1).optional(),
         name: z.string().trim().min(1).optional(),
         charter: z.string().trim().optional().nullable(),
-        jobDescription: z.string().trim().optional().nullable(),
         escalationPosture: z.string().trim().optional().nullable(),
         active: z.boolean().optional(),
         grants: z.array(policyGrantInputSchema).optional(),
         defaults: z.array(policyDefaultInputSchema).optional(),
+        githubRepoPolicies: z.array(roleGitHubRepoPolicyInputSchema).optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -1998,7 +2037,6 @@ export const companyRouter = router({
         ...(input.slug !== undefined ? { slug: input.slug } : {}),
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.charter !== undefined ? { charter: input.charter } : {}),
-        ...(input.jobDescription !== undefined ? { job_description: input.jobDescription } : {}),
         ...(input.escalationPosture !== undefined
           ? { escalation_posture: input.escalationPosture }
           : {}),
@@ -2022,6 +2060,9 @@ export const companyRouter = router({
             value_json: JSON.stringify(entry.value),
           }))
         )
+      }
+      if (input.githubRepoPolicies) {
+        await replaceRoleGitHubRepoPolicies(role.id, input.githubRepoPolicies)
       }
       await writePolicyAuditLog({
         eventType: 'POLICY_ROLE_UPDATED',
@@ -2195,13 +2236,11 @@ export const companyRouter = router({
           slug: assignment.role.slug,
           name: assignment.role.name,
           charter: assignment.role.charter,
-          jobDescription: assignment.role.job_description,
           escalationPosture: assignment.role.escalation_posture,
         })),
         effectiveRoles: resolved.roles,
         effectiveGrants: resolved.grants,
         effectiveDefaults: resolved.defaults,
-        legacyCompatibility: resolved.legacy,
       }
     }),
 

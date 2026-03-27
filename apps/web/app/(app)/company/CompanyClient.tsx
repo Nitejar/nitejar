@@ -908,7 +908,28 @@ function DetailPanel({
 // Main component
 // ---------------------------------------------------------------------------
 
-export function CompanyClient() {
+type PermissionRow = {
+  resource: string
+  hint: string
+  ops: Array<{
+    op: string
+    grants: Array<{ action: string; resourceType: string | null }>
+  }>
+}
+
+type GitHubRepoCapabilityDescriptor = {
+  id: string
+  label: string
+  hint: string
+}
+
+export function CompanyClient({
+  permissionRows,
+  githubRepoCapabilities,
+}: {
+  permissionRows: PermissionRow[]
+  githubRepoCapabilities: readonly GitHubRepoCapabilityDescriptor[]
+}) {
   const router = useRouter()
   const pathname = usePathname()
   const utils = trpc.useUtils()
@@ -1395,7 +1416,13 @@ export function CompanyClient() {
   }
 
   function renderRoles() {
-    return <RolesView search={search} />
+    return (
+      <RolesView
+        search={search}
+        permissionRows={permissionRows}
+        githubRepoCapabilities={githubRepoCapabilities}
+      />
+    )
   }
 
   const toolbarHeader = (

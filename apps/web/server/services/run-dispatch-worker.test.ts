@@ -541,7 +541,10 @@ describe('run dispatch worker control flow', () => {
       mockPluginHandlerGet.mockReturnValue({ responseMode: 'final' })
 
       await __dispatchWorkerTest.executeDispatch(
-        makeClaimedDispatch({ coalesced_text: 'Merged text' }),
+        makeClaimedDispatch({
+          coalesced_text: 'Merged text',
+          response_context: JSON.stringify({ ticket_id: 'ticket-1', session_kind: 'app_chat' }),
+        }),
         runtimeControl
       )
 
@@ -552,9 +555,26 @@ describe('run dispatch worker control flow', () => {
       expect(options?.coalescedText).toBe('Merged text')
       expect(options?.skipTriage).toBe(false)
       expect(options?.responseMode).toBe('final')
+      expect(options?.responseContext).toEqual({
+        ticket_id: 'ticket-1',
+        session_kind: 'app_chat',
+      })
       expect(typeof options?.hookDispatch).toBe('function')
       expect(typeof options?.onEvent).toBe('function')
       expect(typeof options?.getRunControlDirective).toBe('function')
+    })
+
+    it('skips triage for routine-owned work items', async () => {
+      mockFindWorkItemById.mockResolvedValue({
+        ...mockWorkItem,
+        source: 'routine',
+        source_ref: 'routine:routine-1:scheduled:item-1',
+      })
+
+      await __dispatchWorkerTest.executeDispatch(makeClaimedDispatch(), runtimeControl)
+
+      const options = mockRunAgent.mock.calls[0]?.[2]
+      expect(options?.skipTriage).toBe(true)
     })
   })
 

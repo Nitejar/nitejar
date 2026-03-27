@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, Link2, Pencil } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, Link2, Pencil, Play } from 'lucide-react'
 import { trpc } from '@/lib/trpc'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -219,6 +219,10 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
     limit: 200,
     sort: { field: 'title', direction: 'asc' },
   })
+  const relatedSessionsQuery = trpc.sessions.listRelated.useQuery({
+    ticketId,
+    limit: 6,
+  })
 
   const updateTicketMutation = trpc.work.updateTicket.useMutation({
     onSuccess: async () => {
@@ -261,6 +265,19 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
     },
     onError: () => {
       toast.error('Failed to start session')
+    },
+  })
+  const runTicketNowMutation = trpc.sessions.runTicketNow.useMutation({
+    onSuccess: async ({ sessionKey }) => {
+      await Promise.all([
+        utils.work.getTicket.invalidate({ ticketId }),
+        utils.work.listTickets.invalidate(),
+      ])
+      router.push(`/sessions/${encodeURIComponent(sessionKey)}`)
+      toast.success('Execution queued')
+    },
+    onError: () => {
+      toast.error('Failed to queue execution')
     },
   })
 
@@ -369,7 +386,7 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
     )
   }
 
-  const linkedSession = ticket.receiptSummary.links.find((link) => link.kind === 'session')
+  const linkedSession = relatedSessionsQuery.data?.items[0] ?? null
   const hasActivity =
     ticket.updates.length > 0 ||
     ticket.receiptSummary.workItems.length > 0 ||
@@ -456,20 +473,33 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
             </Button>
           )}
           {assignedAgentId && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 gap-1.5 text-xs"
-              disabled={startSessionMutation.isPending}
-              onClick={async () => {
-                await startSessionMutation.mutateAsync({
-                  agentId: assignedAgentId,
-                  ticketId,
-                })
-              }}
-            >
-              {linkedSession ? 'Resume session' : 'Start session'}
-            </Button>
+            <>
+              <Button
+                size="sm"
+                className="h-7 gap-1.5 text-xs"
+                disabled={runTicketNowMutation.isPending}
+                onClick={async () => {
+                  await runTicketNowMutation.mutateAsync({ ticketId })
+                }}
+              >
+                <Play className="h-3.5 w-3.5" />
+                Run now
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1.5 text-xs"
+                disabled={startSessionMutation.isPending}
+                onClick={async () => {
+                  await startSessionMutation.mutateAsync({
+                    agentId: assignedAgentId,
+                    ticketId,
+                  })
+                }}
+              >
+                Start session
+              </Button>
+            </>
           )}
           <Button
             size="sm"
@@ -637,19 +667,20 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
         </div>
       )}
 
-      {/* Linked session */}
+      {/* Related sessions */}
       {linkedSession && (
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-[10px] uppercase tracking-[0.16em] text-white/35">
-            Active thread
-          </span>
+          <span className="text-[10px] uppercase tracking-[0.16em] text-white/35">Conversations</span>
           <Link
-            href={`/sessions/${encodeURIComponent(linkedSession.ref)}`}
+            href={`/sessions/${encodeURIComponent(linkedSession.sessionKey)}`}
             className="inline-flex items-center gap-2 text-zinc-300 transition hover:text-white"
           >
-            {linkedSession.label || 'Linked session'}
+            {linkedSession.displayTitle}
             <ChevronRight className="h-3.5 w-3.5" />
           </Link>
+          {relatedSessionsQuery.data && relatedSessionsQuery.data.items.length > 1 ? (
+            <span className="text-xs text-zinc-500">+{relatedSessionsQuery.data.items.length - 1} more</span>
+          ) : null}
         </div>
       )}
 
@@ -881,16 +912,15 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
 
             {ticket.receiptSummary.workItems.length > 0 ? (
               <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 divide-y divide-zinc-800/60">
-                {linkedSession ? (
+                {relatedSessionsQuery.data?.items.map((session) => (
                   <Link
-                    href={`/sessions/${encodeURIComponent(linkedSession.ref)}`}
+                    key={session.sessionKey}
+                    href={`/sessions/${encodeURIComponent(session.sessionKey)}`}
                     className="flex items-center justify-between px-3 py-2 transition hover:bg-white/[0.03]"
                   >
-                    <span className="text-sm text-zinc-300">
-                      {linkedSession.label || 'Linked session'}
-                    </span>
+                    <span className="text-sm text-zinc-300">{session.displayTitle}</span>
                   </Link>
-                ) : null}
+                ))}
                 {ticket.receiptSummary.workItems.map((item) => (
                   <Link
                     key={item.id}

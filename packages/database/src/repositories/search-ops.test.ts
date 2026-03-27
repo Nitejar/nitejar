@@ -230,6 +230,16 @@ describe('repository search + control operations', () => {
       payload: null,
     })
 
+    const routineItem = await createWorkItem({
+      plugin_instance_id: null,
+      session_key: 'proof-lane-session',
+      source: 'routine',
+      source_ref: 'routine:routine-proof-1:scheduled:scheduled-1',
+      status: 'NEW',
+      title: 'Proof lane follow-up',
+      payload: null,
+    })
+
     await db
       .updateTable('work_items')
       .set({ created_at: 200, updated_at: 200 })
@@ -240,6 +250,12 @@ describe('repository search + control operations', () => {
       .updateTable('work_items')
       .set({ created_at: 100, updated_at: 100 })
       .where('id', '=', beta.id)
+      .execute()
+
+    await db
+      .updateTable('work_items')
+      .set({ created_at: 50, updated_at: 50 })
+      .where('id', '=', routineItem.id)
       .execute()
 
     await createJob({
@@ -257,7 +273,7 @@ describe('repository search + control operations', () => {
     expect(found?.title).toBe('Alpha incident')
 
     const listed = await listWorkItems(10)
-    expect(listed).toHaveLength(2)
+    expect(listed).toHaveLength(3)
 
     const listedByPluginInstance = await listWorkItemsByPluginInstance('integration-a', 10)
     expect(listedByPluginInstance).toHaveLength(1)
@@ -291,6 +307,14 @@ describe('repository search + control operations', () => {
     expect(searchPageTwo.items).toHaveLength(1)
     expect(searchPageTwo.items[0]?.id).toBe(beta.id)
 
+    const routineSearch = await searchWorkItems({
+      sessionKey: 'proof-lane-session',
+      routineId: 'routine-proof-1',
+    })
+
+    expect(routineSearch.items).toHaveLength(1)
+    expect(routineSearch.items[0]?.id).toBe(routineItem.id)
+
     const updated = await updateWorkItem(alpha.id, {
       status: 'COMPLETED',
       title: 'Alpha incident resolved',
@@ -320,6 +344,16 @@ describe('repository search + control operations', () => {
       payload: null,
     })
 
+    const routineWorkItem = await createWorkItem({
+      plugin_instance_id: null,
+      session_key: 'proof-lane-session',
+      source: 'routine',
+      source_ref: 'routine:routine-proof-1:scheduled:scheduled-2',
+      status: 'NEW',
+      title: 'Run Gamma',
+      payload: null,
+    })
+
     const runA = await createJob({
       work_item_id: workItemA.id,
       agent_id: TEST_AGENT_ID,
@@ -342,6 +376,17 @@ describe('repository search + control operations', () => {
       completed_at: null,
     })
 
+    const runC = await createJob({
+      work_item_id: routineWorkItem.id,
+      agent_id: TEST_AGENT_ID,
+      status: 'PENDING',
+      error_text: null,
+      todo_state: null,
+      final_response: null,
+      started_at: null,
+      completed_at: null,
+    })
+
     await db
       .updateTable('jobs')
       .set({ created_at: 300, updated_at: 300 })
@@ -352,6 +397,12 @@ describe('repository search + control operations', () => {
       .updateTable('jobs')
       .set({ created_at: 200, updated_at: 200 })
       .where('id', '=', runB.id)
+      .execute()
+
+    await db
+      .updateTable('jobs')
+      .set({ created_at: 100, updated_at: 100 })
+      .where('id', '=', runC.id)
       .execute()
 
     await db
@@ -415,8 +466,8 @@ describe('repository search + control operations', () => {
       .execute()
 
     expect((await findJobById(runA.id))?.id).toBe(runA.id)
-    expect((await listJobs(10)).length).toBe(2)
-    expect((await listJobsByAgent(TEST_AGENT_ID, 10)).length).toBe(2)
+    expect((await listJobs(10)).length).toBe(3)
+    expect((await listJobsByAgent(TEST_AGENT_ID, 10)).length).toBe(3)
     expect((await listJobsByWorkItem(workItemA.id)).length).toBe(1)
 
     expect((await startJob(runA.id))?.status).toBe('RUNNING')
@@ -453,6 +504,14 @@ describe('repository search + control operations', () => {
     })
 
     expect(runsPageTwo.runs).toHaveLength(1)
+
+    const routineRuns = await searchRuns({
+      sessionKey: 'proof-lane-session',
+      routineId: 'routine-proof-1',
+    })
+
+    expect(routineRuns.runs).toHaveLength(1)
+    expect(routineRuns.runs[0]?.job_id).toBe(runC.id)
   })
 
   it('supports plugin-instance search/list/update/assignment flows', async () => {

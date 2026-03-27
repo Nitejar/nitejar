@@ -1,30 +1,38 @@
 import { TRPCError } from '@trpc/server'
 import { extractMentions } from '@nitejar/agent/mention-parser'
 import { parseAgentConfig } from '@nitejar/agent/config'
-import { generateUuidV7 } from '@nitejar/core'
 import {
+  type AppSession,
   addAppSessionParticipants,
   claimTicket,
-  createTicketLink,
   createWorkUpdate,
-  createAppSession,
   findGoalById,
   findAgentById,
   findAppSessionByKeyAndOwner,
   findTicketById,
   findTicketBySessionKey,
   getDb,
+  listAppSessionsByOwnerAndPrefix,
   listAgents,
   listAppSessionParticipantAgents,
   listAppSessionsByOwner,
+  parseAppSessionKey,
 } from '@nitejar/database'
 import { z } from 'zod'
 import { enqueueAppSessionMessage } from '../services/app-session-enqueue'
+import {
+  createGoalAppSession,
+  createRoutineAppSession,
+  createStandaloneAppSession,
+  createTicketAppSession,
+} from '../services/app-session-context'
 import { protectedProcedure, router } from '../trpc'
 
 const MAX_SESSION_LIST = 50
 const DEFAULT_TIMELINE_LIMIT = 30
 const MAX_TIMELINE_LIMIT = 50
+const DEFAULT_TICKET_EXECUTION_MESSAGE =
+  'Execute the linked ticket now. Inspect live ticket state, goal context, recent receipts, and the current session before acting. Advance the work with at least one durable artifact, and leave the next concrete step in motion before you stop.'
 
 type WorkItemPayload = {
   body?: string
@@ -136,6 +144,10 @@ function truncateText(text: string, maxChars: number): string {
   return `${normalized.slice(0, maxChars - 1)}…`
 }
 
+function receiptOnlyReplyFallback(agentName: string): string {
+  return `${agentName}: Run completed without a chat reply. Check the run for receipts.`
+}
+
 function laneAgentIdFromQueueKey(queueKey: string): string | null {
   const parts = queueKey.split(':').filter(Boolean)
   return parts.length > 0 ? (parts[parts.length - 1] ?? null) : null
@@ -221,6 +233,35 @@ async function getSessionWorkContext(sessionKey: string): Promise<{
   }
 }
 
+async function ensureSessionParticipant(input: {
+  sessionKey: string
+  agentId: string
+  userId: string
+}): Promise<void> {
+  const participants = await listAppSessionParticipantAgents(input.sessionKey)
+  if (participants.some((participant) => participant.id === input.agentId)) {
+    return
+  }
+
+  await addAppSessionParticipants({
+    sessionKey: input.sessionKey,
+    agentIds: [input.agentId],
+    addedByUserId: input.userId,
+  })
+}
+
+function buildTicketExecutionMessage(input: { title: string; body: string | null; message?: string }) {
+  const custom = input.message?.trim()
+  if (custom) return custom
+
+  const bodySnippet = input.body?.trim()
+  if (!bodySnippet) {
+    return `${DEFAULT_TICKET_EXECUTION_MESSAGE}\n\nTicket: ${input.title}`
+  }
+
+  return `${DEFAULT_TICKET_EXECUTION_MESSAGE}\n\nTicket: ${input.title}\nScope:\n${bodySnippet}`
+}
+
 function computeFailedTurnStatus(input: {
   jobStatuses: string[]
   dispatchStatuses: DispatchStatus[]
@@ -242,7 +283,136 @@ function computeFailedTurnStatus(input: {
   )
 }
 
-const TWENTY_FOUR_HOURS = 24 * 60 * 60
+function mapParticipantView(agent: Awaited<ReturnType<typeof listAppSessionParticipantAgents>>[number]) {
+  const config = parseAgentConfig(agent.config)
+  return {
+    id: agent.id,
+    handle: agent.handle,
+    name: agent.name,
+    title: config.title ?? null,
+    emoji: config.emoji ?? null,
+    avatarUrl: config.avatarUrl ?? null,
+  }
+}
+
+function describeSessionContext(
+  sessionKey: string,
+  linkedTicket: Awaited<ReturnType<typeof getSessionWorkContext>>['linkedTicket']
+): { kind: 'standalone' | 'ticket' | 'goal' | 'routine' | 'legacy' | 'external'; id: string | null; label: string | null; familyKey: string | null } {
+  const parsed = parseAppSessionKey(sessionKey)
+  if (!parsed.isAppSession) {
+    return { kind: 'external', id: null, label: null, familyKey: null }
+  }
+  if (parsed.isLegacy) {
+    return { kind: 'legacy', id: parsed.ownerUserId, label: 'Legacy app session', familyKey: null }
+  }
+  if (parsed.contextKind === 'ticket') {
+    return {
+      kind: 'ticket',
+      id: parsed.contextId,
+      label: linkedTicket?.title ?? 'Ticket conversation',
+      familyKey: parsed.familyKey,
+    }
+  }
+  if (parsed.contextKind === 'goal') {
+    return { kind: 'goal', id: parsed.contextId, label: 'Goal conversation', familyKey: parsed.familyKey }
+  }
+  if (parsed.contextKind === 'routine') {
+    return { kind: 'routine', id: parsed.contextId, label: 'Routine conversation', familyKey: parsed.familyKey }
+  }
+  return { kind: 'standalone', id: parsed.contextId, label: 'Standalone conversation', familyKey: parsed.familyKey }
+}
+
+async function buildSessionListItem(db: ReturnType<typeof getDb>, session: AppSession) {
+  const participants = await listAppSessionParticipantAgents(session.session_key)
+  const participantViews = participants.map(mapParticipantView)
+  const linkedTicket = await getSessionWorkContext(session.session_key)
+
+  const firstWorkItem = await db
+    .selectFrom('work_items')
+    .select(['id', 'payload', 'title'])
+    .where('session_key', '=', session.session_key)
+    .where('source', '=', 'app_chat')
+    .orderBy('created_at', 'asc')
+    .limit(1)
+    .executeTakeFirst()
+
+  const displayTitle = session.title?.trim()
+    ? session.title
+    : truncateText(
+        parseWorkItemPayload(firstWorkItem?.payload ?? null).body ??
+          firstWorkItem?.title ??
+          'New session',
+        60
+      )
+
+  const lastWorkItem = await db
+    .selectFrom('work_items')
+    .select(['id', 'payload', 'title', 'created_at'])
+    .where('session_key', '=', session.session_key)
+    .where('source', '=', 'app_chat')
+    .orderBy('created_at', 'desc')
+    .orderBy('id', 'desc')
+    .limit(1)
+    .executeTakeFirst()
+
+  let preview = 'No messages yet'
+  let lastMessageAt = session.last_activity_at
+  if (lastWorkItem) {
+    lastMessageAt = lastWorkItem.created_at
+    const latestAssistant = await db
+      .selectFrom('messages')
+      .innerJoin('jobs', 'jobs.id', 'messages.job_id')
+      .innerJoin('agents', 'agents.id', 'jobs.agent_id')
+      .select(['messages.content', 'messages.created_at', 'agents.name'])
+      .where('jobs.work_item_id', '=', lastWorkItem.id)
+      .where('messages.role', '=', 'assistant')
+      .orderBy('messages.created_at', 'desc')
+      .limit(1)
+      .executeTakeFirst()
+
+    const latestJob = await db
+      .selectFrom('jobs')
+      .innerJoin('agents', 'agents.id', 'jobs.agent_id')
+      .select(['jobs.status', 'jobs.final_response', 'jobs.created_at', 'agents.name'])
+      .where('jobs.work_item_id', '=', lastWorkItem.id)
+      .orderBy('jobs.created_at', 'desc')
+      .limit(1)
+      .executeTakeFirst()
+
+    if (latestAssistant) {
+      const assistantText = extractAssistantText(latestAssistant.content) ?? '(no text)'
+      preview = truncateText(`${latestAssistant.name}: ${assistantText}`, 80)
+      lastMessageAt = latestAssistant.created_at
+    } else if (
+      latestJob &&
+      latestJob.status === 'COMPLETED' &&
+      !(latestJob.final_response?.trim()?.length)
+    ) {
+      preview = truncateText(receiptOnlyReplyFallback(latestJob.name), 80)
+      lastMessageAt = latestJob.created_at
+    } else {
+      const userBody = parseWorkItemPayload(lastWorkItem.payload).body ?? lastWorkItem.title
+      preview = truncateText(`You: ${userBody}`, 80)
+    }
+  }
+
+  const context = describeSessionContext(session.session_key, linkedTicket.linkedTicket)
+  return {
+    sessionKey: session.session_key,
+    title: session.title,
+    displayTitle,
+    preview,
+    primaryAgentId: session.primary_agent_id,
+    createdAt: session.created_at,
+    updatedAt: session.updated_at,
+    lastActivityAt: session.last_activity_at,
+    lastMessageAt,
+    participants: participantViews,
+    context,
+    forkedFromSessionKey: session.forked_from_session_key,
+  }
+}
 
 export const sessionsRouter = router({
   startOrResume: protectedProcedure
@@ -259,49 +429,20 @@ export const sessionsRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Agent not found.' })
       }
 
-      const db = getDb()
       if (input.ticketId) {
         const ticket = await findTicketById(input.ticketId)
         if (!ticket) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Ticket not found.' })
         }
 
-        const existingLinks = await db
-          .selectFrom('ticket_links')
-          .select(['ref'])
-          .where('ticket_id', '=', ticket.id)
-          .where('kind', '=', 'session')
-          .orderBy('created_at', 'desc')
-          .execute()
-
-        for (const link of existingLinks) {
-          const existingSession = await findAppSessionByKeyAndOwner(link.ref, userId)
-          if (existingSession) {
-            return { sessionKey: existingSession.session_key }
-          }
-        }
-
-        const sessionKey = `app:${userId}:${generateUuidV7()}`
-        await createAppSession({
-          session_key: sessionKey,
-          owner_user_id: userId,
-          primary_agent_id: input.agentId,
+        const session = await createTicketAppSession({
+          ticketId: ticket.id,
+          userId,
+          agentId: input.agentId,
           title: ticket.title,
+          createdBy: { kind: 'user', ref: userId },
         })
-        await addAppSessionParticipants({
-          sessionKey,
-          agentIds: [input.agentId],
-          addedByUserId: userId,
-        })
-        await createTicketLink({
-          ticket_id: ticket.id,
-          kind: 'session',
-          ref: sessionKey,
-          label: ticket.title,
-          metadata_json: null,
-          created_by_kind: 'user',
-          created_by_ref: userId,
-        })
+        const sessionKey = session.session_key
         if (
           ticket.assignee_kind !== 'agent' ||
           ticket.assignee_ref !== input.agentId ||
@@ -327,34 +468,108 @@ export const sessionsRouter = router({
         return { sessionKey }
       }
 
-      const cutoff = Math.floor(Date.now() / 1000) - TWENTY_FOUR_HOURS
-      const recent = await db
-        .selectFrom('app_sessions')
-        .select(['session_key'])
-        .where('owner_user_id', '=', userId)
-        .where('primary_agent_id', '=', input.agentId)
-        .where('created_at', '>=', cutoff)
-        .orderBy('created_at', 'desc')
-        .limit(1)
-        .executeTakeFirst()
-
-      if (recent) {
-        return { sessionKey: recent.session_key }
-      }
-
-      const sessionKey = `app:${userId}:${generateUuidV7()}`
-      await createAppSession({
-        session_key: sessionKey,
-        owner_user_id: userId,
-        primary_agent_id: input.agentId,
+      const session = await createStandaloneAppSession({
+        userId,
+        agentId: input.agentId,
         title: null,
       })
-      await addAppSessionParticipants({
-        sessionKey,
-        agentIds: [input.agentId],
-        addedByUserId: userId,
+      return { sessionKey: session.session_key }
+    }),
+
+  runTicketNow: protectedProcedure
+    .input(
+      z.object({
+        ticketId: z.string().min(1),
+        agentId: z.string().trim().optional().nullable(),
+        message: z.string().trim().max(20_000).optional(),
+        clientMessageId: z.string().trim().max(256).optional(),
       })
-      return { sessionKey }
+    )
+    .mutation(async ({ ctx, input }) => {
+      const userId = requireUserId(ctx.session)
+      const senderName = getUserName(ctx.session)
+      const ticket = await findTicketById(input.ticketId)
+      if (!ticket) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Ticket not found.' })
+      }
+
+      const agentId =
+        input.agentId?.trim() ||
+        (ticket.assignee_kind === 'agent' && ticket.assignee_ref ? ticket.assignee_ref : null)
+      if (!agentId) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Ticket must be assigned to an agent or include an agentId.',
+        })
+      }
+
+      const agent = await findAgentById(agentId)
+      if (!agent) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Agent not found.' })
+      }
+
+      const session = await createTicketAppSession({
+        ticketId: ticket.id,
+        userId,
+        agentId: agent.id,
+        title: ticket.title,
+        createdBy: { kind: 'user', ref: userId },
+      })
+      const sessionKey = session.session_key
+      await ensureSessionParticipant({ sessionKey, agentId: agent.id, userId })
+
+      if (
+        ticket.assignee_kind !== 'agent' ||
+        ticket.assignee_ref !== agent.id ||
+        ticket.status !== 'in_progress'
+      ) {
+        await claimTicket(ticket.id, {
+          assigneeKind: 'agent',
+          assigneeRef: agent.id,
+          claimedByKind: 'user',
+          claimedByRef: userId,
+        })
+        await createWorkUpdate({
+          goal_id: ticket.goal_id,
+          ticket_id: ticket.id,
+          team_id: null,
+          author_kind: 'user',
+          author_ref: userId,
+          kind: 'status',
+          body: `Queued execution in session ${sessionKey} with agent ${agent.name}.`,
+          metadata_json: null,
+        })
+      }
+
+      const goal = ticket.goal_id ? await findGoalById(ticket.goal_id) : null
+      const result = await enqueueAppSessionMessage({
+        sessionKey,
+        userId,
+        senderName,
+        message: buildTicketExecutionMessage({
+          title: ticket.title,
+          body: ticket.body,
+          message: input.message,
+        }),
+        targetAgents: [{ id: agent.id, handle: agent.handle, name: agent.name }],
+        clientMessageId: input.clientMessageId,
+        workContext: {
+          ticketId: ticket.id,
+          ticketTitle: ticket.title,
+          ticketStatus: ticket.status,
+          goalId: goal?.id ?? null,
+          goalTitle: goal?.title ?? null,
+          goalStatus: goal?.status ?? null,
+          goalOutcome: goal?.outcome ?? null,
+        },
+      })
+
+      return {
+        ok: true as const,
+        sessionKey,
+        workItemId: result.workItemId,
+        targetAgentIds: result.targetAgentIds,
+      }
     }),
 
   list: protectedProcedure
@@ -372,89 +587,50 @@ export const sessionsRouter = router({
         limit: input?.limit ?? MAX_SESSION_LIST,
       })
 
-      const items = await Promise.all(
-        sessions.map(async (session) => {
-          const participants = await listAppSessionParticipantAgents(session.session_key)
-          const participantViews = participants.map((agent) => {
-            const config = parseAgentConfig(agent.config)
-            return {
-              id: agent.id,
-              handle: agent.handle,
-              name: agent.name,
-              title: config.title ?? null,
-              emoji: config.emoji ?? null,
-              avatarUrl: config.avatarUrl ?? null,
-            }
-          })
+      const items = await Promise.all(sessions.map((session) => buildSessionListItem(db, session)))
 
-          const firstWorkItem = await db
-            .selectFrom('work_items')
-            .select(['id', 'payload', 'title'])
-            .where('session_key', '=', session.session_key)
-            .where('source', '=', 'app_chat')
-            .orderBy('created_at', 'asc')
-            .limit(1)
-            .executeTakeFirst()
+      return { items }
+    }),
 
-          const displayTitle = session.title?.trim()
-            ? session.title
-            : truncateText(
-                parseWorkItemPayload(firstWorkItem?.payload ?? null).body ??
-                  firstWorkItem?.title ??
-                  'New session',
-                60
-              )
+  listRelated: protectedProcedure
+    .input(
+      z.object({
+        sessionKey: z.string().trim().optional(),
+        ticketId: z.string().trim().optional(),
+        goalId: z.string().trim().optional(),
+        routineId: z.string().trim().optional(),
+        limit: z.number().int().min(1).max(20).default(10),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const userId = requireUserId(ctx.session)
+      const db = getDb()
 
-          const lastWorkItem = await db
-            .selectFrom('work_items')
-            .select(['id', 'payload', 'title', 'created_at'])
-            .where('session_key', '=', session.session_key)
-            .where('source', '=', 'app_chat')
-            .orderBy('created_at', 'desc')
-            .orderBy('id', 'desc')
-            .limit(1)
-            .executeTakeFirst()
+      let prefix: string | null = null
+      if (input.sessionKey) {
+        const session = await findAppSessionByKeyAndOwner(input.sessionKey, userId)
+        if (!session) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Session not found.' })
+        }
+        prefix = parseAppSessionKey(session.session_key).familyKey
+      } else if (input.ticketId) {
+        prefix = `app:ticket:${input.ticketId}`
+      } else if (input.goalId) {
+        prefix = `app:goal:${input.goalId}`
+      } else if (input.routineId) {
+        prefix = `app:routine:${input.routineId}`
+      }
 
-          let preview = 'No messages yet'
-          let lastMessageAt = session.last_activity_at
-          if (lastWorkItem) {
-            lastMessageAt = lastWorkItem.created_at
-            const latestAssistant = await db
-              .selectFrom('messages')
-              .innerJoin('jobs', 'jobs.id', 'messages.job_id')
-              .innerJoin('agents', 'agents.id', 'jobs.agent_id')
-              .select(['messages.content', 'messages.created_at', 'agents.name'])
-              .where('jobs.work_item_id', '=', lastWorkItem.id)
-              .where('messages.role', '=', 'assistant')
-              .orderBy('messages.created_at', 'desc')
-              .limit(1)
-              .executeTakeFirst()
+      if (!prefix) {
+        return { items: [] as Awaited<ReturnType<typeof buildSessionListItem>>[] }
+      }
 
-            if (latestAssistant) {
-              const assistantText = extractAssistantText(latestAssistant.content) ?? '(no text)'
-              preview = truncateText(`${latestAssistant.name}: ${assistantText}`, 80)
-              lastMessageAt = latestAssistant.created_at
-            } else {
-              const userBody = parseWorkItemPayload(lastWorkItem.payload).body ?? lastWorkItem.title
-              preview = truncateText(`You: ${userBody}`, 80)
-            }
-          }
+      const sessions = await listAppSessionsByOwnerAndPrefix(userId, prefix, {
+        limit: input.limit,
+        excludeSessionKey: input.sessionKey ?? null,
+      })
 
-          return {
-            sessionKey: session.session_key,
-            title: session.title,
-            displayTitle,
-            preview,
-            primaryAgentId: session.primary_agent_id,
-            createdAt: session.created_at,
-            updatedAt: session.updated_at,
-            lastActivityAt: session.last_activity_at,
-            lastMessageAt,
-            participants: participantViews,
-          }
-        })
-      )
-
+      const items = await Promise.all(sessions.map((session) => buildSessionListItem(db, session)))
       return { items }
     }),
 
@@ -478,6 +654,9 @@ export const sessionsRouter = router({
       z.object({
         title: z.string().trim().max(200).nullable().optional(),
         primaryAgentId: z.string().min(1),
+        ticketId: z.string().trim().optional().nullable(),
+        goalId: z.string().trim().optional().nullable(),
+        routineId: z.string().trim().optional().nullable(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -487,19 +666,33 @@ export const sessionsRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Primary agent not found.' })
       }
 
-      const sessionKey = `app:${userId}:${generateUuidV7()}`
-      const session = await createAppSession({
-        session_key: sessionKey,
-        owner_user_id: userId,
-        primary_agent_id: input.primaryAgentId,
-        title: input.title?.trim() || null,
-      })
-
-      await addAppSessionParticipants({
-        sessionKey,
-        agentIds: [input.primaryAgentId],
-        addedByUserId: userId,
-      })
+      const session = input.ticketId
+        ? await createTicketAppSession({
+            ticketId: input.ticketId,
+            userId,
+            agentId: input.primaryAgentId,
+            title: input.title?.trim() || null,
+            createdBy: { kind: 'user', ref: userId },
+          })
+        : input.goalId
+          ? await createGoalAppSession({
+              goalId: input.goalId,
+              userId,
+              agentId: input.primaryAgentId,
+              title: input.title?.trim() || null,
+            })
+          : input.routineId
+            ? await createRoutineAppSession({
+                routineId: input.routineId,
+                userId,
+                agentId: input.primaryAgentId,
+                title: input.title?.trim() || null,
+              })
+            : await createStandaloneAppSession({
+                userId,
+                agentId: input.primaryAgentId,
+                title: input.title?.trim() || null,
+              })
 
       return {
         sessionKey: session.session_key,
@@ -520,25 +713,98 @@ export const sessionsRouter = router({
         listAppSessionParticipantAgents(session.session_key),
         getSessionWorkContext(session.session_key),
       ])
+      const forkedFrom =
+        session.forked_from_session_key &&
+        (await findAppSessionByKeyAndOwner(session.forked_from_session_key, userId))
+      const relatedPrefix = parseAppSessionKey(session.session_key).familyKey
+      const relatedSessions =
+        relatedPrefix !== null
+          ? await listAppSessionsByOwnerAndPrefix(userId, relatedPrefix, {
+              limit: 10,
+              excludeSessionKey: session.session_key,
+            })
+          : []
       return {
         sessionKey: session.session_key,
         title: session.title,
         primaryAgentId: session.primary_agent_id,
         createdAt: session.created_at,
         lastActivityAt: session.last_activity_at,
+        context: describeSessionContext(session.session_key, workContext.linkedTicket),
+        forkedFromSessionKey: session.forked_from_session_key,
+        forkedFromSession: forkedFrom
+          ? {
+              sessionKey: forkedFrom.session_key,
+              title: forkedFrom.title,
+            }
+          : null,
+        relatedSessions: relatedSessions.map((item) => ({
+          sessionKey: item.session_key,
+          title: item.title,
+          createdAt: item.created_at,
+          lastActivityAt: item.last_activity_at,
+        })),
         linkedTicket: workContext.linkedTicket,
-        participants: participants.map((agent) => {
-          const config = parseAgentConfig(agent.config)
-          return {
-            id: agent.id,
-            handle: agent.handle,
-            name: agent.name,
-            title: config.title ?? null,
-            emoji: config.emoji ?? null,
-            avatarUrl: config.avatarUrl ?? null,
-          }
-        }),
+        participants: participants.map(mapParticipantView),
       }
+    }),
+
+  forkSession: protectedProcedure
+    .input(z.object({ sessionKey: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const userId = requireUserId(ctx.session)
+      const session = await findAppSessionByKeyAndOwner(input.sessionKey, userId)
+      if (!session) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Session not found.' })
+      }
+
+      const parsed = parseAppSessionKey(session.session_key)
+      const participantAgents = await listAppSessionParticipantAgents(session.session_key)
+      const sessionToCreate =
+        !parsed.isAppSession || parsed.isLegacy || parsed.contextKind === 'standalone'
+          ? await createStandaloneAppSession({
+              userId,
+              agentId: session.primary_agent_id,
+              title: session.title,
+              forkedFromSessionKey: session.session_key,
+            })
+          : parsed.contextKind === 'ticket'
+            ? await createTicketAppSession({
+                ticketId: parsed.contextId,
+                userId,
+                agentId: session.primary_agent_id,
+                title: session.title,
+                forkedFromSessionKey: session.session_key,
+                createdBy: { kind: 'user', ref: userId },
+              })
+            : parsed.contextKind === 'goal'
+              ? await createGoalAppSession({
+                  goalId: parsed.contextId,
+                  userId,
+                  agentId: session.primary_agent_id,
+                  title: session.title,
+                  forkedFromSessionKey: session.session_key,
+                })
+              : await createRoutineAppSession({
+                  routineId: parsed.contextId,
+                  userId,
+                  agentId: session.primary_agent_id,
+                  title: session.title,
+                  forkedFromSessionKey: session.session_key,
+                })
+
+      const extraAgentIds = participantAgents
+        .map((participant) => participant.id)
+        .filter((agentId) => agentId !== session.primary_agent_id)
+      if (extraAgentIds.length > 0) {
+        await addAppSessionParticipants({
+          sessionKey: sessionToCreate.session_key,
+          agentIds: extraAgentIds,
+          addedByUserId: userId,
+        })
+      }
+
+      return { sessionKey: sessionToCreate.session_key }
     }),
 
   timeline: protectedProcedure
@@ -742,7 +1008,11 @@ export const sessionsRouter = router({
           if (job) {
             const assistant = latestAssistantByJob.get(job.id)
             const message =
-              assistant?.text ?? (job.final_response ? job.final_response.trim() : null)
+              assistant?.text ??
+              (job.final_response ? job.final_response.trim() : null) ??
+              (job.status === 'COMPLETED'
+                ? 'Run completed without a chat reply. Check the run for receipts.'
+                : null)
             agentReplies.push({
               jobId: job.id,
               agentId: targetAgentId,

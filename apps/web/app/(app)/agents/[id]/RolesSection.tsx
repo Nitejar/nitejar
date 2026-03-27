@@ -8,111 +8,57 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 type Grant = { action: string; resourceType: string | null }
 type OpToggle = { op: string; grants: Grant[] }
 type PermissionRow = { resource: string; ops: OpToggle[] }
-
-const PERMISSION_ROWS: PermissionRow[] = [
-  {
-    resource: 'Policy',
-    ops: [
-      { op: 'read', grants: [{ action: 'policy.read', resourceType: '*' }] },
-      { op: 'write', grants: [{ action: 'policy.write', resourceType: '*' }] },
-      { op: 'create', grants: [{ action: 'policy.create', resourceType: '*' }] },
-      { op: 'delete', grants: [{ action: 'policy.delete', resourceType: '*' }] },
-    ],
-  },
-  {
-    resource: 'Goals',
-    ops: [
-      { op: 'read', grants: [{ action: 'work.goal.read', resourceType: 'goal' }] },
-      { op: 'write', grants: [{ action: 'work.goal.write', resourceType: 'goal' }] },
-      { op: 'create', grants: [{ action: 'work.goal.create', resourceType: 'goal' }] },
-      { op: 'delete', grants: [{ action: 'work.goal.delete', resourceType: 'goal' }] },
-    ],
-  },
-  {
-    resource: 'Tickets',
-    ops: [
-      { op: 'read', grants: [{ action: 'work.ticket.read', resourceType: 'ticket' }] },
-      { op: 'write', grants: [{ action: 'work.ticket.write', resourceType: 'ticket' }] },
-      { op: 'create', grants: [{ action: 'work.ticket.create', resourceType: 'ticket' }] },
-      { op: 'delete', grants: [{ action: 'work.ticket.delete', resourceType: 'ticket' }] },
-    ],
-  },
-  {
-    resource: 'Teams',
-    ops: [
-      { op: 'read', grants: [{ action: 'company.team.read', resourceType: 'team' }] },
-      { op: 'write', grants: [{ action: 'company.team.write', resourceType: 'team' }] },
-      { op: 'create', grants: [{ action: 'company.team.create', resourceType: 'team' }] },
-      { op: 'delete', grants: [{ action: 'company.team.delete', resourceType: 'team' }] },
-    ],
-  },
-  {
-    resource: 'Agents',
-    ops: [
-      { op: 'read', grants: [{ action: 'fleet.agent.read', resourceType: 'agent' }] },
-      { op: 'write', grants: [{ action: 'fleet.agent.write', resourceType: 'agent' }] },
-      { op: 'create', grants: [{ action: 'fleet.agent.create', resourceType: 'agent' }] },
-      { op: 'delete', grants: [{ action: 'fleet.agent.delete', resourceType: 'agent' }] },
-      { op: 'control', grants: [{ action: 'fleet.agent.control', resourceType: 'agent' }] },
-    ],
-  },
-  {
-    resource: 'GitHub',
-    ops: [
-      { op: 'read', grants: [{ action: 'github.repo.read', resourceType: '*' }] },
-      {
-        op: 'branch',
-        grants: [
-          { action: 'github.repo.create_branch', resourceType: '*' },
-          { action: 'github.repo.push_branch', resourceType: '*' },
-        ],
-      },
-      { op: 'pr', grants: [{ action: 'github.repo.open_pr', resourceType: '*' }] },
-      {
-        op: 'review',
-        grants: [
-          { action: 'github.repo.review_pr', resourceType: '*' },
-          { action: 'github.repo.comment', resourceType: '*' },
-          { action: 'github.repo.label_issue_pr', resourceType: '*' },
-          { action: 'github.repo.request_review', resourceType: '*' },
-        ],
-      },
-      { op: 'merge', grants: [{ action: 'github.repo.merge_pr', resourceType: '*' }] },
-    ],
-  },
-  {
-    resource: 'Capabilities',
-    ops: [
-      { op: 'web search', grants: [{ action: 'capability.web_search', resourceType: '*' }] },
-      { op: 'tools', grants: [{ action: 'capability.tool_execution', resourceType: '*' }] },
-      { op: 'images', grants: [{ action: 'capability.image_generation', resourceType: '*' }] },
-      {
-        op: 'speech',
-        grants: [
-          { action: 'capability.speech_to_text', resourceType: '*' },
-          { action: 'capability.text_to_speech', resourceType: '*' },
-        ],
-      },
-    ],
-  },
-  {
-    resource: 'Routines',
-    ops: [
-      { op: 'self-manage', grants: [{ action: 'routine.self.manage', resourceType: '*' }] },
-      { op: 'manage all', grants: [{ action: 'routine.manage', resourceType: '*' }] },
-    ],
-  },
-  {
-    resource: 'Sandboxes',
-    ops: [{ op: 'create', grants: [{ action: 'sandbox.ephemeral.create', resourceType: '*' }] }],
-  },
-]
+type NetworkPolicyRule = { domain: string; action: 'allow' | 'deny' }
+type NetworkPolicyDefault = {
+  mode: string
+  rules: NetworkPolicyRule[]
+  presetId?: string | null
+  customized?: boolean
+}
 
 interface RolesSectionProps {
   agentId: string
+  permissionRows: PermissionRow[]
 }
 
-export function RolesSection({ agentId }: RolesSectionProps) {
+function isNetworkPolicyDefault(value: unknown): value is NetworkPolicyDefault {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as { mode?: unknown; rules?: unknown }
+  return (
+    typeof candidate.mode === 'string' &&
+    Array.isArray(candidate.rules) &&
+    candidate.rules.every((rule) => {
+      if (!rule || typeof rule !== 'object') return false
+      const candidateRule = rule as { domain?: unknown; action?: unknown }
+      return (
+        typeof candidateRule.domain === 'string' &&
+        (candidateRule.action === 'allow' || candidateRule.action === 'deny')
+      )
+    })
+  )
+}
+
+function formatModeLabel(mode: string): string {
+  if (mode === 'allow-list') return 'Allow list'
+  if (mode === 'deny-list') return 'Deny list'
+  if (mode === 'unrestricted') return 'Unrestricted'
+  return mode
+}
+
+function formatDefaultValue(value: unknown): string {
+  if (value == null) return 'null'
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (typeof value === 'bigint') return value.toString()
+  if (typeof value === 'function' || typeof value === 'symbol') return '[unsupported value]'
+  try {
+    return JSON.stringify(value) ?? '[unsupported value]'
+  } catch {
+    return '[unserializable value]'
+  }
+}
+
+export function RolesSection({ agentId, permissionRows }: RolesSectionProps) {
   const policyQuery = trpc.company.getAgentPolicy.useQuery({ agentId })
   const data = policyQuery.data
 
@@ -217,7 +163,7 @@ export function RolesSection({ agentId }: RolesSectionProps) {
                 Effective permissions
               </p>
               <div className="rounded-lg border border-white/10 bg-white/[0.01]">
-                {PERMISSION_ROWS.map((row) => (
+                {permissionRows.map((row) => (
                   <div
                     key={row.resource}
                     className="flex items-center gap-2 border-b border-white/5 px-3 py-1.5 last:border-b-0"
@@ -255,12 +201,55 @@ export function RolesSection({ agentId }: RolesSectionProps) {
                 </p>
                 <div className="rounded-lg border border-white/10 bg-white/[0.01] px-3 py-2">
                   {data.effectiveDefaults.map((d) => (
-                    <div
-                      key={d.key}
-                      className="flex items-center justify-between py-0.5 text-[10px]"
-                    >
-                      <span className="font-mono text-muted-foreground">{d.key}</span>
-                      <span className="text-foreground">{String(d.value)}</span>
+                    <div key={d.key} className="border-b border-white/5 py-2 last:border-b-0">
+                      <div className="flex items-start justify-between gap-3 text-[10px]">
+                        <span className="font-mono text-muted-foreground">{d.key}</span>
+                        {isNetworkPolicyDefault(d.value) ? (
+                          <div className="min-w-0 max-w-[70%] space-y-1 text-right">
+                            <div className="space-x-1">
+                              <span className="text-foreground">
+                                {formatModeLabel(d.value.mode)}
+                              </span>
+                              <span className="text-muted-foreground">
+                                · {d.value.rules.length} rule
+                                {d.value.rules.length === 1 ? '' : 's'}
+                              </span>
+                              {d.value.presetId ? (
+                                <span className="text-muted-foreground">
+                                  · {d.value.presetId}
+                                </span>
+                              ) : null}
+                            </div>
+                            {d.value.rules.length > 0 ? (
+                              <div className="flex flex-wrap justify-end gap-1">
+                                {d.value.rules.slice(0, 4).map((rule, index) => (
+                                  <span
+                                    key={`${rule.domain}-${index}`}
+                                    className={`rounded px-1.5 py-0.5 text-[9px] ${
+                                      rule.action === 'allow'
+                                        ? 'bg-emerald-500/10 text-emerald-300'
+                                        : 'bg-red-500/10 text-red-300'
+                                    }`}
+                                    title={`${rule.action} ${rule.domain}`}
+                                  >
+                                    <span className="mr-1 uppercase">{rule.action}</span>
+                                    <span className="font-mono">{rule.domain}</span>
+                                  </span>
+                                ))}
+                                {d.value.rules.length > 4 ? (
+                                  <span className="rounded bg-white/5 px-1.5 py-0.5 text-[9px] text-muted-foreground">
+                                    +{d.value.rules.length - 4} more
+                                  </span>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <span className="max-w-[70%] break-words text-right text-foreground [overflow-wrap:anywhere]">
+                            {formatDefaultValue(d.value)}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>

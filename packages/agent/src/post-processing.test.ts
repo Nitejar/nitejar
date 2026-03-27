@@ -3,6 +3,7 @@ import type OpenAI from 'openai'
 import {
   buildRetrySeedPromptFromStoredMessages,
   formatConversationForPostProcessing,
+  getFirstChoiceOrThrow,
   shouldSkipFinalModePostProcessing,
   extractSenderLabelFromText,
 } from './runner'
@@ -169,6 +170,34 @@ describe('formatConversationForPostProcessing', () => {
     // Should contain current run content
     expect(transcript).toContain('[Requester]: What is thum.io?')
     expect(transcript).toContain('[Pixel]: It is a screenshot service.')
+  })
+})
+
+describe('getFirstChoiceOrThrow', () => {
+  it('returns the first chat completion choice when present', () => {
+    const choice = getFirstChoiceOrThrow(
+      {
+        choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+      },
+      'Model call'
+    )
+
+    expect(choice.message.content).toBe('ok')
+  })
+
+  it('throws the provider error instead of crashing on missing choices', () => {
+    expect(() =>
+      getFirstChoiceOrThrow(
+        { error: { code: 403, message: 'Provider returned error' } },
+        'Model call'
+      )
+    ).toThrow('Model call failed: Provider returned error (code 403)')
+  })
+
+  it('throws a clear error when choices are missing without provider details', () => {
+    expect(() => getFirstChoiceOrThrow({}, 'Model call')).toThrow(
+      'Model call returned no choices'
+    )
   })
 })
 

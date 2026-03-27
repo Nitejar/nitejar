@@ -145,13 +145,7 @@ export const routineDefinitions: Anthropic.Tool[] = [
         action_prompt: { type: 'string' },
         enabled: { type: 'boolean' },
       },
-      required: [
-        'name',
-        'trigger_kind',
-        'target_plugin_instance_id',
-        'target_session_key',
-        'action_prompt',
-      ],
+      required: ['name', 'trigger_kind', 'target_session_key', 'action_prompt'],
     },
   },
   {
@@ -162,6 +156,17 @@ export const routineDefinitions: Anthropic.Tool[] = [
       properties: {
         include_archived: { type: 'boolean' },
       },
+    },
+  },
+  {
+    name: 'get_routine',
+    description: 'Get one routine with its live delivery target and response context.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        routine_id: { type: 'string' },
+      },
+      required: ['routine_id'],
     },
   },
   {
@@ -223,17 +228,32 @@ export const routineDefinitions: Anthropic.Tool[] = [
   },
 ]
 
+async function assertRoutineManagementGrant(agentId: string): Promise<void> {
+  const grantChecks = ['routine.self.manage', 'routine.manage'] as const
+
+  for (const action of grantChecks) {
+    try {
+      await assertAgentGrant({
+        agentId,
+        action,
+        resourceType: '*',
+      })
+      return
+    } catch {
+      continue
+    }
+  }
+
+  throw new Error('Access denied: missing grant "routine.self.manage" or "routine.manage".')
+}
+
 export const createRoutineTool: ToolHandler = async (input, context) => {
   if (!context.agentId) {
     return { success: false, error: 'Missing agent identity.' }
   }
 
   try {
-    await assertAgentGrant({
-      agentId: context.agentId,
-      action: 'routine.self.manage',
-      resourceType: '*',
-    })
+    await assertRoutineManagementGrant(context.agentId)
 
     const name = typeof input.name === 'string' ? input.name.trim() : ''
     if (!name) {
@@ -245,16 +265,16 @@ export const createRoutineTool: ToolHandler = async (input, context) => {
 
     const targetPluginInstanceId =
       typeof input.target_plugin_instance_id === 'string'
-        ? input.target_plugin_instance_id.trim()
-        : ''
+        ? input.target_plugin_instance_id.trim() || null
+        : null
     const targetSessionKey =
       typeof input.target_session_key === 'string' ? input.target_session_key.trim() : ''
     const actionPrompt = typeof input.action_prompt === 'string' ? input.action_prompt.trim() : ''
 
-    if (!targetPluginInstanceId || !targetSessionKey || !actionPrompt) {
+    if (!targetSessionKey || !actionPrompt) {
       return {
         success: false,
-        error: 'target_plugin_instance_id, target_session_key, and action_prompt are required.',
+        error: 'target_session_key and action_prompt are required.',
       }
     }
 
@@ -314,11 +334,7 @@ export const listRoutinesTool: ToolHandler = async (input, context) => {
   }
 
   try {
-    await assertAgentGrant({
-      agentId: context.agentId,
-      action: 'routine.self.manage',
-      resourceType: '*',
-    })
+    await assertRoutineManagementGrant(context.agentId)
 
     const includeArchived = input.include_archived === true
     const routines = await listRoutines({
@@ -348,6 +364,52 @@ export const listRoutinesTool: ToolHandler = async (input, context) => {
   }
 }
 
+export const getRoutineTool: ToolHandler = async (input, context) => {
+  if (!context.agentId) {
+    return { success: false, error: 'Missing agent identity.' }
+  }
+
+  try {
+    const routineId = typeof input.routine_id === 'string' ? input.routine_id.trim() : ''
+    if (!routineId) {
+      return { success: false, error: 'routine_id is required.' }
+    }
+
+    await assertRoutineManagementGrant(context.agentId)
+
+    const routine = await findRoutineById(routineId)
+    if (!routine || routine.agent_id !== context.agentId) {
+      return { success: false, error: `Routine ${routineId} not found.` }
+    }
+
+    const nextRun = routine.next_run_at ? new Date(routine.next_run_at * 1000).toISOString() : 'n/a'
+    const lastFired = routine.last_fired_at
+      ? new Date(routine.last_fired_at * 1000).toISOString()
+      : 'n/a'
+
+    return {
+      success: true,
+      output: [
+        `Routine ${routine.id}`,
+        `name: ${routine.name}`,
+        `trigger_kind: ${routine.trigger_kind}`,
+        `enabled: ${routine.enabled === 1 ? 'true' : 'false'}`,
+        `target_session_key: ${routine.target_session_key}`,
+        `target_plugin_instance_id: ${routine.target_plugin_instance_id ?? 'null'}`,
+        `target_response_context: ${routine.target_response_context ?? 'null'}`,
+        `next_run_at: ${nextRun}`,
+        `last_fired_at: ${lastFired}`,
+        `last_status: ${routine.last_status ?? 'n/a'}`,
+      ].join('\n'),
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch routine.',
+    }
+  }
+}
+
 export const updateRoutineTool: ToolHandler = async (input, context) => {
   if (!context.agentId) {
     return { success: false, error: 'Missing agent identity.' }
@@ -364,11 +426,7 @@ export const updateRoutineTool: ToolHandler = async (input, context) => {
       return { success: false, error: `Routine ${routineId} not found.` }
     }
 
-    await assertAgentGrant({
-      agentId: context.agentId,
-      action: 'routine.self.manage',
-      resourceType: '*',
-    })
+    await assertRoutineManagementGrant(context.agentId)
 
     const triggerKind = input.trigger_kind
       ? parseTriggerKind(input.trigger_kind)
@@ -408,7 +466,7 @@ export const updateRoutineTool: ToolHandler = async (input, context) => {
         : existing.condition_config,
       target_plugin_instance_id:
         typeof input.target_plugin_instance_id === 'string'
-          ? input.target_plugin_instance_id.trim() || existing.target_plugin_instance_id
+          ? input.target_plugin_instance_id.trim() || null
           : existing.target_plugin_instance_id,
       target_session_key:
         typeof input.target_session_key === 'string'
@@ -459,11 +517,7 @@ export const pauseRoutineTool: ToolHandler = async (input, context) => {
       return { success: false, error: `Routine ${routineId} not found.` }
     }
 
-    await assertAgentGrant({
-      agentId: context.agentId,
-      action: 'routine.self.manage',
-      resourceType: '*',
-    })
+    await assertRoutineManagementGrant(context.agentId)
 
     await setRoutineEnabled(routineId, false)
     return { success: true, output: `Paused routine ${routineId}.` }
@@ -491,11 +545,7 @@ export const deleteRoutineTool: ToolHandler = async (input, context) => {
       return { success: false, error: `Routine ${routineId} not found.` }
     }
 
-    await assertAgentGrant({
-      agentId: context.agentId,
-      action: 'routine.self.manage',
-      resourceType: '*',
-    })
+    await assertRoutineManagementGrant(context.agentId)
 
     await archiveRoutine(routineId)
     return { success: true, output: `Archived routine ${routineId}.` }
@@ -523,11 +573,7 @@ export const runRoutineNowTool: ToolHandler = async (input, context) => {
       return { success: false, error: `Routine ${routineId} not found.` }
     }
 
-    await assertAgentGrant({
-      agentId: context.agentId,
-      action: 'routine.self.manage',
-      resourceType: '*',
-    })
+    await assertRoutineManagementGrant(context.agentId)
 
     const { scheduledItem } = await enqueueRoutineRun({
       routine,

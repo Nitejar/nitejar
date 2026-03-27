@@ -72,7 +72,6 @@ async function buildExportedPolicy(agentId: string): Promise<AgentProfileV2['pol
         slug: role.slug,
         name: role.name,
         charter: role.charter,
-        jobDescription: role.job_description,
         escalationPosture: role.escalation_posture,
         active: role.active === 1,
         grants: grants.map((g) => ({
@@ -116,7 +115,6 @@ async function importPolicyForAgent(agentId: string, policy: AgentProfileV2['pol
           slug: role.slug,
           name: role.name,
           charter: role.charter ?? null,
-          job_description: role.jobDescription ?? null,
           escalation_posture: role.escalationPosture ?? null,
           active: role.active === false ? 0 : 1,
         })
@@ -157,7 +155,6 @@ async function importPolicyForAgent(agentId: string, policy: AgentProfileV2['pol
       slug: `imported_role_${agentId}`,
       name: 'Imported Policy Role',
       charter: 'Materialized from an imported agent profile.',
-      job_description: null,
       escalation_posture: null,
       active: 1,
     })
@@ -547,7 +544,6 @@ export const orgRouter = router({
         memorySettings: {
           passiveUpdatesEnabled: true,
         },
-        allowEphemeralSandboxCreation: true,
         emoji: input.emoji ?? undefined,
         avatarUrl: input.avatarUrl ?? undefined,
         networkPolicy: {
@@ -840,12 +836,6 @@ export const orgRouter = router({
         networkPolicy: config.networkPolicy,
         triageSettings: config.triageSettings,
         queue: config.queue,
-
-        features: {
-          allowEphemeralSandboxCreation: config.allowEphemeralSandboxCreation,
-          allowRoutineManagement: config.allowRoutineManagement,
-          dangerouslyUnrestricted: config.dangerouslyUnrestricted,
-        },
         policy: await buildExportedPolicy(agent.id),
 
         pluginRequirements: pluginInstances.map((pi) => ({
@@ -1096,9 +1086,6 @@ export const orgRouter = router({
             }
           : undefined,
         queue: profile.queue,
-        allowEphemeralSandboxCreation: profile.features?.allowEphemeralSandboxCreation,
-        allowRoutineManagement: profile.features?.allowRoutineManagement,
-        dangerouslyUnrestricted: profile.features?.dangerouslyUnrestricted,
       })
 
       // Create the agent

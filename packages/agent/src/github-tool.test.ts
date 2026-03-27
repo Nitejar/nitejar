@@ -11,6 +11,8 @@ vi.mock('@nitejar/database', async () => {
     ...actual,
     getDb: vi.fn(),
     assertAgentGrant: vi.fn(),
+    resolveEffectivePolicy: vi.fn(),
+    resolveEffectiveGitHubRepoCapabilities: vi.fn(),
   }
 })
 
@@ -46,6 +48,10 @@ vi.mock('@nitejar/plugin-handlers/github/credential-provider', async () => {
 })
 
 const mockedGetDb = vi.mocked(Database.getDb)
+const mockedResolveEffectivePolicy = vi.mocked(Database.resolveEffectivePolicy)
+const mockedResolveEffectiveGitHubRepoCapabilities = vi.mocked(
+  Database.resolveEffectiveGitHubRepoCapabilities
+)
 const mockedWriteFile = vi.mocked(Sprites.writeFile)
 const mockedSpriteExec = vi.mocked(Sprites.spriteExec)
 const mockedRefreshSpriteNetworkPolicy = vi.mocked(Sprites.refreshSpriteNetworkPolicy)
@@ -59,12 +65,26 @@ describe('configure_github_credentials tool', () => {
     mockedRefreshSpriteNetworkPolicy.mockReset()
     mockedGetGitHubAppConfig.mockReset()
     mockedCredentialProvider.mockReset()
+    mockedResolveEffectivePolicy.mockReset()
+    mockedResolveEffectiveGitHubRepoCapabilities.mockReset()
 
     mockedRefreshSpriteNetworkPolicy.mockResolvedValue({
       policy: { rules: [{ include: 'defaults' }] },
       source: 'existing',
     })
     mockedGetGitHubAppConfig.mockResolvedValue(null)
+    mockedResolveEffectivePolicy.mockResolvedValue({
+      roles: [],
+      grants: [
+        {
+          action: 'github.repo.read',
+          resourceType: '*',
+          resourceId: null,
+          sources: [],
+        },
+      ],
+      defaults: [],
+    })
   })
 
   it('writes env file and configures git helper', async () => {
@@ -75,22 +95,12 @@ describe('configure_github_credentials tool', () => {
       plugin_instance_id: 'github-int-1',
     }
 
-    const capabilityRecord = {
-      capabilities: JSON.stringify(['read_repo']),
-    }
-
     const repoSelectBuilder = {
       innerJoin: () => repoSelectBuilder,
       select: () => repoSelectBuilder,
       where: () => repoSelectBuilder,
       executeTakeFirst: vi.fn().mockResolvedValue(repoRecord),
       execute: vi.fn().mockResolvedValue([repoRecord]),
-    }
-
-    const capabilitySelectBuilder = {
-      select: () => capabilitySelectBuilder,
-      where: () => capabilitySelectBuilder,
-      executeTakeFirst: vi.fn().mockResolvedValue(capabilityRecord),
     }
 
     const insertBuilder = {
@@ -100,15 +110,12 @@ describe('configure_github_credentials tool', () => {
     }
 
     const mockDb = {
-      selectFrom: vi.fn((table: string) => {
-        if (table === 'github_repos') return repoSelectBuilder
-        if (table === 'agent_repo_capabilities') return capabilitySelectBuilder
-        return repoSelectBuilder
-      }),
+      selectFrom: vi.fn(() => repoSelectBuilder),
       insertInto: vi.fn(() => insertBuilder),
     }
 
     mockedGetDb.mockReturnValue(mockDb as never)
+    mockedResolveEffectiveGitHubRepoCapabilities.mockResolvedValue(['read_repo'])
 
     const getCredential = vi.fn().mockResolvedValue({
       token: 'token-123',
@@ -175,22 +182,12 @@ describe('configure_github_credentials tool', () => {
       plugin_instance_id: 'github-int-1',
     }
 
-    const capabilityRecord = {
-      capabilities: JSON.stringify(['read_repo']),
-    }
-
     const repoSelectBuilder = {
       innerJoin: () => repoSelectBuilder,
       select: () => repoSelectBuilder,
       where: () => repoSelectBuilder,
       executeTakeFirst: vi.fn().mockResolvedValue(repoRecord),
       execute: vi.fn().mockResolvedValue([repoRecord]),
-    }
-
-    const capabilitySelectBuilder = {
-      select: () => capabilitySelectBuilder,
-      where: () => capabilitySelectBuilder,
-      executeTakeFirst: vi.fn().mockResolvedValue(capabilityRecord),
     }
 
     const insertBuilder = {
@@ -200,15 +197,12 @@ describe('configure_github_credentials tool', () => {
     }
 
     const mockDb = {
-      selectFrom: vi.fn((table: string) => {
-        if (table === 'github_repos') return repoSelectBuilder
-        if (table === 'agent_repo_capabilities') return capabilitySelectBuilder
-        return repoSelectBuilder
-      }),
+      selectFrom: vi.fn(() => repoSelectBuilder),
       insertInto: vi.fn(() => insertBuilder),
     }
 
     mockedGetDb.mockReturnValue(mockDb as never)
+    mockedResolveEffectiveGitHubRepoCapabilities.mockResolvedValue(['read_repo'])
     mockedGetGitHubAppConfig.mockResolvedValue({
       permissions: {
         preset: 'minimal',
@@ -254,22 +248,12 @@ describe('configure_github_credentials tool', () => {
       plugin_instance_id: 'github-int-1',
     }
 
-    const capabilityRecord = {
-      capabilities: JSON.stringify(['read_repo', 'open_pr']),
-    }
-
     const repoSelectBuilder = {
       innerJoin: () => repoSelectBuilder,
       select: () => repoSelectBuilder,
       where: () => repoSelectBuilder,
       executeTakeFirst: vi.fn().mockResolvedValue(repoRecord),
       execute: vi.fn().mockResolvedValue([repoRecord]),
-    }
-
-    const capabilitySelectBuilder = {
-      select: () => capabilitySelectBuilder,
-      where: () => capabilitySelectBuilder,
-      executeTakeFirst: vi.fn().mockResolvedValue(capabilityRecord),
     }
 
     const insertBuilder = {
@@ -279,15 +263,30 @@ describe('configure_github_credentials tool', () => {
     }
 
     const mockDb = {
-      selectFrom: vi.fn((table: string) => {
-        if (table === 'github_repos') return repoSelectBuilder
-        if (table === 'agent_repo_capabilities') return capabilitySelectBuilder
-        return repoSelectBuilder
-      }),
+      selectFrom: vi.fn(() => repoSelectBuilder),
       insertInto: vi.fn(() => insertBuilder),
     }
 
     mockedGetDb.mockReturnValue(mockDb as never)
+    mockedResolveEffectiveGitHubRepoCapabilities.mockResolvedValue(['read_repo', 'open_pr'])
+    mockedResolveEffectivePolicy.mockResolvedValue({
+      roles: [],
+      grants: [
+        {
+          action: 'github.repo.read',
+          resourceType: '*',
+          resourceId: null,
+          sources: [],
+        },
+        {
+          action: 'github.repo.open_pr',
+          resourceType: '*',
+          resourceId: null,
+          sources: [],
+        },
+      ],
+      defaults: [],
+    })
 
     const getCredential = vi.fn().mockResolvedValue({
       token: 'token-123',
@@ -343,22 +342,12 @@ describe('configure_github_credentials tool', () => {
       plugin_instance_id: 'github-int-1',
     }
 
-    const capabilityRecord = {
-      capabilities: JSON.stringify(['read_repo']),
-    }
-
     const repoSelectBuilder = {
       innerJoin: () => repoSelectBuilder,
       select: () => repoSelectBuilder,
       where: () => repoSelectBuilder,
       executeTakeFirst: vi.fn().mockResolvedValue(repoRecord),
       execute: vi.fn().mockResolvedValue([repoRecord]),
-    }
-
-    const capabilitySelectBuilder = {
-      select: () => capabilitySelectBuilder,
-      where: () => capabilitySelectBuilder,
-      executeTakeFirst: vi.fn().mockResolvedValue(capabilityRecord),
     }
 
     const insertBuilder = {
@@ -368,15 +357,12 @@ describe('configure_github_credentials tool', () => {
     }
 
     const mockDb = {
-      selectFrom: vi.fn((table: string) => {
-        if (table === 'github_repos') return repoSelectBuilder
-        if (table === 'agent_repo_capabilities') return capabilitySelectBuilder
-        return repoSelectBuilder
-      }),
+      selectFrom: vi.fn(() => repoSelectBuilder),
       insertInto: vi.fn(() => insertBuilder),
     }
 
     mockedGetDb.mockReturnValue(mockDb as never)
+    mockedResolveEffectiveGitHubRepoCapabilities.mockResolvedValue(['read_repo'])
 
     const result = await executeTool(
       'configure_github_credentials',
@@ -391,6 +377,84 @@ describe('configure_github_credentials tool', () => {
     expect(result.success).toBe(false)
     expect(result.error).toContain('No active sprite session available')
     expect(result._meta?.sessionError).toBe(true)
+  })
+
+  it('strips higher-risk repo capabilities when matching policy grants are missing', async () => {
+    const repoRecord = {
+      github_repo_id: 1,
+      repo_id: 99,
+      installation_id: 555,
+      plugin_instance_id: 'github-int-1',
+    }
+
+    const repoSelectBuilder = {
+      innerJoin: () => repoSelectBuilder,
+      select: () => repoSelectBuilder,
+      where: () => repoSelectBuilder,
+      executeTakeFirst: vi.fn().mockResolvedValue(repoRecord),
+      execute: vi.fn().mockResolvedValue([repoRecord]),
+    }
+
+    const insertBuilder = {
+      values: vi.fn(() => ({
+        execute: vi.fn().mockResolvedValue(undefined),
+      })),
+    }
+
+    mockedGetDb.mockReturnValue({
+      selectFrom: vi.fn(() => repoSelectBuilder),
+      insertInto: vi.fn(() => insertBuilder),
+    } as never)
+    mockedResolveEffectiveGitHubRepoCapabilities.mockResolvedValue(['read_repo', 'open_pr'])
+    mockedResolveEffectivePolicy.mockResolvedValue({
+      roles: [],
+      grants: [
+        {
+          action: 'github.repo.read',
+          resourceType: '*',
+          resourceId: null,
+          sources: [],
+        },
+      ],
+      defaults: [],
+    })
+    const getCredential = vi.fn().mockResolvedValue({
+      token: 'token-123',
+      expiresAt: new Date().toISOString(),
+      scopes: [],
+    })
+    mockedCredentialProvider.mockImplementation(
+      () =>
+        ({
+          getCredential,
+        }) as never
+    )
+    mockedSpriteExec.mockResolvedValue({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      duration: 1,
+    })
+
+    const result = await executeTool(
+      'configure_github_credentials',
+      { repo_name: 'owner/repo' },
+      {
+        spriteName: 'sprite-1',
+        cwd: '/home/sprite',
+        session: {} as never,
+        agentId: 'agent-1',
+      }
+    )
+
+    expect(result.success).toBe(true)
+    expect(getCredential).toHaveBeenCalledWith(
+      expect.objectContaining({
+        permissions: {
+          contents: 'read',
+        },
+      })
+    )
   })
 })
 

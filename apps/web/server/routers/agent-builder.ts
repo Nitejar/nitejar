@@ -51,9 +51,6 @@ function buildConfigFromPartial(input: {
   sessionSettings?: Record<string, unknown>
   networkPolicy?: Record<string, unknown>
   queue?: Record<string, unknown>
-  allowEphemeralSandboxCreation?: boolean
-  allowRoutineManagement?: boolean
-  dangerouslyUnrestricted?: boolean
 }): AgentConfig {
   const memorySettings = {
     ...(input.memorySettings as AgentConfig['memorySettings']),
@@ -77,9 +74,6 @@ function buildConfigFromPartial(input: {
       rules: DEFAULT_NETWORK_POLICY.rules.map((r) => ({ ...r })),
     },
     queue: input.queue as AgentConfig['queue'],
-    allowEphemeralSandboxCreation: input.allowEphemeralSandboxCreation,
-    allowRoutineManagement: input.allowRoutineManagement,
-    dangerouslyUnrestricted: input.dangerouslyUnrestricted,
   }
 }
 
@@ -96,9 +90,6 @@ const partialConfigSchema = z
     sessionSettings: z.record(z.unknown()).optional(),
     networkPolicy: z.record(z.unknown()).optional(),
     queue: z.record(z.unknown()).optional(),
-    allowEphemeralSandboxCreation: z.boolean().optional(),
-    allowRoutineManagement: z.boolean().optional(),
-    dangerouslyUnrestricted: z.boolean().optional(),
   })
   .optional()
 

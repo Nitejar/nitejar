@@ -84,12 +84,6 @@ interface WizardNetworkPolicy {
   rules: Array<{ domain: string; action: 'allow' | 'deny' }>
 }
 
-interface WizardFeatures {
-  allowEphemeralSandboxCreation: boolean
-  allowRoutineManagement: boolean
-  dangerouslyUnrestricted: boolean
-}
-
 interface WizardState {
   currentStep: number
   identity: WizardIdentity
@@ -98,7 +92,6 @@ interface WizardState {
   model: WizardModel
   costLimits: WizardCostLimit[]
   pluginAssignments: WizardPluginAssignment[]
-  features: WizardFeatures
   skillAttachments: WizardSkillAttachment[]
   networkPolicy: WizardNetworkPolicy
   testAgentId: string | null
@@ -113,7 +106,6 @@ type WizardAction =
   | { type: 'UPDATE_MODEL'; model: Partial<WizardModel> }
   | { type: 'SET_COST_LIMITS'; costLimits: WizardCostLimit[] }
   | { type: 'SET_PLUGIN_ASSIGNMENTS'; assignments: WizardPluginAssignment[] }
-  | { type: 'SET_FEATURES'; features: Partial<WizardFeatures> }
   | { type: 'SET_SKILL_ATTACHMENTS'; attachments: WizardSkillAttachment[] }
   | { type: 'SET_NETWORK_POLICY'; policy: WizardNetworkPolicy }
   | { type: 'SET_TEST_AGENT'; testAgentId: string; testSessionKey: string }
@@ -163,11 +155,6 @@ function initialState(): WizardState {
     },
     costLimits: [],
     pluginAssignments: [],
-    features: {
-      allowEphemeralSandboxCreation: true,
-      allowRoutineManagement: false,
-      dangerouslyUnrestricted: false,
-    },
     skillAttachments: [],
     networkPolicy: DEFAULT_NETWORK_RULES,
     testAgentId: null,
@@ -194,8 +181,6 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
       return { ...state, costLimits: action.costLimits }
     case 'SET_PLUGIN_ASSIGNMENTS':
       return { ...state, pluginAssignments: action.assignments }
-    case 'SET_FEATURES':
-      return { ...state, features: { ...state.features, ...action.features } }
     case 'SET_SKILL_ATTACHMENTS':
       return { ...state, skillAttachments: action.attachments }
     case 'SET_NETWORK_POLICY':
@@ -317,9 +302,6 @@ export function AgentBuilderWizard() {
             editToolMode: state.model.editToolMode,
             soul: state.soul || undefined,
             networkPolicy: state.networkPolicy,
-            allowEphemeralSandboxCreation: state.features.allowEphemeralSandboxCreation,
-            allowRoutineManagement: state.features.allowRoutineManagement,
-            dangerouslyUnrestricted: state.features.dangerouslyUnrestricted,
           },
           teamId: state.identity.teamId || undefined,
           roleId: state.identity.roleId || undefined,
@@ -362,9 +344,6 @@ export function AgentBuilderWizard() {
             editToolMode: state.model.editToolMode,
             soul: state.soul || undefined,
             networkPolicy: state.networkPolicy,
-            allowEphemeralSandboxCreation: state.features.allowEphemeralSandboxCreation,
-            allowRoutineManagement: state.features.allowRoutineManagement,
-            dangerouslyUnrestricted: state.features.dangerouslyUnrestricted,
           }),
         })
 
@@ -984,85 +963,6 @@ function CapabilitiesStep({
           )}
         </div>
 
-        {/* Capabilities */}
-        <div className="space-y-3">
-          <Label className="text-sm">Capabilities</Label>
-          <label className="flex items-center gap-3 rounded-md border border-white/10 bg-white/[0.02] px-3 py-2">
-            <input
-              type="checkbox"
-              checked={state.features.allowEphemeralSandboxCreation}
-              onChange={(e) =>
-                dispatch({
-                  type: 'SET_FEATURES',
-                  features: {
-                    allowEphemeralSandboxCreation: (e.target as HTMLInputElement).checked,
-                  },
-                })
-              }
-              className="rounded border-white/20"
-            />
-            <div>
-              <p className="text-sm">Ephemeral Workspace Creation</p>
-              <p className="text-xs text-muted-foreground">
-                Allow the agent to create temporary workspaces for task execution.
-              </p>
-            </div>
-          </label>
-          <label className="flex items-center gap-3 rounded-md border border-white/10 bg-white/[0.02] px-3 py-2">
-            <input
-              type="checkbox"
-              checked={state.features.allowRoutineManagement}
-              onChange={(e) =>
-                dispatch({
-                  type: 'SET_FEATURES',
-                  features: { allowRoutineManagement: (e.target as HTMLInputElement).checked },
-                })
-              }
-              className="rounded border-white/20"
-            />
-            <div>
-              <p className="text-sm">Routine Management</p>
-              <p className="text-xs text-muted-foreground">
-                Allow the agent to create and manage scheduled routines.
-              </p>
-            </div>
-          </label>
-        </div>
-
-        {/* Fleet Access — visually separated */}
-        <div className="space-y-3 border-t border-red-500/20 pt-4">
-          <Label className="text-sm text-red-400">Fleet Access</Label>
-          <label className="flex items-center gap-3 rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2">
-            <input
-              type="checkbox"
-              checked={state.features.dangerouslyUnrestricted}
-              onChange={(e) => {
-                const checked = (e.target as HTMLInputElement).checked
-                if (checked) {
-                  const confirmed = window.confirm(
-                    'This grants the agent tools to create, modify, and delete any agent in the fleet. Are you sure?'
-                  )
-                  if (!confirmed) {
-                    e.preventDefault()
-                    return
-                  }
-                }
-                dispatch({
-                  type: 'SET_FEATURES',
-                  features: { dangerouslyUnrestricted: checked },
-                })
-              }}
-              className="rounded border-white/20"
-            />
-            <div>
-              <p className="text-sm">Enable fleet-wide control</p>
-              <p className="text-xs text-muted-foreground">
-                Grants platform-control tools for managing agents across the fleet, including
-                config, soul, and lifecycle.
-              </p>
-            </div>
-          </label>
-        </div>
       </CardContent>
     </Card>
   )
@@ -1345,9 +1245,6 @@ function TestConversationStep({
           editToolMode: state.model.editToolMode,
           soul: state.soul || undefined,
           networkPolicy: state.networkPolicy as unknown as Record<string, unknown>,
-          allowEphemeralSandboxCreation: state.features.allowEphemeralSandboxCreation,
-          allowRoutineManagement: state.features.allowRoutineManagement,
-          dangerouslyUnrestricted: state.features.dangerouslyUnrestricted,
         },
         identity: {
           name: state.identity.name,
@@ -1366,9 +1263,6 @@ function TestConversationStep({
         editToolMode: state.model.editToolMode,
         soul: state.soul || undefined,
         networkPolicy: state.networkPolicy as unknown as Record<string, unknown>,
-        allowEphemeralSandboxCreation: state.features.allowEphemeralSandboxCreation,
-        allowRoutineManagement: state.features.allowRoutineManagement,
-        dangerouslyUnrestricted: state.features.dangerouslyUnrestricted,
       },
       identity: {
         name: state.identity.name,
@@ -1645,25 +1539,6 @@ function ReviewStep({
                 : 'Custom'}{' '}
               - {state.networkPolicy.rules.length} rule(s)
             </p>
-          </ReviewSection>
-
-          {/* Feature flags */}
-          <ReviewSection
-            title="Features"
-            step={3}
-            onEdit={() => dispatch({ type: 'SET_STEP', step: 3 })}
-          >
-            <div className="flex flex-wrap gap-2 text-xs">
-              <Badge variant={state.features.allowEphemeralSandboxCreation ? 'default' : 'outline'}>
-                Ephemeral Sandboxes: {state.features.allowEphemeralSandboxCreation ? 'On' : 'Off'}
-              </Badge>
-              <Badge variant={state.features.allowRoutineManagement ? 'default' : 'outline'}>
-                Routines: {state.features.allowRoutineManagement ? 'On' : 'Off'}
-              </Badge>
-              <Badge variant={state.features.dangerouslyUnrestricted ? 'destructive' : 'outline'}>
-                Dangerous Mode: {state.features.dangerouslyUnrestricted ? 'On' : 'Off'}
-              </Badge>
-            </div>
           </ReviewSection>
         </CardContent>
       </Card>

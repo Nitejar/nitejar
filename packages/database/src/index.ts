@@ -1,6 +1,8 @@
 // Database connection
 export { getDb, closeDb, getDatabaseType, type DatabaseType } from './db'
 export { sql } from 'kysely'
+export * from './policy-grants'
+export * from './github-repo-capabilities'
 
 // Type exports
 export {
@@ -44,6 +46,9 @@ export {
   type AgentRepoCapability,
   type NewAgentRepoCapability,
   type AgentRepoCapabilityUpdate,
+  type RoleGithubRepoCapability,
+  type NewRoleGithubRepoCapability,
+  type RoleGithubRepoCapabilityUpdate,
   type AuditLog,
   type NewAuditLog,
   type Agent,
@@ -253,6 +258,7 @@ export {
 // Repository functions
 export * from './repositories'
 export * from './passive-memory-turns'
+export * from './app-session-keys'
 
 // Encryption helpers
 export {

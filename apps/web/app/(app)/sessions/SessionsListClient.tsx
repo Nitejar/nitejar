@@ -25,6 +25,7 @@ import {
   AvatarImage,
 } from '@/components/ui/avatar'
 import { RelativeTime } from '@/app/(app)/components/RelativeTime'
+import { Badge } from '@/components/ui/badge'
 
 type SessionParticipant = {
   id: string
@@ -185,9 +186,14 @@ export function SessionsListClient() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <p className="line-clamp-1 text-sm font-medium text-foreground">
-                      {session.displayTitle}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="line-clamp-1 text-sm font-medium text-foreground">
+                        {session.displayTitle}
+                      </p>
+                      <Badge variant="outline" className="border-border/60 text-[10px] capitalize">
+                        {session.context.kind}
+                      </Badge>
+                    </div>
                     <p className="line-clamp-2 text-xs text-muted-foreground">{session.preview}</p>
                   </div>
                 </CardContent>

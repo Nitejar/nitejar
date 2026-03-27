@@ -38,6 +38,12 @@ function uuid(): string {
 export const WORK_TICKET_STALE_AFTER_SECONDS = 48 * 60 * 60
 export const WORK_GOAL_ACTIVITY_STALE_AFTER_SECONDS = 72 * 60 * 60
 export const WORK_GOAL_HEARTBEAT_STALE_AFTER_SECONDS = 7 * 24 * 60 * 60
+const TERMINAL_TICKET_STATUSES = new Set(['done', 'canceled'])
+const ROUTINE_BOUNDED_FRONTIER_FIELDS = [
+  'active_bounded_ticket_id',
+  'frontier_name',
+  'expected_proof',
+] as const
 
 // ---------------------------------------------------------------------------
 // Teams
@@ -338,18 +344,74 @@ export async function updateTicket(
   data: Omit<TicketUpdate, 'id' | 'created_at'>,
   trx?: Kysely<Database>
 ): Promise<Ticket | null> {
-  const db = trx ?? getDb()
-  const row = await db
-    .updateTable('tickets')
-    .set({
-      ...data,
-      updated_at: now(),
-    })
-    .where('id', '=', id)
-    .returningAll()
-    .executeTakeFirst()
+  const runInTransaction = async (db: Kysely<Database>): Promise<Ticket | null> => {
+    const row = await db
+      .updateTable('tickets')
+      .set({
+        ...data,
+        updated_at: now(),
+      })
+      .where('id', '=', id)
+      .returningAll()
+      .executeTakeFirst()
 
-  return row ?? null
+    if (row && typeof data.status === 'string' && TERMINAL_TICKET_STATUSES.has(data.status)) {
+      await clearRoutineBoundedFrontierContext(id, db)
+    }
+
+    return row ?? null
+  }
+
+  if (trx) {
+    return runInTransaction(trx)
+  }
+
+  const db = getDb()
+  return db.transaction().execute(runInTransaction)
+}
+
+async function clearRoutineBoundedFrontierContext(
+  ticketId: string,
+  trx: Kysely<Database>
+): Promise<void> {
+  const candidates = await trx
+    .selectFrom('routines')
+    .select(['id', 'target_response_context'])
+    .where('archived_at', 'is', null)
+    .where('target_response_context', 'is not', null)
+    .where(sql<boolean>`target_response_context like ${`%${ticketId}%`}`)
+    .execute()
+
+  for (const candidate of candidates) {
+    const rawContext = candidate.target_response_context
+    if (!rawContext) continue
+
+    let parsed: Record<string, unknown>
+    try {
+      parsed = JSON.parse(rawContext) as Record<string, unknown>
+    } catch {
+      continue
+    }
+
+    if (parsed.active_bounded_ticket_id !== ticketId) {
+      continue
+    }
+
+    const nextContext: Record<string, unknown> = { ...parsed }
+    for (const field of ROUTINE_BOUNDED_FRONTIER_FIELDS) {
+      delete nextContext[field]
+    }
+
+    await trx
+      .updateTable('routines')
+      .set({
+        target_response_context:
+          Object.keys(nextContext).length > 0 ? JSON.stringify(nextContext) : null,
+        updated_at: now(),
+      })
+      .where('id', '=', candidate.id)
+      .execute()
+  }
 }
 
 export async function claimTicket(
@@ -590,11 +652,28 @@ export async function createWorkUpdate(
   trx?: Kysely<Database>
 ): Promise<WorkUpdate> {
   const db = trx ?? getDb()
+  let goalId = data.goal_id ?? null
+
+  if (data.ticket_id) {
+    const ticket = await db
+      .selectFrom('tickets')
+      .select(['id', 'goal_id'])
+      .where('id', '=', data.ticket_id)
+      .executeTakeFirst()
+
+    if (!ticket) {
+      throw new Error(`Ticket ${data.ticket_id} not found.`)
+    }
+
+    goalId = ticket.goal_id ?? null
+  }
+
   return db
     .insertInto('work_updates')
     .values({
       id: uuid(),
       ...data,
+      goal_id: goalId,
       created_at: now(),
     })
     .returningAll()

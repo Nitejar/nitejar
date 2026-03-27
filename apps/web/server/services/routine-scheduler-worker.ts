@@ -1,8 +1,8 @@
 import {
+  archiveRoutine,
   createRoutineRun,
   enqueueRoutineRun,
   listDueRoutines,
-  setRoutineEnabled,
   updateRoutine,
   type Routine,
 } from '@nitejar/database'
@@ -204,7 +204,7 @@ async function evaluateOneShotRoutine(routine: Routine, nowTs: number): Promise<
     last_status: 'enqueued',
   })
 
-  await setRoutineEnabled(routine.id, false)
+  await archiveRoutine(routine.id)
 }
 
 async function processDueRoutine(routine: Routine): Promise<void> {

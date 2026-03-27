@@ -5,6 +5,7 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import {
   addAppSessionParticipants,
+  buildStandaloneAppSessionKey,
   closeDb,
   createAppSession,
   createSkill,
@@ -350,7 +351,7 @@ async function main(): Promise<number> {
   await loadEnvFile(path.resolve(scriptDir, '../../.env'))
   const marker = args.marker ?? `SKILLS_E2E_MARKER_${runId}`
   const userId = `e2e-skills-user-${runId}`
-  const sessionKey = `app:${userId}:skills-live-${runId}`
+  const sessionKey = buildStandaloneAppSessionKey(userId, `skills-live-${runId}`)
   const skillSlug = `e2e-skill-${runId}`
   const skillName = `E2E Skill ${runId}`
   const artifactPath =
@@ -434,6 +435,7 @@ async function main(): Promise<number> {
       owner_user_id: userId,
       primary_agent_id: targetAgent.id,
       title: `Skills live E2E ${runId}`,
+      forked_from_session_key: null,
     })
     await addAppSessionParticipants({
       sessionKey,

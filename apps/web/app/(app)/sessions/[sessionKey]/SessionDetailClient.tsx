@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   IconArrowUp,
+  IconGitBranch,
   IconLoader2,
   IconPlayerPlay,
   IconPlus,
@@ -191,6 +192,15 @@ export function SessionDetailClient({ sessionKey }: { sessionKey: string }) {
       toast.error('Failed to promote session to ticket')
     },
   })
+  const forkSessionMutation = trpc.sessions.forkSession.useMutation({
+    onSuccess: ({ sessionKey: nextSessionKey }) => {
+      router.push(`/sessions/${encodeURIComponent(nextSessionKey)}`)
+      toast.success('Forked into a fresh session')
+    },
+    onError: () => {
+      toast.error('Failed to fork session')
+    },
+  })
 
   const participants = useMemo(
     () => sessionQuery.data?.participants ?? [],
@@ -370,9 +380,15 @@ export function SessionDetailClient({ sessionKey }: { sessionKey: string }) {
                 Sessions
               </Link>
               <ChevronRight className="h-3 w-3" />
-              <span className="text-white/70">
-                {sessionQuery.data.title ?? headerPrimaryAgent?.name ?? 'Session'}
-              </span>
+              {sessionQuery.data.context.kind !== 'standalone' &&
+              sessionQuery.data.context.kind !== 'legacy' &&
+              sessionQuery.data.context.id ? (
+                <>
+                  <span className="text-white/50 capitalize">{sessionQuery.data.context.kind}</span>
+                  <ChevronRight className="h-3 w-3" />
+                </>
+              ) : null}
+              <span className="text-white/70">{sessionQuery.data.title ?? headerPrimaryAgent?.name ?? 'Session'}</span>
             </>
           )}
         </nav>
@@ -432,6 +448,16 @@ export function SessionDetailClient({ sessionKey }: { sessionKey: string }) {
           </Popover>
 
           <span className="mx-0.5 h-4 w-px bg-border/60" />
+
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => forkSessionMutation.mutate({ sessionKey })}
+            disabled={forkSessionMutation.isPending}
+            title="Fork session"
+          >
+            <IconGitBranch className="h-3.5 w-3.5" />
+          </Button>
 
           {/* Ticket actions */}
           {sessionQuery.data.linkedTicket ? (
@@ -498,6 +524,30 @@ export function SessionDetailClient({ sessionKey }: { sessionKey: string }) {
           )}
         </div>
       </div>
+
+      {sessionQuery.data.forkedFromSession || sessionQuery.data.relatedSessions.length > 0 ? (
+        <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            {sessionQuery.data.forkedFromSession ? (
+              <Link
+                href={`/sessions/${encodeURIComponent(sessionQuery.data.forkedFromSession.sessionKey)}`}
+                className="inline-flex items-center gap-1 rounded-md border border-border/60 px-2 py-1 text-foreground transition hover:bg-accent"
+              >
+                From earlier session
+              </Link>
+            ) : null}
+            {sessionQuery.data.relatedSessions.map((related) => (
+              <Link
+                key={related.sessionKey}
+                href={`/sessions/${encodeURIComponent(related.sessionKey)}`}
+                className="inline-flex items-center gap-1 rounded-md border border-border/60 px-2 py-1 text-foreground transition hover:bg-accent"
+              >
+                {related.title ?? 'Related session'}
+              </Link>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {/* Chat timeline */}
       <div className="flex flex-1 flex-col rounded-lg border border-zinc-800">

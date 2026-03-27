@@ -169,17 +169,6 @@ function validateAgentConfig(config: unknown): AgentConfig {
     }
   }
 
-  // Sandbox settings
-  if (typeof c.allowEphemeralSandboxCreation === 'boolean') {
-    result.allowEphemeralSandboxCreation = c.allowEphemeralSandboxCreation
-  }
-  if (typeof c.allowRoutineManagement === 'boolean') {
-    result.allowRoutineManagement = c.allowRoutineManagement
-  }
-  if (typeof c.dangerouslyUnrestricted === 'boolean') {
-    result.dangerouslyUnrestricted = c.dangerouslyUnrestricted
-  }
-
   // Queue settings
   if (c.queue && typeof c.queue === 'object') {
     result.queue = validateAgentQueueConfig(c.queue as Record<string, unknown>)
@@ -508,15 +497,6 @@ export function mergeAgentConfig(
   }
   if (updates.networkPolicy !== undefined) {
     result.networkPolicy = updates.networkPolicy
-  }
-  if (updates.allowEphemeralSandboxCreation !== undefined) {
-    result.allowEphemeralSandboxCreation = updates.allowEphemeralSandboxCreation
-  }
-  if (updates.allowRoutineManagement !== undefined) {
-    result.allowRoutineManagement = updates.allowRoutineManagement
-  }
-  if (updates.dangerouslyUnrestricted !== undefined) {
-    result.dangerouslyUnrestricted = updates.dangerouslyUnrestricted
   }
   if (updates.queue !== undefined) {
     result.queue = {

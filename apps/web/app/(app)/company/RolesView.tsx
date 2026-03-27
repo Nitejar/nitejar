@@ -23,119 +23,32 @@ function parseDomains(raw: string): string[] {
 
 /** One backend grant — action + resourceType for the DB */
 type Grant = { action: string; resourceType: string | null }
+type GitHubRepoCapability =
+  | 'read_repo'
+  | 'create_branch'
+  | 'push_branch'
+  | 'open_pr'
+  | 'comment'
+  | 'request_review'
+  | 'label_issue_pr'
+  | 'review_pr'
+  | 'merge_pr'
+type GitHubRepoCapabilityDescriptor = {
+  id: string
+  label: string
+  hint: string
+}
+type PermissionRow = {
+  resource: string
+  hint: string
+  ops: Array<{
+    op: string
+    grants: Grant[]
+  }>
+}
 
 /** One UI toggle — maps a human label to one or more backend grants */
-type OpToggle = { op: string; grants: Grant[] }
-
-type PermissionRow = { resource: string; hint: string; ops: OpToggle[] }
-
-const PERMISSION_ROWS: PermissionRow[] = [
-  {
-    resource: 'Policy',
-    hint: 'Manage roles, grants, and role assignments',
-    ops: [
-      { op: 'read', grants: [{ action: 'policy.read', resourceType: '*' }] },
-      { op: 'write', grants: [{ action: 'policy.write', resourceType: '*' }] },
-      { op: 'create', grants: [{ action: 'policy.create', resourceType: '*' }] },
-      { op: 'delete', grants: [{ action: 'policy.delete', resourceType: '*' }] },
-    ],
-  },
-  {
-    resource: 'Goals',
-    hint: 'Strategic objectives — create, update, and track progress',
-    ops: [
-      { op: 'read', grants: [{ action: 'work.goal.read', resourceType: 'goal' }] },
-      { op: 'write', grants: [{ action: 'work.goal.write', resourceType: 'goal' }] },
-      { op: 'create', grants: [{ action: 'work.goal.create', resourceType: 'goal' }] },
-      { op: 'delete', grants: [{ action: 'work.goal.delete', resourceType: 'goal' }] },
-    ],
-  },
-  {
-    resource: 'Tickets',
-    hint: 'Tactical work items — create, update, and track status',
-    ops: [
-      { op: 'read', grants: [{ action: 'work.ticket.read', resourceType: 'ticket' }] },
-      { op: 'write', grants: [{ action: 'work.ticket.write', resourceType: 'ticket' }] },
-      { op: 'create', grants: [{ action: 'work.ticket.create', resourceType: 'ticket' }] },
-      { op: 'delete', grants: [{ action: 'work.ticket.delete', resourceType: 'ticket' }] },
-    ],
-  },
-  {
-    resource: 'Teams',
-    hint: 'Org structure — view, edit, and staff teams',
-    ops: [
-      { op: 'read', grants: [{ action: 'company.team.read', resourceType: 'team' }] },
-      { op: 'write', grants: [{ action: 'company.team.write', resourceType: 'team' }] },
-      { op: 'create', grants: [{ action: 'company.team.create', resourceType: 'team' }] },
-      { op: 'delete', grants: [{ action: 'company.team.delete', resourceType: 'team' }] },
-    ],
-  },
-  {
-    resource: 'Agents',
-    hint: 'Fleet members — inspect, configure, create, and remove agents',
-    ops: [
-      { op: 'read', grants: [{ action: 'fleet.agent.read', resourceType: 'agent' }] },
-      { op: 'write', grants: [{ action: 'fleet.agent.write', resourceType: 'agent' }] },
-      { op: 'create', grants: [{ action: 'fleet.agent.create', resourceType: 'agent' }] },
-      { op: 'delete', grants: [{ action: 'fleet.agent.delete', resourceType: 'agent' }] },
-      { op: 'control', grants: [{ action: 'fleet.agent.control', resourceType: 'agent' }] },
-    ],
-  },
-  {
-    resource: 'GitHub',
-    hint: 'Repository operations — code access, branches, PRs, and reviews',
-    ops: [
-      { op: 'read', grants: [{ action: 'github.repo.read', resourceType: '*' }] },
-      {
-        op: 'branch',
-        grants: [
-          { action: 'github.repo.create_branch', resourceType: '*' },
-          { action: 'github.repo.push_branch', resourceType: '*' },
-        ],
-      },
-      { op: 'pr', grants: [{ action: 'github.repo.open_pr', resourceType: '*' }] },
-      {
-        op: 'review',
-        grants: [
-          { action: 'github.repo.review_pr', resourceType: '*' },
-          { action: 'github.repo.comment', resourceType: '*' },
-          { action: 'github.repo.label_issue_pr', resourceType: '*' },
-          { action: 'github.repo.request_review', resourceType: '*' },
-        ],
-      },
-      { op: 'merge', grants: [{ action: 'github.repo.merge_pr', resourceType: '*' }] },
-    ],
-  },
-  {
-    resource: 'Capabilities',
-    hint: 'Feature access — web search, tool execution, image and speech generation',
-    ops: [
-      { op: 'web search', grants: [{ action: 'capability.web_search', resourceType: '*' }] },
-      { op: 'tools', grants: [{ action: 'capability.tool_execution', resourceType: '*' }] },
-      { op: 'images', grants: [{ action: 'capability.image_generation', resourceType: '*' }] },
-      {
-        op: 'speech',
-        grants: [
-          { action: 'capability.speech_to_text', resourceType: '*' },
-          { action: 'capability.text_to_speech', resourceType: '*' },
-        ],
-      },
-    ],
-  },
-  {
-    resource: 'Routines',
-    hint: 'Scheduled tasks — create, update, pause, and delete recurring jobs',
-    ops: [
-      { op: 'self-manage', grants: [{ action: 'routine.self.manage', resourceType: '*' }] },
-      { op: 'manage all', grants: [{ action: 'routine.manage', resourceType: '*' }] },
-    ],
-  },
-  {
-    resource: 'Sandboxes',
-    hint: 'Temporary execution environments for running code and commands',
-    ops: [{ op: 'create', grants: [{ action: 'sandbox.ephemeral.create', resourceType: '*' }] }],
-  },
-]
+type OpToggle = PermissionRow['ops'][number]
 
 // ---------------------------------------------------------------------------
 // Config — operational defaults inherited by agents in this role
@@ -503,13 +416,24 @@ function DefaultDomainsMenu({
 // Main component
 // ---------------------------------------------------------------------------
 
-export function RolesView({ search, onCreateRole }: { search: string; onCreateRole?: () => void }) {
+export function RolesView({
+  search,
+  permissionRows,
+  githubRepoCapabilities,
+  onCreateRole,
+}: {
+  search: string
+  permissionRows: PermissionRow[]
+  githubRepoCapabilities: readonly GitHubRepoCapabilityDescriptor[]
+  onCreateRole?: () => void
+}) {
   const utils = trpc.useUtils()
 
   // Queries
   const rolesQuery = trpc.company.listRoles.useQuery()
   const agentsQuery = trpc.company.listAgents.useQuery()
   const overviewQuery = trpc.company.getOverview.useQuery()
+  const githubReposQuery = trpc.capabilities.listRepos.useQuery()
 
   // State
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null)
@@ -521,6 +445,7 @@ export function RolesView({ search, onCreateRole }: { search: string; onCreateRo
     () => overviewQuery.data?.organization ?? [],
     [overviewQuery.data?.organization]
   )
+  const githubRepos = useMemo(() => githubReposQuery.data ?? [], [githubReposQuery.data])
 
   const normalizedSearch = search.trim().toLowerCase()
   const visibleRoles = useMemo(
@@ -592,6 +517,25 @@ export function RolesView({ search, onCreateRole }: { search: string; onCreateRo
                     key: d.key,
                     value: d.value,
                   })),
+                }
+              : {}),
+            ...(input.githubRepoPolicies !== undefined
+              ? {
+                  githubRepoPolicies: (
+                    input.githubRepoPolicies as Array<{
+                      githubRepoId: number
+                      capabilities: GitHubRepoCapability[]
+                    }>
+                  ).map((policy) => {
+                    const repo = githubRepos.find((candidate) => candidate.id === policy.githubRepoId)
+                    return {
+                      githubRepoId: policy.githubRepoId,
+                      repoFullName: repo?.full_name ?? `repo-${policy.githubRepoId}`,
+                      repoHtmlUrl: repo?.html_url ?? null,
+                      installationAccountLogin: repo?.account_login ?? null,
+                      capabilities: [...policy.capabilities].sort(),
+                    }
+                  }),
                 }
               : {}),
           }
@@ -721,6 +665,48 @@ export function RolesView({ search, onCreateRole }: { search: string; onCreateRo
     [toggleOp]
   )
 
+  const githubRepoCapabilityMap = useMemo(
+    () =>
+      new Map(
+        (roleDetail?.githubRepoPolicies ?? []).map((policy) => [
+          policy.githubRepoId,
+          new Set(policy.capabilities),
+        ])
+      ),
+    [roleDetail?.githubRepoPolicies]
+  )
+
+  const setGitHubRepoPolicy = useCallback(
+    (githubRepoId: number, capabilities: GitHubRepoCapability[]) => {
+      if (!roleDetail || !selectedRole) return
+      const nextPolicies = [
+        ...roleDetail.githubRepoPolicies
+          .filter((policy) => policy.githubRepoId !== githubRepoId)
+          .map((policy) => ({
+            githubRepoId: policy.githubRepoId,
+            capabilities: [...policy.capabilities] as GitHubRepoCapability[],
+          })),
+        ...(capabilities.length > 0 ? [{ githubRepoId, capabilities }] : []),
+      ]
+      updateRole.mutate({ roleId: selectedRole.id, githubRepoPolicies: nextPolicies })
+    },
+    [roleDetail, selectedRole, updateRole]
+  )
+
+  const githubReposByAccount = useMemo(() => {
+    const groups = new Map<string, typeof githubRepos>()
+    for (const repo of githubRepos) {
+      const key = repo.account_login ?? 'Other'
+      const current = groups.get(key) ?? []
+      current.push(repo)
+      groups.set(key, current)
+    }
+    return [...groups.entries()].map(([account, repos]) => ({
+      account,
+      repos: [...repos].sort((a, b) => a.full_name.localeCompare(b.full_name)),
+    }))
+  }, [githubRepos])
+
   // Config defaults — read current values from role defaults, write back
   const configValues = useMemo(() => {
     const map = new Map<string, string>()
@@ -793,7 +779,6 @@ export function RolesView({ search, onCreateRole }: { search: string; onCreateRo
       name,
       slug: slugify(name),
       charter: '',
-      jobDescription: '',
       escalationPosture: '',
       active: true,
     })
@@ -1006,7 +991,7 @@ export function RolesView({ search, onCreateRole }: { search: string; onCreateRo
                   hasSuperuser && 'opacity-40'
                 )}
               >
-                {PERMISSION_ROWS.map((row) => {
+                {permissionRows.map((row) => {
                   const allGranted = row.ops.every((op) => isOpGranted(op))
                   const someGranted = row.ops.some((op) => isOpGranted(op))
                   return (
@@ -1235,6 +1220,83 @@ export function RolesView({ search, onCreateRole }: { search: string; onCreateRo
                     </div>
                   )
                 })}
+              </div>
+            </div>
+
+            <div>
+              <span className="text-[0.65rem] uppercase tracking-[0.2em] text-white/35">
+                GitHub repo policy
+              </span>
+              <div className="mt-1.5 rounded-lg border border-zinc-800/40">
+                {githubReposByAccount.length === 0 ? (
+                  <div className="px-3 py-3 text-xs text-zinc-500">
+                    No synced GitHub repos yet.
+                  </div>
+                ) : (
+                  githubReposByAccount.map((group) => (
+                    <div
+                      key={group.account}
+                      className="border-t border-zinc-800/30 px-3 py-2 first:border-t-0"
+                    >
+                      <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-white/30">
+                        {group.account}
+                      </div>
+                      <div className="space-y-2">
+                        {group.repos.map((repo) => {
+                          const selectedCapabilities =
+                            githubRepoCapabilityMap.get(repo.id) ?? new Set<GitHubRepoCapability>()
+                          return (
+                            <div
+                              key={repo.id}
+                              className="rounded-md border border-zinc-800/50 bg-white/[0.01] px-2.5 py-2"
+                            >
+                              <div className="mb-1 flex items-center gap-2">
+                                <span className="min-w-0 flex-1 truncate text-xs text-white/70">
+                                  {repo.full_name}
+                                </span>
+                                {selectedCapabilities.size > 0 && (
+                                  <span className="rounded-full bg-white/5 px-1.5 py-0.5 text-[9px] text-white/35">
+                                    {selectedCapabilities.size} ops
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {githubRepoCapabilities.map((capability) => {
+                                  const capabilityId = capability.id as GitHubRepoCapability
+                                  const selected = selectedCapabilities.has(capabilityId)
+                                  return (
+                                    <button
+                                      key={capability.id}
+                                      type="button"
+                                      onClick={() => {
+                                        const next = new Set(selectedCapabilities)
+                                        if (selected) next.delete(capabilityId)
+                                        else next.add(capabilityId)
+                                        setGitHubRepoPolicy(
+                                          repo.id,
+                                          [...next].sort() as GitHubRepoCapability[]
+                                        )
+                                      }}
+                                      className={cn(
+                                        'rounded-md border px-2 py-0.5 text-[11px] transition',
+                                        selected
+                                          ? 'border-violet-500/25 bg-violet-500/10 text-violet-200'
+                                          : 'border-zinc-800 text-white/25 hover:border-zinc-700 hover:text-white/50'
+                                      )}
+                                      title={capability.hint}
+                                    >
+                                      {capability.label}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 

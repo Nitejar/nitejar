@@ -6,7 +6,13 @@ import type {
   CredentialEnvelope,
   ICredentialProvider,
 } from '@nitejar/plugin-handlers/credential-provider'
-import { getDb } from '@nitejar/database'
+import {
+  filterGitHubRepoCapabilitiesByPolicy,
+  getDb,
+  getRequiredPolicyActionsForGitHubCapability,
+  resolveEffectiveGitHubRepoCapabilities,
+  resolveEffectivePolicy,
+} from '@nitejar/database'
 import { CapabilityService } from './capability'
 
 export { GitHubCredentialProvider }
@@ -70,6 +76,23 @@ export async function getGitHubRepoToken(params: {
   const db = getDb()
 
   await CapabilityService.assertCapability(params.agentId, params.githubRepoId, params.capability)
+
+  const [resolvedPolicy, effectiveCapabilities] = await Promise.all([
+    resolveEffectivePolicy(params.agentId),
+    resolveEffectiveGitHubRepoCapabilities(params.agentId, params.githubRepoId),
+  ])
+
+  const allowedCapabilities = filterGitHubRepoCapabilitiesByPolicy({
+    capabilities: effectiveCapabilities,
+    grantedActions: resolvedPolicy.grants.map((grant) => grant.action),
+  })
+
+  if (!allowedCapabilities.includes(params.capability as never)) {
+    const requiredActions = getRequiredPolicyActionsForGitHubCapability(params.capability as never)
+    throw new Error(
+      `Access denied: missing policy grants for capability "${params.capability}" (${requiredActions.join(', ')}).`
+    )
+  }
 
   const repo = await db
     .selectFrom('github_repos')

@@ -11,7 +11,10 @@ import {
   hashlineEditFileDefinition,
 } from './handlers/filesystem'
 import { serviceDefinitions } from './handlers/services'
-import { getSelfConfigDefinition, getSelfPolicyDefinition } from './handlers/self-config'
+import {
+  getSelfConfigDefinition,
+  getSelfPolicyDefinition,
+} from './handlers/self-config'
 import { scheduleDefinitions } from './handlers/schedule'
 import { runTodoDefinition } from './handlers/run-todo'
 import { backgroundTaskDefinitions } from './handlers/background-tasks'

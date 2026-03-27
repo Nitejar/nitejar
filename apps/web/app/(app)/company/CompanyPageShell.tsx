@@ -1,5 +1,6 @@
 import { Suspense } from 'react'
 import { Loader2 } from 'lucide-react'
+import { buildPolicyPermissionRows, GITHUB_REPO_CAPABILITY_DESCRIPTORS } from '@nitejar/database'
 import { ClientErrorBoundary } from '../components/ClientErrorBoundary'
 import { CompanyClient } from './CompanyClient'
 
@@ -12,10 +13,15 @@ function CompanyFallback() {
 }
 
 export function CompanyPageShell() {
+  const permissionRows = buildPolicyPermissionRows()
+
   return (
     <ClientErrorBoundary label="Company">
       <Suspense fallback={<CompanyFallback />}>
-        <CompanyClient />
+        <CompanyClient
+          permissionRows={permissionRows}
+          githubRepoCapabilities={GITHUB_REPO_CAPABILITY_DESCRIPTORS}
+        />
       </Suspense>
     </ClientErrorBoundary>
   )

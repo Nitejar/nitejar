@@ -1,6 +1,7 @@
 import OpenAI from 'openai'
 import { getDb, decrypt } from '@nitejar/database'
 import { getToolDefinitions } from './tools'
+import type { RuntimeToolAccess } from './tool-access'
 import type { EditToolMode } from './types'
 
 const DEFAULT_GATEWAY_ID = 'default'
@@ -160,13 +161,6 @@ export function isLikelyToolUseUnsupportedError(error: unknown): boolean {
 
 /** Tool names that require Tavily to be configured. */
 const TAVILY_TOOLS = new Set(['web_search', 'extract_url'])
-const ROUTINE_WRITE_TOOLS = new Set([
-  'create_routine',
-  'update_routine',
-  'pause_routine',
-  'delete_routine',
-  'run_routine_now',
-])
 const SANDBOX_REQUIRED_TOOLS = new Set([
   'bash',
   'configure_github_credentials',
@@ -193,16 +187,58 @@ const SANDBOX_REQUIRED_TOOLS = new Set([
   'transcribe_audio',
   'synthesize_speech',
 ])
-const DANGEROUS_PLATFORM_TOOLS = new Set([
-  'list_agents',
-  'get_agent_config',
-  'get_agent_soul',
-  'create_agent',
-  'set_agent_status',
-  'delete_agent',
-  'update_agent_config',
-  'update_agent_soul',
-])
+const POLICY_GATED_TOOLS: Record<string, string[]> = {
+  list_roles: ['policy.read'],
+  get_role: ['policy.read'],
+  create_role: ['policy.create'],
+  update_role: ['policy.write'],
+  delete_role: ['policy.delete'],
+  assign_role: ['policy.write'],
+  unassign_role: ['policy.write'],
+  search_goals: ['work.goal.read'],
+  create_goal: ['work.goal.create'],
+  delete_goal: ['work.goal.delete'],
+  search_tickets: ['work.ticket.read'],
+  get_ticket: ['work.ticket.read'],
+  claim_ticket: ['work.ticket.write'],
+  update_ticket: ['work.ticket.write'],
+  post_work_update: ['work.goal.write', 'work.ticket.write'],
+  link_ticket_receipt: ['work.ticket.write'],
+  run_ticket_now: ['work.ticket.write'],
+  create_ticket: ['work.ticket.create'],
+  delete_ticket: ['work.ticket.delete'],
+  list_teams: ['company.team.read'],
+  get_team: ['company.team.read'],
+  create_team: ['company.team.create'],
+  update_team: ['company.team.write'],
+  delete_team: ['company.team.delete'],
+  list_agents: ['fleet.agent.read'],
+  get_agent_config: ['fleet.agent.read'],
+  get_agent_soul: ['fleet.agent.read'],
+  create_agent: ['fleet.agent.create'],
+  set_agent_status: ['fleet.agent.control'],
+  delete_agent: ['fleet.agent.delete'],
+  update_agent_config: ['fleet.agent.write'],
+  update_agent_soul: ['fleet.agent.write'],
+  create_ephemeral_sandbox: ['sandbox.ephemeral.create'],
+  delete_sandbox: ['sandbox.ephemeral.create'],
+  create_routine: ['routine.self.manage', 'routine.manage'],
+  update_routine: ['routine.self.manage', 'routine.manage'],
+  pause_routine: ['routine.self.manage', 'routine.manage'],
+  delete_routine: ['routine.self.manage', 'routine.manage'],
+  run_routine_now: ['routine.self.manage', 'routine.manage'],
+  web_search: ['capability.web_search'],
+  extract_url: ['capability.web_search'],
+  generate_image: ['capability.image_generation'],
+  transcribe_audio: ['capability.speech_to_text'],
+  synthesize_speech: ['capability.text_to_speech'],
+  configure_github_credentials: ['github.repo.read'],
+}
+
+function hasPolicyGrant(access: Partial<RuntimeToolAccess>, actions: string[]): boolean {
+  const grantedActions = new Set(access.grantedActions ?? [])
+  return grantedActions.has('*') || actions.some((action) => grantedActions.has(action))
+}
 
 /**
  * Convert our tool definitions to OpenAI format.
@@ -213,26 +249,21 @@ export function getOpenAITools(opts?: {
   excludeWebTools?: boolean
   excludeSandboxTools?: boolean
   editToolMode?: EditToolMode
-  allowEphemeralSandboxCreation?: boolean
-  allowRoutineManagement?: boolean
-  dangerouslyUnrestricted?: boolean
+  runtimeToolAccess?: Partial<RuntimeToolAccess>
 }): OpenAI.ChatCompletionTool[] {
   let defs = getToolDefinitions({ editToolMode: opts?.editToolMode })
+  const access = opts?.runtimeToolAccess ?? {}
   if (opts?.excludeWebTools) {
     defs = defs.filter((t) => !TAVILY_TOOLS.has(t.name))
   }
   if (opts?.excludeSandboxTools) {
     defs = defs.filter((t) => !SANDBOX_REQUIRED_TOOLS.has(t.name))
   }
-  if (opts?.dangerouslyUnrestricted !== true) {
-    defs = defs.filter((t) => !DANGEROUS_PLATFORM_TOOLS.has(t.name))
-  }
-  if (opts?.dangerouslyUnrestricted !== true && opts?.allowEphemeralSandboxCreation === false) {
-    defs = defs.filter((t) => t.name !== 'create_ephemeral_sandbox')
-  }
-  if (opts?.dangerouslyUnrestricted !== true && opts?.allowRoutineManagement !== true) {
-    defs = defs.filter((t) => !ROUTINE_WRITE_TOOLS.has(t.name))
-  }
+  defs = defs.filter((t) => {
+    const requiredActions = POLICY_GATED_TOOLS[t.name]
+    if (!requiredActions) return true
+    return hasPolicyGrant(access, requiredActions)
+  })
   return defs.map((tool) => ({
     type: 'function' as const,
     function: {

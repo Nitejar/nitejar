@@ -53,6 +53,7 @@ describe('enqueueAppSessionMessage', () => {
       owner_user_id: 'user-1',
       primary_agent_id: 'agent-1',
       title: null,
+      forked_from_session_key: null,
       created_at: 1,
       updated_at: 2,
       last_activity_at: 2,

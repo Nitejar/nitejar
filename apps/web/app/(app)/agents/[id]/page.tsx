@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import {
+  buildPolicyPermissionRows,
   findAgentById,
   deleteAgent,
   getPluginInstancesForAgent,
@@ -26,8 +27,6 @@ import { MemorySection } from './MemorySection'
 import { SessionSection } from './SessionSection'
 import { NetworkPolicySection } from './NetworkPolicySection'
 import { SandboxesSection } from './SandboxesSection'
-import { CapabilitiesSection } from './CapabilitiesSection'
-import { FleetAccessSection } from './FleetAccessSection'
 import { AgentIdentityForm } from './AgentIdentityForm'
 import { StatusToggle } from './StatusToggle'
 import { ExportProfileButton } from './ExportProfileButton'
@@ -106,6 +105,10 @@ const pluginInstanceIcons: Record<string, React.ComponentType<{ className?: stri
 export default async function AgentDetailPage({ params }: Props) {
   const { id } = await params
   const db = getDb()
+  const permissionRows = buildPolicyPermissionRows().map((row) => ({
+    resource: row.resource,
+    ops: row.ops,
+  }))
 
   const [agent, pluginInstances, allTeams, activeAgentIds, roleAssignments, allRoles] =
     await Promise.all([
@@ -258,7 +261,7 @@ export default async function AgentDetailPage({ params }: Props) {
           </Card>
 
           {/* Roles & Policy Section */}
-          <RolesSection agentId={agent.id} />
+          <RolesSection agentId={agent.id} permissionRows={permissionRows} />
 
           {/* Soul Section */}
           <SoulSection agentId={agent.id} initialSoul={config.soul} />
@@ -306,12 +309,6 @@ export default async function AgentDetailPage({ params }: Props) {
 
           {/* Session Section */}
           <SessionSection agentId={agent.id} initialSettings={config.sessionSettings} />
-
-          {/* Capabilities Section */}
-          <CapabilitiesSection agentId={agent.id} />
-
-          {/* Fleet Access Section */}
-          <FleetAccessSection agentId={agent.id} />
 
           {/* Danger Zone */}
           <Card className="border-destructive/20 bg-destructive/5">

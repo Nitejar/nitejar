@@ -18,6 +18,12 @@ import { createScheduledItem } from './scheduled-items'
 export type RoutineTriggerKind = 'cron' | 'event' | 'condition' | 'oneshot'
 export type RoutineRunOrigin = 'cron' | 'event' | 'condition' | 'manual' | 'oneshot'
 export type RoutineRunDecision = 'enqueued' | 'skipped' | 'throttled' | 'error'
+const TERMINAL_TICKET_STATUSES = new Set(['done', 'canceled'])
+const ROUTINE_BOUNDED_FRONTIER_FIELDS = [
+  'active_bounded_ticket_id',
+  'frontier_name',
+  'expected_proof',
+] as const
 
 function now(): number {
   return Math.floor(Date.now() / 1000)
@@ -271,10 +277,11 @@ async function enqueueRoutineRunInTransaction(
   }
 ): Promise<{ run: RoutineRun; scheduledItem: ScheduledItem }> {
   const evaluatedAt = now()
+  const routine = await sanitizeRoutineResponseContextForEnqueue(input.routine, trx)
 
   const run = await createRoutineRun(
     {
-      routine_id: input.routine.id,
+      routine_id: routine.id,
       trigger_origin: input.triggerOrigin,
       trigger_ref: input.triggerRef ?? null,
       envelope_json: input.envelopeJson ?? null,
@@ -289,17 +296,17 @@ async function enqueueRoutineRunInTransaction(
 
   const scheduledItem = await createScheduledItem(
     {
-      agent_id: input.routine.agent_id,
-      session_key: input.routine.target_session_key,
-      type: input.routine.trigger_kind === 'oneshot' ? 'deferred' : 'routine',
-      payload: input.routine.action_prompt,
+      agent_id: routine.agent_id,
+      session_key: routine.target_session_key,
+      type: routine.trigger_kind === 'oneshot' ? 'deferred' : 'routine',
+      payload: routine.action_prompt,
       run_at: input.runAt,
       recurrence: null,
       status: 'pending',
-      source_ref: `routine:${input.routine.id}:run:${run.id}`,
-      plugin_instance_id: input.routine.target_plugin_instance_id,
-      response_context: input.routine.target_response_context,
-      routine_id: input.routine.id,
+      source_ref: `routine:${routine.id}:run:${run.id}`,
+      plugin_instance_id: routine.target_plugin_instance_id,
+      response_context: routine.target_response_context,
+      routine_id: routine.id,
       routine_run_id: run.id,
       fired_at: null,
       cancelled_at: null,
@@ -309,6 +316,59 @@ async function enqueueRoutineRunInTransaction(
 
   const updatedRun = await linkRoutineRunToScheduledItem(run.id, scheduledItem.id, trx)
   return { run: updatedRun ?? run, scheduledItem }
+}
+
+async function sanitizeRoutineResponseContextForEnqueue(
+  routine: Routine,
+  trx: Kysely<Database>
+): Promise<Routine> {
+  const rawContext = routine.target_response_context
+  if (!rawContext) {
+    return routine
+  }
+
+  let parsed: Record<string, unknown>
+  try {
+    parsed = JSON.parse(rawContext) as Record<string, unknown>
+  } catch {
+    return routine
+  }
+
+  const activeBoundedTicketId = parsed.active_bounded_ticket_id
+  if (typeof activeBoundedTicketId !== 'string' || activeBoundedTicketId.length === 0) {
+    return routine
+  }
+
+  const ticket = await trx
+    .selectFrom('tickets')
+    .select(['id', 'status'])
+    .where('id', '=', activeBoundedTicketId)
+    .executeTakeFirst()
+
+  if (!ticket || !TERMINAL_TICKET_STATUSES.has(ticket.status)) {
+    return routine
+  }
+
+  const nextContext: Record<string, unknown> = { ...parsed }
+  for (const field of ROUTINE_BOUNDED_FRONTIER_FIELDS) {
+    delete nextContext[field]
+  }
+
+  const serializedContext = Object.keys(nextContext).length > 0 ? JSON.stringify(nextContext) : null
+
+  const updatedRoutine = await updateRoutine(
+    routine.id,
+    {
+      target_response_context: serializedContext,
+      last_evaluated_at: routine.last_evaluated_at,
+      last_fired_at: routine.last_fired_at,
+      last_status: routine.last_status,
+      next_run_at: routine.next_run_at,
+    },
+    trx
+  )
+
+  return updatedRoutine ?? { ...routine, target_response_context: serializedContext }
 }
 
 export async function enqueueRoutineRun(input: {
@@ -335,7 +395,7 @@ export async function createOneShotRoutineSchedule(input: {
   actionPrompt: string
   runAt: number
   sourceRef?: string | null
-  targetPluginInstanceId: string
+  targetPluginInstanceId: string | null
   targetSessionKey: string
   targetResponseContext?: string | null
   createdByKind: 'agent' | 'admin' | 'system'

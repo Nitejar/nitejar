@@ -1,5 +1,5 @@
 import type OpenAI from 'openai'
-import { getDb, type Agent, type WorkItem } from '@nitejar/database'
+import { listEffectiveGitHubRepoCapabilities, type Agent, type WorkItem } from '@nitejar/database'
 import {
   registerIntegrationProvider,
   type IntegrationProvider,
@@ -50,17 +50,10 @@ async function getAgentRepoAccess(
   agentId: string
 ): Promise<{ full_name: string; capabilities: string[] }[]> {
   try {
-    const db = getDb()
-    const rows = await db
-      .selectFrom('agent_repo_capabilities')
-      .innerJoin('github_repos', 'github_repos.id', 'agent_repo_capabilities.github_repo_id')
-      .select(['github_repos.full_name', 'agent_repo_capabilities.capabilities'])
-      .where('agent_repo_capabilities.agent_id', '=', agentId)
-      .execute()
-
+    const rows = await listEffectiveGitHubRepoCapabilities(agentId)
     return rows.map((row) => ({
-      full_name: row.full_name,
-      capabilities: JSON.parse(row.capabilities) as string[],
+      full_name: row.repoFullName,
+      capabilities: row.capabilities,
     }))
   } catch {
     return []

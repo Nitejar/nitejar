@@ -75,7 +75,7 @@ beforeEach(() => {
 })
 
 describe('platform control tools', () => {
-  it('rejects list_agents when dangerouslyUnrestricted is disabled', async () => {
+  it('rejects list_agents when fleet.agent.read is denied', async () => {
     mockedAssertAgentGrant.mockRejectedValue(new Error('platform control disabled'))
 
     const result = await listAgentsTool({}, baseContext)
@@ -85,7 +85,7 @@ describe('platform control tools', () => {
     expect(mockedListAgents).not.toHaveBeenCalled()
   })
 
-  it('lists agents when dangerouslyUnrestricted is enabled', async () => {
+  it('lists agents when fleet.agent.read is granted', async () => {
     mockedAssertAgentGrant.mockResolvedValue(undefined)
     mockedListAgents.mockResolvedValue([
       agent({ id: 'agent-1', handle: 'alpha', name: 'Alpha' }, { title: 'Ops' }),

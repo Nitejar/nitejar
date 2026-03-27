@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockSelectUser, mockAuditInsert, mockGetDb } = vi.hoisted(() => {
+const { mockSelectUser, mockAuditInsert, mockGetDb, mockListAgents } = vi.hoisted(() => {
   const selectUser = vi.fn()
   const auditInsert = vi.fn()
+  const listAgents = vi.fn()
   const getDb = vi.fn(() => ({
     selectFrom: vi.fn(() => ({
       select: vi.fn(() => ({
@@ -25,6 +26,7 @@ const { mockSelectUser, mockAuditInsert, mockGetDb } = vi.hoisted(() => {
     mockSelectUser: selectUser,
     mockAuditInsert: auditInsert,
     mockGetDb: getDb,
+    mockListAgents: listAgents,
   }
 })
 
@@ -32,7 +34,7 @@ vi.mock('@nitejar/database', () => ({
   findAgentById: vi.fn(),
   findMemoryById: vi.fn(),
   getDb: mockGetDb,
-  listAgents: vi.fn(),
+  listAgents: mockListAgents,
   listMemories: vi.fn(),
   updateAgent: vi.fn(),
   updateMemory: vi.fn(),
@@ -151,6 +153,18 @@ vi.mock('@/server/services/runtime-control', () => ({
   cancelRunByJob: vi.fn(() => Promise.resolve({ ok: true, dispatchId: 'dispatch-1' })),
 }))
 
+vi.mock('@/server/services/app-session-messaging', () => ({
+  sendAppSessionMessageForUser: vi.fn(() =>
+    Promise.resolve({
+      ok: true,
+      sessionKey: 'app:u-1:s-1',
+      workItemId: 'wi-1',
+      targetAgentIds: ['agent-1'],
+      createdSession: true,
+    })
+  ),
+}))
+
 vi.mock('better-auth/plugins', () => ({
   withMcpAuth: (_auth: unknown, handler: unknown) => handler,
 }))
@@ -171,6 +185,7 @@ describe('mcp route tools', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockSelectUser.mockResolvedValue({ id: 'u-1', role: 'admin', status: 'active' })
+    mockListAgents.mockResolvedValue([])
   })
 
   it('includes newly added tools in catalog', () => {
@@ -191,6 +206,7 @@ describe('mcp route tools', () => {
     expect(names).toContain('cancel_run')
     expect(names).toContain('set_plugin_instance_enabled')
     expect(names).toContain('set_plugin_instance_agent_assignment')
+    expect(names).toContain('send_app_session_message')
   })
 
   it('returns deterministic schema validation errors', async () => {
@@ -203,19 +219,29 @@ describe('mcp route tools', () => {
     ).rejects.toThrow('Invalid arguments: limit')
   })
 
-  it('enforces scope gate for write tools and records denied audit', async () => {
-    await expect(
-      __mcpTest.handleToolCall(
-        'pause_run',
-        { jobId: 'job-1' },
-        { userId: 'u-1', clientId: 'c-1', scopes: 'agents.read' }
-      )
-    ).rejects.toThrow('Missing required scope: agents.write')
-
-    const deniedLog = mockAuditInsert.mock.calls.find(
-      (call) => (call[0] as { result?: string }).result === 'denied'
+  it('allows read tools even when session scopes are empty', async () => {
+    const result = await __mcpTest.handleToolCall(
+      'list_agents',
+      {},
+      { userId: 'u-1', clientId: 'c-1', scopes: '' }
     )
-    expect(deniedLog).toBeTruthy()
+
+    expect(result).toEqual({ agents: [] })
+  })
+
+  it('allows write tools for admins even when session scopes are empty', async () => {
+    const result = await __mcpTest.handleToolCall(
+      'pause_run',
+      { jobId: 'job-1', actor: 'tester' },
+      { userId: 'u-1', clientId: 'c-1', scopes: '' }
+    )
+
+    expect(result).toEqual({ ok: true, dispatchId: 'dispatch-1' })
+
+    const allowedLog = mockAuditInsert.mock.calls.find(
+      (call) => (call[0] as { result?: string }).result === 'allowed'
+    )
+    expect(allowedLog).toBeTruthy()
   })
 
   it('enforces role gate for write tools and records denied audit', async () => {
@@ -225,7 +251,7 @@ describe('mcp route tools', () => {
       __mcpTest.handleToolCall(
         'pause_run',
         { jobId: 'job-1' },
-        { userId: 'u-1', clientId: 'c-1', scopes: 'agents.write' }
+        { userId: 'u-1', clientId: 'c-1', scopes: '' }
       )
     ).rejects.toThrow('Write operations require admin or superadmin role')
 
@@ -239,7 +265,7 @@ describe('mcp route tools', () => {
     const result = await __mcpTest.handleToolCall(
       'pause_run',
       { jobId: 'job-1', actor: 'tester' },
-      { userId: 'u-1', clientId: 'c-1', scopes: 'agents.write' }
+      { userId: 'u-1', clientId: 'c-1', scopes: '' }
     )
     expect(result).toEqual({ ok: true, dispatchId: 'dispatch-1' })
 
@@ -247,5 +273,21 @@ describe('mcp route tools', () => {
       (call) => (call[0] as { result?: string }).result === 'allowed'
     )
     expect(allowedLog).toBeTruthy()
+  })
+
+  it('sends app session messages through MCP', async () => {
+    const result = await __mcpTest.handleToolCall(
+      'send_app_session_message',
+      { agentId: 'agent-1', message: 'Inventory the current org state.' },
+      { userId: 'u-1', clientId: 'c-1', scopes: '' }
+    )
+
+    expect(result).toEqual({
+      ok: true,
+      sessionKey: 'app:u-1:s-1',
+      workItemId: 'wi-1',
+      targetAgentIds: ['agent-1'],
+      createdSession: true,
+    })
   })
 })

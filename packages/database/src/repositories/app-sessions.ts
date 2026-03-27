@@ -1,8 +1,10 @@
+import type { Kysely } from 'kysely'
 import { getDb } from '../db'
 import type {
   Agent,
   AppSession,
   AppSessionParticipant,
+  Database,
   NewAppSession,
   NewAppSessionParticipant,
 } from '../types'
@@ -36,9 +38,10 @@ export async function findAppSessionByKeyAndOwner(
 }
 
 export async function createAppSession(
-  data: Omit<NewAppSession, 'created_at' | 'updated_at' | 'last_activity_at'>
+  data: Omit<NewAppSession, 'created_at' | 'updated_at' | 'last_activity_at'>,
+  trx?: Kysely<Database>
 ): Promise<AppSession> {
-  const db = getDb()
+  const db = trx ?? getDb()
   const timestamp = now()
   return db
     .insertInto('app_sessions')
@@ -83,6 +86,30 @@ export async function listAppSessionsByOwner(
     .execute()
 }
 
+export async function listAppSessionsByOwnerAndPrefix(
+  ownerUserId: string,
+  prefix: string,
+  opts?: { limit?: number; excludeSessionKey?: string | null }
+): Promise<AppSession[]> {
+  const db = getDb()
+  const limit = Math.min(Math.max(opts?.limit ?? 20, 1), 100)
+  let query = db
+    .selectFrom('app_sessions')
+    .selectAll()
+    .where('owner_user_id', '=', ownerUserId)
+    .where('session_key', 'like', `${prefix}:%`)
+
+  if (opts?.excludeSessionKey) {
+    query = query.where('session_key', '!=', opts.excludeSessionKey)
+  }
+
+  return query
+    .orderBy('last_activity_at', 'desc')
+    .orderBy('created_at', 'desc')
+    .limit(limit)
+    .execute()
+}
+
 export async function listAppSessionParticipants(
   sessionKey: string
 ): Promise<AppSessionParticipant[]> {
@@ -99,10 +126,10 @@ export async function addAppSessionParticipants(input: {
   sessionKey: string
   agentIds: string[]
   addedByUserId: string
-}): Promise<void> {
+}, trx?: Kysely<Database>): Promise<void> {
   if (input.agentIds.length === 0) return
 
-  const db = getDb()
+  const db = trx ?? getDb()
   const timestamp = now()
   const values: NewAppSessionParticipant[] = input.agentIds.map((agentId) => ({
     session_key: input.sessionKey,

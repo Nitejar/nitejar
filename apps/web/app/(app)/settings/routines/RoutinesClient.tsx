@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { trpc } from '@/lib/trpc'
 import { cn } from '@/lib/utils'
@@ -286,6 +287,18 @@ function formatSessionKeyLabel(sessionKey: string): string {
   const githubRepo = sessionKey.match(/^github:([^#]+)$/)
   if (githubRepo) return `GitHub ${githubRepo[1]}`
 
+  const appStandalone = sessionKey.match(/^app:standalone:([^:]+):([^:]+)$/)
+  if (appStandalone) return `App Session (${appStandalone[1]})`
+
+  const appTicket = sessionKey.match(/^app:ticket:([^:]+):([^:]+)$/)
+  if (appTicket) return `Ticket Session ${appTicket[1]}`
+
+  const appGoal = sessionKey.match(/^app:goal:([^:]+):([^:]+)$/)
+  if (appGoal) return `Goal Session ${appGoal[1]}`
+
+  const appRoutine = sessionKey.match(/^app:routine:([^:]+):([^:]+)$/)
+  if (appRoutine) return `Routine Session ${appRoutine[1]}`
+
   return sessionKey
 }
 
@@ -559,6 +572,7 @@ function RuleSchemaReference() {
 // ---------------------------------------------------------------------------
 
 export function RoutinesClient() {
+  const router = useRouter()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [selectedRoutineId, setSelectedRoutineId] = useState<string | null>(null)
@@ -587,6 +601,10 @@ export function RoutinesClient() {
   )
   const runsQuery = trpc.routines.listRuns.useQuery(
     { routineId: selectedRoutineId ?? '', limit: 50, offset: 0 },
+    { enabled: Boolean(selectedRoutineId) }
+  )
+  const relatedSessionsQuery = trpc.sessions.listRelated.useQuery(
+    { routineId: selectedRoutineId ?? '', limit: 6 },
     { enabled: Boolean(selectedRoutineId) }
   )
 
@@ -662,6 +680,14 @@ export function RoutinesClient() {
     },
     onError: (err) => {
       toast.error(err.message)
+    },
+  })
+  const createRoutineSessionMutation = trpc.sessions.create.useMutation({
+    onSuccess: ({ sessionKey }) => {
+      router.push(`/sessions/${encodeURIComponent(sessionKey)}`)
+    },
+    onError: () => {
+      toast.error('Failed to start routine conversation')
     },
   })
 
@@ -809,6 +835,7 @@ export function RoutinesClient() {
   const routines = routinesQuery.data ?? []
 
   // Resolve selectedRoutine from the list
+  const selectedRoutine = routines.find((r) => r.id === selectedRoutineId) ?? null
   const selectedRoutineName = routines.find((r) => r.id === selectedRoutineId)?.name ?? null
 
   // Derive a summary line for the response context
@@ -993,6 +1020,79 @@ export function RoutinesClient() {
         </CardContent>
       </Card>
 
+      <Card className="border-white/10 bg-white/[0.02]">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Conversations</CardTitle>
+          <CardDescription>
+            {selectedRoutineName
+              ? `Fresh sessions created for "${selectedRoutineName}".`
+              : 'Select a routine to inspect or start conversations tied to it.'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {selectedRoutine ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-xs text-muted-foreground">
+                  New sessions for this routine start fresh and keep history as siblings.
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={createRoutineSessionMutation.isPending}
+                  onClick={() =>
+                    createRoutineSessionMutation.mutate({
+                      routineId: selectedRoutine.id,
+                      primaryAgentId: selectedRoutine.agent_id,
+                      title: selectedRoutine.name,
+                    })
+                  }
+                >
+                  {createRoutineSessionMutation.isPending ? 'Starting…' : 'Start session'}
+                </Button>
+              </div>
+              {relatedSessionsQuery.data?.items.length ? (
+                <div className="space-y-2">
+                  {relatedSessionsQuery.data.items.map((session) => (
+                    <Link
+                      key={session.sessionKey}
+                      href={`/sessions/${encodeURIComponent(session.sessionKey)}`}
+                      className="block rounded-lg border border-white/10 bg-white/[0.02] p-3 text-xs transition hover:bg-white/[0.04]"
+                    >
+                      <div className="font-medium text-foreground">{session.displayTitle}</div>
+                      <div className="mt-1 flex items-center justify-between gap-2 text-muted-foreground">
+                        <span className="truncate">{session.context.label}</span>
+                        <span className="shrink-0">
+                          <RelativeTime timestamp={session.lastActivityAt} />
+                        </span>
+                      </div>
+                      {session.preview ? (
+                        <div className="mt-2 line-clamp-2 text-muted-foreground/80">
+                          {session.preview}
+                        </div>
+                      ) : null}
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <Empty className="py-8">
+                  <EmptyHeader>
+                    <EmptyTitle>No conversations yet</EmptyTitle>
+                    <EmptyDescription>
+                      Start a session to create the first fresh conversation for this routine.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-white/10 px-4 py-6 text-xs text-muted-foreground">
+              Choose a routine from the catalog to view sibling conversations or start a fresh session.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* -- Run Receipts ------------------------------------------- */}
       <Card className="border-white/10 bg-white/[0.02]">
         <CardHeader className="pb-3">
@@ -1051,9 +1151,9 @@ export function RoutinesClient() {
               ) : null}
             </div>
           ) : (
-            <p className="text-xs text-muted-foreground">
-              Select a routine to inspect run history.
-            </p>
+            <div className="rounded-lg border border-dashed border-white/10 px-4 py-6 text-xs text-muted-foreground">
+              Choose a routine from the catalog to inspect its run history and receipts.
+            </div>
           )}
         </CardContent>
       </Card>

@@ -17,16 +17,7 @@ function uuid(): string {
   return crypto.randomUUID()
 }
 
-type PolicyConfigLegacy = {
-  allowEphemeralSandboxCreation?: boolean
-  allowRoutineManagement?: boolean
-  dangerouslyUnrestricted?: boolean
-}
-
 export type ResolvedPolicySource =
-  | {
-      sourceType: 'legacy_config'
-    }
   | {
       sourceType: 'agent_role' | 'team_role_default'
       roleId: string
@@ -54,7 +45,6 @@ export type ResolvedRoleSummary = {
   slug: string
   name: string
   charter: string | null
-  jobDescription: string | null
   escalationPosture: string | null
   sourceType: 'agent_role' | 'team_role_default'
   teamId?: string | null
@@ -65,21 +55,6 @@ export type ResolvedPolicy = {
   roles: ResolvedRoleSummary[]
   grants: ResolvedPolicyGrant[]
   defaults: ResolvedPolicyDefault[]
-  legacy: {
-    allowEphemeralSandboxCreation: boolean
-    allowRoutineManagement: boolean
-    dangerouslyUnrestricted: boolean
-  }
-}
-
-function parseLegacyPolicyConfig(configJson: string | null): PolicyConfigLegacy {
-  if (!configJson) return {}
-  try {
-    const parsed = JSON.parse(configJson) as PolicyConfigLegacy
-    return parsed && typeof parsed === 'object' ? parsed : {}
-  } catch {
-    return {}
-  }
 }
 
 function parseDefaultValue(valueJson: string): unknown {
@@ -236,7 +211,6 @@ export async function listAgentRoleAssignments(
       'roles.slug as role_slug',
       'roles.name as role_name',
       'roles.charter as role_charter',
-      'roles.job_description as role_job_description',
       'roles.escalation_posture as role_escalation_posture',
       'roles.active as role_active',
       'roles.created_at as role_created_at',
@@ -255,7 +229,6 @@ export async function listAgentRoleAssignments(
       slug: row.role_slug,
       name: row.role_name,
       charter: row.role_charter,
-      job_description: row.role_job_description,
       escalation_posture: row.role_escalation_posture,
       active: row.role_active,
       created_at: row.role_created_at,
@@ -301,7 +274,6 @@ export async function listTeamRoleDefaults(
       'roles.slug as role_slug',
       'roles.name as role_name',
       'roles.charter as role_charter',
-      'roles.job_description as role_job_description',
       'roles.escalation_posture as role_escalation_posture',
       'roles.active as role_active',
       'roles.created_at as role_created_at',
@@ -320,7 +292,6 @@ export async function listTeamRoleDefaults(
       slug: row.role_slug,
       name: row.role_name,
       charter: row.role_charter,
-      job_description: row.role_job_description,
       escalation_posture: row.role_escalation_posture,
       active: row.role_active,
       created_at: row.role_created_at,
@@ -451,7 +422,7 @@ export async function resolveEffectivePolicy(agentId: string): Promise<ResolvedP
   const db = getDb()
   const agent = await db
     .selectFrom('agents')
-    .select(['id', 'config'])
+    .select(['id'])
     .where('id', '=', agentId)
     .executeTakeFirst()
   if (!agent) {
@@ -462,8 +433,6 @@ export async function resolveEffectivePolicy(agentId: string): Promise<ResolvedP
   const defaultMap = new Map<string, ResolvedPolicyDefault>()
   const roles: ResolvedRoleSummary[] = []
   const seenRoleIds = new Set<string>()
-
-  const legacy = parseLegacyPolicyConfig(agent.config)
 
   // ---- Team role defaults: agent_teams → teams → team_role_defaults → roles ----
   const teamRoleRows = await db
@@ -478,7 +447,6 @@ export async function resolveEffectivePolicy(agentId: string): Promise<ResolvedP
       'roles.slug as role_slug',
       'roles.name as role_name',
       'roles.charter as role_charter',
-      'roles.job_description as role_job_description',
       'roles.escalation_posture as role_escalation_posture',
     ])
     .where('agent_teams.agent_id', '=', agentId)
@@ -493,7 +461,6 @@ export async function resolveEffectivePolicy(agentId: string): Promise<ResolvedP
         slug: row.role_slug,
         name: row.role_name,
         charter: row.role_charter,
-        jobDescription: row.role_job_description,
         escalationPosture: row.role_escalation_posture,
         sourceType: 'team_role_default',
         teamId: row.team_id,
@@ -522,7 +489,6 @@ export async function resolveEffectivePolicy(agentId: string): Promise<ResolvedP
         slug: assignment.role.slug,
         name: assignment.role.name,
         charter: assignment.role.charter,
-        jobDescription: assignment.role.job_description,
         escalationPosture: assignment.role.escalation_posture,
         sourceType: 'agent_role',
       })
@@ -537,25 +503,10 @@ export async function resolveEffectivePolicy(agentId: string): Promise<ResolvedP
     await addRoleContent(assignment.role.id, source, grantMap, defaultMap)
   }
 
-  // ---- Legacy config bridge ----
-  if (legacy.dangerouslyUnrestricted === true) {
-    upsertGrant(grantMap, {
-      action: '*',
-      resourceType: '*',
-      resourceId: null,
-      source: { sourceType: 'legacy_config' },
-    })
-  }
-
   return {
     roles,
     grants: [...grantMap.values()].sort((a, b) => a.action.localeCompare(b.action)),
     defaults: [...defaultMap.values()].sort((a, b) => a.key.localeCompare(b.key)),
-    legacy: {
-      allowEphemeralSandboxCreation: legacy.allowEphemeralSandboxCreation === true,
-      allowRoutineManagement: legacy.allowRoutineManagement === true,
-      dangerouslyUnrestricted: legacy.dangerouslyUnrestricted === true,
-    },
   }
 }
 

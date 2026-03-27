@@ -301,7 +301,6 @@ export const getRoleTool: ToolHandler = async (input, context) => {
           slug: role.slug,
           name: role.name,
           charter: role.charter ?? null,
-          job_description: role.job_description ?? null,
           escalation_posture: role.escalation_posture ?? null,
           active: role.active === 1,
           grants: grants.map((g) => ({
@@ -343,7 +342,6 @@ export const createRoleTool: ToolHandler = async (input, context) => {
       slug,
       name,
       charter,
-      job_description: null,
       escalation_posture: null,
       active: 1,
     })

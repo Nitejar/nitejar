@@ -18,6 +18,7 @@ import {
   listMessagesBySession,
   listChannelThreadSummaries,
   listActiveWorkSnapshotsForAgent,
+  resolveEffectivePolicy,
   type Agent,
   type Message,
   type WorkItem,
@@ -91,6 +92,7 @@ import { sanitize, sanitizeLabel } from './prompt-sanitize'
 import { isTavilyAvailable } from './web-search'
 import { isImageGenAvailable, isSTTAvailable, isTTSAvailable } from './media-settings'
 import { BackgroundTaskManager, type BackgroundTaskEvent } from './background-task-manager'
+import { deriveRuntimeToolAccess } from './tool-access'
 import { triageWorkItem, type TriageContext } from './triage'
 import { buildChannelPrelude, CHANNEL_PRELUDE_MAX_MESSAGES } from './channel-prelude'
 import { getSkippedFunctionToolCalls } from './steer-tool-batch'
@@ -180,6 +182,8 @@ export interface RunOptions {
     context: { workItemId: string; jobId: string; agentId: string },
     data: TData
   ) => Promise<{ data: TData; blocked: boolean }>
+  /** Explicit response context override supplied by the runtime dispatch layer. */
+  responseContext?: unknown
 }
 
 /**
@@ -190,6 +194,38 @@ export interface RunResult {
   finalResponse: string | null
   /** True if the agent hit the max turns limit */
   hitLimit?: boolean
+}
+
+type ChatCompletionChoice = OpenAI.ChatCompletion['choices'][number]
+
+function extractProviderErrorDetail(response: unknown): string | null {
+  if (!response || typeof response !== 'object') return null
+  const errorValue = (response as { error?: unknown }).error
+  if (!errorValue || typeof errorValue !== 'object') return null
+
+  const codeValue = (errorValue as { code?: unknown }).code
+  const messageValue = (errorValue as { message?: unknown }).message
+  const code =
+    typeof codeValue === 'string' || typeof codeValue === 'number' ? String(codeValue) : null
+  const message = typeof messageValue === 'string' ? messageValue.trim() : ''
+
+  if (!code && !message) return null
+  if (code && message) return `${message} (code ${code})`
+  return message || `Provider error (code ${code})`
+}
+
+export function getFirstChoiceOrThrow(response: unknown, label: string): ChatCompletionChoice {
+  const choicesValue = (response as { choices?: unknown } | null)?.choices
+  if (Array.isArray(choicesValue) && choicesValue[0]) {
+    return choicesValue[0] as ChatCompletionChoice
+  }
+
+  const providerError = extractProviderErrorDetail(response)
+  if (providerError) {
+    throw new Error(`${label} failed: ${providerError}`)
+  }
+
+  throw new Error(`${label} returned no choices`)
 }
 
 /**
@@ -444,7 +480,8 @@ export async function runAgent(
       integrationProviders,
       sourceProvider,
       options?.hookDispatch,
-      channelPrelude
+      channelPrelude,
+      options?.responseContext
     )
 
     // Post-process final response for final-mode channel providers.
@@ -674,7 +711,8 @@ async function runInferenceLoop(
   integrationProviders?: IntegrationProvider[],
   sourceProvider?: IntegrationProvider,
   hookDispatch?: RunOptions['hookDispatch'],
-  channelPrelude?: string
+  channelPrelude?: string,
+  explicitResponseContext?: unknown
 ): Promise<{
   finalResponse: string | null
   hitLimit: boolean
@@ -954,7 +992,7 @@ async function runInferenceLoop(
         discoveredSkills,
         resolvedDbSkills,
         pluginInstanceId: workItem.plugin_instance_id ?? undefined,
-        responseContext: extractResponseContext(workItem),
+        responseContext: extractResponseContext(workItem, explicitResponseContext),
         attachments: parsedPayload?.attachments,
         editToolMode,
         backgroundTaskManager: backgroundTaskManager ?? undefined,
@@ -977,7 +1015,7 @@ async function runInferenceLoop(
           discoveredSkills,
           resolvedDbSkills,
           pluginInstanceId: workItem.plugin_instance_id ?? undefined,
-          responseContext: extractResponseContext(workItem),
+          responseContext: extractResponseContext(workItem, explicitResponseContext),
           attachments: parsedPayload?.attachments,
           editToolMode,
           backgroundTaskManager: backgroundTaskManager ?? undefined,
@@ -1069,7 +1107,7 @@ async function runInferenceLoop(
       discoveredSkills,
       resolvedDbSkills,
       pluginInstanceId: workItem.plugin_instance_id ?? undefined,
-      responseContext: extractResponseContext(workItem),
+      responseContext: extractResponseContext(workItem, explicitResponseContext),
       attachments: parsedPayload?.attachments,
       editToolMode,
       backgroundTaskManager: backgroundTaskManager ?? undefined,
@@ -1078,19 +1116,24 @@ async function runInferenceLoop(
   }
 
   // Get tools in OpenAI format (empty if no sprite)
-  const [tavilyAvailable, imageGenAvailable, sttAvailable, ttsAvailable] = await Promise.all([
+  const [tavilyAvailable, imageGenAvailable, sttAvailable, ttsAvailable, resolvedPolicy] =
+    await Promise.all([
     isTavilyAvailable(),
     isImageGenAvailable(),
     isSTTAvailable(),
     isTTSAvailable(),
+    resolveEffectivePolicy(agent.id),
   ])
+
+  const toolAccess = deriveRuntimeToolAccess({
+    grants: resolvedPolicy.grants,
+  })
 
   const baseToolsUnfiltered = getOpenAITools({
     excludeWebTools: !tavilyAvailable,
     excludeSandboxTools: !spriteName,
     editToolMode,
-    allowEphemeralSandboxCreation: config.allowEphemeralSandboxCreation,
-    allowRoutineManagement: config.allowRoutineManagement,
+    runtimeToolAccess: toolAccess,
   })
   const baseTools = baseToolsUnfiltered.filter((tool) => {
     const name =
@@ -1642,12 +1685,7 @@ async function runInferenceLoop(
       throw lastModelError
     }
 
-    const choice = response.choices[0]
-    if (!choice) {
-      agentLog('No choice in response, breaking loop')
-      await endSpan(turnSpan, { finish_reason: 'no_choice' })
-      break
-    }
+    const choice = getFirstChoiceOrThrow(response, 'Model call')
 
     const assistantMessage = choice.message
 
@@ -2184,7 +2222,7 @@ async function runInferenceLoop(
         modelSpanId: null,
       })
 
-      const lastLookChoice = lastLookResp.choices[0]
+      const lastLookChoice = getFirstChoiceOrThrow(lastLookResp, 'Last look pass')
       const lastLookContent =
         typeof lastLookChoice?.message?.content === 'string'
           ? lastLookChoice.message.content.trim()
@@ -2676,7 +2714,7 @@ async function postProcessFinalResponse(
     label: 'Post-processing final response',
   })
 
-  const choice = response.choices[0]
+  const choice = getFirstChoiceOrThrow(response, 'Post-processing final response')
   const text = choice?.message?.content?.trim()
   if (!text) {
     throw new Error('Post-processing returned empty response')
@@ -2982,7 +3020,10 @@ function middleTruncate(text: string, maxLen: number): string {
  * Extract response context from a work item's JSON payload.
  * The webhook router stores it at `payload.responseContext`.
  */
-function extractResponseContext(workItem: WorkItem): unknown {
+function extractResponseContext(workItem: WorkItem, explicitResponseContext?: unknown): unknown {
+  if (explicitResponseContext !== undefined) {
+    return explicitResponseContext
+  }
   if (!workItem.payload) return undefined
   try {
     const parsed = JSON.parse(workItem.payload) as Record<string, unknown>

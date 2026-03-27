@@ -290,6 +290,7 @@ async function ensureHeartbeatSession(input: {
       owner_user_id: input.ownerUserId,
       title: input.title,
       primary_agent_id: input.agentId,
+      forked_from_session_key: null,
     })
   } else {
     await db

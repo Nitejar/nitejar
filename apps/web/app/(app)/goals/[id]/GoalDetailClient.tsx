@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   IconChevronDown,
@@ -638,6 +639,7 @@ function ProgressSettings({
 // ---------------------------------------------------------------------------
 
 export function GoalDetailClient({ goalId }: { goalId: string }) {
+  const router = useRouter()
   const utils = trpc.useUtils()
 
   // Tab + UI state
@@ -669,6 +671,10 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
   const heartbeatQuery = trpc.work.getHeartbeatConfig.useQuery({
     targetKind: 'goal',
     targetId: goalId,
+  })
+  const relatedSessionsQuery = trpc.sessions.listRelated.useQuery({
+    goalId,
+    limit: 6,
   })
 
   // Mutations
@@ -728,6 +734,12 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
       ])
     },
     onError: () => toast.error('Failed to save heartbeat'),
+  })
+  const startGoalSessionMutation = trpc.sessions.create.useMutation({
+    onSuccess: ({ sessionKey }) => {
+      router.push(`/sessions/${encodeURIComponent(sessionKey)}`)
+    },
+    onError: () => toast.error('Failed to start goal conversation'),
   })
 
   // Derived data
@@ -863,6 +875,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
 
   const doneTicketCount = goal.tickets.filter((t) => t.status === 'done').length
   const doneChildGoalCount = goal.childGoals.filter((c) => c.status === 'done').length
+  const goalConversationAgentId = goal.owner?.kind === 'agent' ? goal.owner.ref : null
   const progressSummary = formatGoalProgressSummary(goal)
   const ownerTitle = goal.owner?.kind === 'agent' ? (goal.owner.title ?? null) : null
   const ownerIsAgent = goal.owner?.kind === 'agent'
@@ -1495,6 +1508,56 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
                     </span>
                   </PropRow>
                 </div>
+              </section>
+
+              <section>
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-[0.65rem] uppercase tracking-[0.2em] text-white/35">
+                    Conversations
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2.5 text-[11px]"
+                    disabled={!goalConversationAgentId || startGoalSessionMutation.isPending}
+                    onClick={() => {
+                      if (!goalConversationAgentId) return
+                      startGoalSessionMutation.mutate({
+                        goalId,
+                        primaryAgentId: goalConversationAgentId,
+                        title: goal.title,
+                      })
+                    }}
+                  >
+                    {startGoalSessionMutation.isPending ? 'Starting…' : 'Start session'}
+                  </Button>
+                </div>
+                {relatedSessionsQuery.data?.items.length ? (
+                  <div className="space-y-1">
+                    {relatedSessionsQuery.data.items.slice(0, 4).map((session) => (
+                      <Link
+                        key={session.sessionKey}
+                        href={`/sessions/${encodeURIComponent(session.sessionKey)}`}
+                        className="block rounded-md px-2 py-1.5 transition hover:bg-white/[0.04]"
+                      >
+                        <div className="truncate text-xs text-white/70">{session.displayTitle}</div>
+                        <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-white/30">
+                          <span className="truncate">{session.context.label}</span>
+                          <span className="shrink-0">
+                            <RelativeTime timestamp={session.lastActivityAt} />
+                          </span>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs leading-5 text-white/35">
+                    {goalConversationAgentId
+                      ? 'No goal conversations yet. Start one to create a fresh session for this goal.'
+                      : 'Assign an agent owner to start goal conversations.'}
+                  </p>
+                )}
               </section>
 
               {/* Sub-goals summary */}

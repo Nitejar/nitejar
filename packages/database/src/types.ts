@@ -16,6 +16,7 @@ export interface Database {
   github_installations: GithubInstallationTable
   github_repos: GithubRepoTable
   agent_repo_capabilities: AgentRepoCapabilityTable
+  role_github_repo_capabilities: RoleGithubRepoCapabilityTable
   audit_logs: AuditLogTable
   agents: AgentTable
   agent_sandboxes: AgentSandboxTable
@@ -290,6 +291,18 @@ export interface AgentRepoCapabilityTable {
 export type AgentRepoCapability = Selectable<AgentRepoCapabilityTable>
 export type NewAgentRepoCapability = Insertable<AgentRepoCapabilityTable>
 export type AgentRepoCapabilityUpdate = Updateable<AgentRepoCapabilityTable>
+
+export interface RoleGithubRepoCapabilityTable {
+  role_id: string
+  github_repo_id: number
+  capabilities: string // JSON string array (e.g., ["read_repo","open_pr"])
+  created_at: Generated<number>
+  updated_at: Generated<number>
+}
+
+export type RoleGithubRepoCapability = Selectable<RoleGithubRepoCapabilityTable>
+export type NewRoleGithubRepoCapability = Insertable<RoleGithubRepoCapabilityTable>
+export type RoleGithubRepoCapabilityUpdate = Updateable<RoleGithubRepoCapabilityTable>
 
 // ============================================================================
 // Audit Logs
@@ -587,7 +600,6 @@ export interface RoleTable {
   slug: string
   name: string
   charter: string | null
-  job_description: string | null
   escalation_posture: string | null
   active: Generated<number> // 0 or 1
   created_at: Generated<number>
@@ -848,6 +860,7 @@ export interface AppSessionTable {
   owner_user_id: string
   primary_agent_id: string
   title: string | null
+  forked_from_session_key: string | null
   created_at: Generated<number>
   updated_at: Generated<number>
   last_activity_at: Generated<number>

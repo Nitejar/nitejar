@@ -2,19 +2,35 @@ import type Anthropic from '@anthropic-ai/sdk'
 import {
   assertAgentGrant,
   claimTicket,
+  createOneShotRoutineSchedule,
   createGoal,
   createTicket,
+  createTicketLink,
+  createWorkItem,
   createWorkUpdate,
+  enqueueToLane,
+  findAgentById,
   findGoalById,
+  listAppSessionParticipantAgents,
   findTicketById,
+  findTicketBySessionKey,
+  findTicketByWorkItemId,
   getDb,
   listGoals,
   listLinkedWorkItemsForTicket,
   listTicketLinksByTicket,
   listTickets,
+  touchAppSessionLastActivity,
   updateTicket,
 } from '@nitejar/database'
 import type { ToolHandler } from '../types'
+
+const MESSAGE_TITLE_MAX_CHARS = 100
+const APP_CHAT_DEBOUNCE_MS = 1000
+const APP_CHAT_MAX_QUEUED = 10
+const RUN_TICKET_DEDUPE_WINDOW_SEC = 120
+const DEFAULT_TICKET_EXECUTION_MESSAGE =
+  'Execute the linked ticket now. Inspect live ticket state, goal context, recent receipts, and the current session before acting. Advance the work with at least one durable artifact, and leave the next concrete step in motion before you stop.'
 
 async function resolveActorLabel(kind: string | null, ref: string | null): Promise<string> {
   if (!kind || !ref) return 'unassigned'
@@ -60,6 +76,52 @@ function requireAgentId(context: { agentId?: string }): string {
     throw new Error('Agent context is required.')
   }
   return context.agentId
+}
+
+function parseMetadataJson(value: unknown): string | null {
+  if (value === undefined || value === null) return null
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return null
+    try {
+      JSON.parse(trimmed)
+      return trimmed
+    } catch {
+      throw new Error('metadata_json must be valid JSON.')
+    }
+  }
+
+  try {
+    return JSON.stringify(value)
+  } catch {
+    throw new Error('metadata_json must be JSON-serializable.')
+  }
+}
+
+function now(): number {
+  return Math.floor(Date.now() / 1000)
+}
+
+function truncateText(text: string, maxChars: number): string {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  if (normalized.length <= maxChars) return normalized
+  return `${normalized.slice(0, maxChars - 1)}…`
+}
+
+function buildTicketExecutionMessage(input: {
+  title: string
+  body: string | null
+  message?: string | null
+}): string {
+  const custom = input.message?.trim()
+  if (custom) return custom
+
+  const bodySnippet = input.body?.trim()
+  if (!bodySnippet) {
+    return `${DEFAULT_TICKET_EXECUTION_MESSAGE}\n\nTicket: ${input.title}`
+  }
+
+  return `${DEFAULT_TICKET_EXECUTION_MESSAGE}\n\nTicket: ${input.title}\nScope:\n${bodySnippet}`
 }
 
 export const searchGoalsDefinition: Anthropic.Tool = {
@@ -383,13 +445,16 @@ export const postWorkUpdateDefinition: Anthropic.Tool = {
     properties: {
       goal_id: { type: 'string', description: 'Optional goal ID.' },
       ticket_id: { type: 'string', description: 'Optional ticket ID.' },
-      team_id: { type: 'string', description: 'Optional team ID.' },
       kind: {
         type: 'string',
         enum: ['note', 'status', 'heartbeat'],
         description: 'Update kind (default: note).',
       },
       body: { type: 'string', description: 'The update text.' },
+      metadata_json: {
+        description:
+          'Optional JSON object or JSON string for structured receipts such as routine IDs, work item IDs, or autonomy-cycle markers.',
+      },
     },
     required: ['body'],
   },
@@ -401,23 +466,35 @@ export const postWorkUpdateTool: ToolHandler = async (input, context) => {
   const ticketId = typeof input.ticket_id === 'string' ? input.ticket_id.trim() : ''
   const teamId = typeof input.team_id === 'string' ? input.team_id.trim() : ''
   const body = typeof input.body === 'string' ? input.body.trim() : ''
+  const metadataJson = parseMetadataJson(input.metadata_json)
   const kind =
     typeof input.kind === 'string' && ['note', 'status', 'heartbeat'].includes(input.kind)
       ? input.kind
       : 'note'
 
-  if (!goalId && !ticketId && !teamId) {
-    return { success: false, error: 'goal_id, ticket_id, or team_id is required.' }
+  if (teamId) {
+    return {
+      success: false,
+      error: 'team_id is no longer supported in post_work_update. Use goal_id or ticket_id only.',
+    }
+  }
+
+  if (!goalId && !ticketId) {
+    return { success: false, error: 'goal_id or ticket_id is required.' }
   }
   if (!body) {
     return { success: false, error: 'body is required.' }
   }
+  const ticket = ticketId ? await findTicketById(ticketId) : null
+  const resolvedGoalId = ticket ? (ticket.goal_id ?? '') : goalId
+
+  if (ticketId && !ticket) {
+    return { success: false, error: `Ticket ${ticketId} not found.` }
+  }
+
   if (kind === 'heartbeat') {
-    if (!goalId) {
+    if (!resolvedGoalId) {
       return { success: false, error: 'Heartbeat updates must target a goal.' }
-    }
-    if (teamId) {
-      return { success: false, error: 'Team heartbeat updates have been removed.' }
     }
   }
 
@@ -432,23 +509,352 @@ export const postWorkUpdateTool: ToolHandler = async (input, context) => {
     await assertAgentGrant({
       agentId,
       action: 'work.goal.write',
-      resourceType: goalId ? 'goal' : 'team',
-      resourceId: goalId || teamId || null,
+      resourceType: 'goal',
+      resourceId: goalId,
     })
   }
 
   await createWorkUpdate({
-    goal_id: goalId || null,
+    goal_id: resolvedGoalId || null,
     ticket_id: ticketId || null,
     team_id: teamId || null,
     author_kind: 'agent',
     author_ref: agentId,
     kind,
     body,
-    metadata_json: null,
+    metadata_json: metadataJson,
   })
 
   return { success: true, output: 'Work update posted.' }
+}
+
+export const linkTicketReceiptDefinition: Anthropic.Tool = {
+  name: 'link_ticket_receipt',
+  description:
+    'Attach a concrete receipt to a ticket so sessions and work items are visibly tied to the ticket.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      ticket_id: { type: 'string', description: 'Ticket ID to attach the receipt to.' },
+      kind: {
+        type: 'string',
+        enum: ['session', 'work_item', 'external'],
+        description: 'Receipt kind.',
+      },
+      ref: { type: 'string', description: 'Receipt reference such as session key, work item ID, or URL.' },
+      label: { type: 'string', description: 'Optional human-friendly label.' },
+      metadata_json: {
+        description:
+          'Optional JSON object or JSON string for structured receipt metadata such as autonomy-cycle IDs.',
+      },
+    },
+    required: ['ticket_id', 'kind', 'ref'],
+  },
+}
+
+export const linkTicketReceiptTool: ToolHandler = async (input, context) => {
+  const agentId = requireAgentId(context)
+  const ticketId = typeof input.ticket_id === 'string' ? input.ticket_id.trim() : ''
+  const kind =
+    typeof input.kind === 'string' && ['session', 'work_item', 'external'].includes(input.kind)
+      ? input.kind
+      : ''
+  const ref = typeof input.ref === 'string' ? input.ref.trim() : ''
+  const label = typeof input.label === 'string' ? input.label.trim() : null
+  const metadataJson = parseMetadataJson(input.metadata_json)
+
+  if (!ticketId) {
+    return { success: false, error: 'ticket_id is required.' }
+  }
+  if (!kind) {
+    return { success: false, error: 'kind must be one of: session, work_item, external.' }
+  }
+  if (!ref) {
+    return { success: false, error: 'ref is required.' }
+  }
+
+  await assertAgentGrant({
+    agentId,
+    action: 'work.ticket.write',
+    resourceType: 'ticket',
+    resourceId: ticketId,
+  })
+
+  const ticket = await findTicketById(ticketId)
+  if (!ticket) {
+    return { success: false, error: `Ticket "${ticketId}" not found.` }
+  }
+
+  if (kind === 'session') {
+    const existing = await findTicketBySessionKey(ref)
+    if (existing && existing.id !== ticket.id) {
+      return { success: false, error: `Session "${ref}" is already linked to ticket ${existing.id}.` }
+    }
+  }
+
+  if (kind === 'work_item') {
+    const existing = await findTicketByWorkItemId(ref)
+    if (existing && existing.id !== ticket.id) {
+      return { success: false, error: `Work item "${ref}" is already linked to ticket ${existing.id}.` }
+    }
+  }
+
+  await createTicketLink({
+    ticket_id: ticket.id,
+    kind,
+    ref,
+    label,
+    metadata_json: metadataJson,
+    created_by_kind: 'agent',
+    created_by_ref: agentId,
+  })
+
+  await createWorkUpdate({
+    goal_id: ticket.goal_id,
+    ticket_id: ticket.id,
+    team_id: null,
+    author_kind: 'agent',
+    author_ref: agentId,
+    kind: 'note',
+    body: `Linked ${kind} receipt ${ref}.`,
+    metadata_json: metadataJson,
+  })
+
+  return { success: true, output: `Linked ${kind} receipt ${ref} to ticket ${ticket.id}.` }
+}
+
+export const runTicketNowDefinition: Anthropic.Tool = {
+  name: 'run_ticket_now',
+  description:
+    'Immediately enqueue a ticket execution pass in the current app session so a hot lane can continue without waiting for the next heartbeat.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      ticket_id: { type: 'string', description: 'Ticket ID to execute now.' },
+      message: {
+        type: 'string',
+        description:
+          'Optional custom execution instruction. Defaults to a receipt-first ticket execution prompt.',
+      },
+      link_work_item_receipt: {
+        type: 'boolean',
+        description:
+          'When true (default), attach the queued work item to the ticket as a visible receipt.',
+      },
+    },
+    required: ['ticket_id'],
+  },
+}
+
+export const runTicketNowTool: ToolHandler = async (input, context) => {
+  const agentId = requireAgentId(context)
+  const ticketId = typeof input.ticket_id === 'string' ? input.ticket_id.trim() : ''
+  const sessionKey = context.sessionKey?.trim() ?? ''
+  const customMessage = typeof input.message === 'string' ? input.message.trim() : ''
+  const linkWorkItemReceipt = input.link_work_item_receipt !== false
+
+  if (!ticketId) {
+    return { success: false, error: 'ticket_id is required.' }
+  }
+  if (!sessionKey) {
+    return {
+      success: false,
+      error: 'run_ticket_now requires an active app session context.',
+    }
+  }
+
+  await assertAgentGrant({
+    agentId,
+    action: 'work.ticket.write',
+    resourceType: 'ticket',
+    resourceId: ticketId,
+  })
+
+  const [ticket, agent] = await Promise.all([findTicketById(ticketId), findAgentById(agentId)])
+  if (!ticket) {
+    return { success: false, error: `Ticket "${ticketId}" not found.` }
+  }
+  if (!agent) {
+    return { success: false, error: `Agent "${agentId}" not found.` }
+  }
+
+  const participants = await listAppSessionParticipantAgents(sessionKey)
+  if (!participants.some((participant) => participant.id === agentId)) {
+    return {
+      success: false,
+      error: `Agent "${agent.handle}" is not a participant in session "${sessionKey}".`,
+    }
+  }
+
+  if (
+    ticket.assignee_kind !== 'agent' ||
+    ticket.assignee_ref !== agentId ||
+    ticket.status !== 'in_progress'
+  ) {
+    await claimTicket(ticket.id, {
+      assigneeKind: 'agent',
+      assigneeRef: agentId,
+      claimedByKind: 'agent',
+      claimedByRef: agentId,
+    })
+  }
+
+  const goal = ticket.goal_id ? await findGoalById(ticket.goal_id) : null
+  const message = buildTicketExecutionMessage({
+    title: ticket.title,
+    body: ticket.body,
+    message: customMessage || null,
+  })
+  const timestamp = now()
+  const recentLinkedWorkItems = await listLinkedWorkItemsForTicket(ticket.id)
+  const sourceRef = `app-agent:${agentId}:ticket:${ticket.id}`
+  const existingRecentWorkItem = recentLinkedWorkItems.find(
+    (item) =>
+      item.session_key === sessionKey &&
+      item.source === 'app_chat' &&
+      item.source_ref === sourceRef &&
+      item.created_at >= timestamp - RUN_TICKET_DEDUPE_WINDOW_SEC
+  )
+
+  if (existingRecentWorkItem) {
+    return {
+      success: true,
+      output: `Skipped duplicate ticket run for ${ticket.id}; recent work item ${existingRecentWorkItem.id} already exists in session ${sessionKey}.`,
+    }
+  }
+
+  if (context.jobId) {
+    const recentTicketLinks = await listTicketLinksByTicket(ticket.id)
+    const existingRecentScheduledFollowup = recentTicketLinks.find(
+      (link) =>
+        link.kind === 'external' &&
+        link.ref.startsWith('scheduled_item:') &&
+        link.created_at >= timestamp - RUN_TICKET_DEDUPE_WINDOW_SEC
+    )
+
+    if (existingRecentScheduledFollowup) {
+      return {
+        success: true,
+        output: `Skipped duplicate ticket follow-up for ${ticket.id}; recent scheduled receipt ${existingRecentScheduledFollowup.ref} already exists in session ${sessionKey}.`,
+      }
+    }
+
+    const { routine, scheduledItem } = await createOneShotRoutineSchedule({
+      agentId,
+      name: `Scheduled ticket follow-up (${truncateText(ticket.title, 40)})`,
+      description: `Ticket ${ticket.id}`,
+      actionPrompt: message,
+      runAt: timestamp + 60,
+      sourceRef: `ticket:${ticket.id}`,
+      targetPluginInstanceId: context.pluginInstanceId ?? null,
+      targetSessionKey: sessionKey,
+      targetResponseContext: context.responseContext ? JSON.stringify(context.responseContext) : null,
+      createdByKind: 'agent',
+      createdByRef: agentId,
+    })
+
+    if (linkWorkItemReceipt) {
+      await createTicketLink({
+        ticket_id: ticket.id,
+        kind: 'external',
+        ref: `scheduled_item:${scheduledItem.id}`,
+        label: `Scheduled follow-up from session ${sessionKey}`,
+        metadata_json: JSON.stringify({
+          receiptKind: 'ticket_run_spike',
+          sessionKey,
+          routineId: routine.id,
+          scheduledItemId: scheduledItem.id,
+        }),
+        created_by_kind: 'agent',
+        created_by_ref: agentId,
+      })
+    }
+
+    return {
+      success: true,
+      output: `Scheduled ticket ${ticket.id} in session ${sessionKey} as scheduled item ${scheduledItem.id} (routine ${routine.id}).`,
+    }
+  }
+
+  const workItem = await createWorkItem({
+    plugin_instance_id: context.pluginInstanceId ?? null,
+    session_key: sessionKey,
+    source: 'app_chat',
+    source_ref: sourceRef,
+    status: 'NEW',
+    title: truncateText(message, MESSAGE_TITLE_MAX_CHARS),
+    payload: JSON.stringify({
+      body: message,
+      senderName: agent.name,
+      sessionKey,
+      targetAgentIds: [agentId],
+      ticketId: ticket.id,
+      ticketTitle: ticket.title,
+      ticketStatus: ticket.status,
+      goalId: goal?.id ?? undefined,
+      goalTitle: goal?.title ?? undefined,
+      goalStatus: goal?.status ?? undefined,
+      goalOutcome: goal?.outcome ?? undefined,
+      actor: {
+        kind: 'agent',
+        agentId: agent.id,
+        handle: agent.handle,
+        displayName: agent.name,
+        source: 'ticket_run_tool',
+      },
+    }),
+  })
+
+  const queueKey = `${sessionKey}:${agentId}`
+  await enqueueToLane(
+    {
+      queue_key: queueKey,
+      work_item_id: workItem.id,
+      plugin_instance_id: context.pluginInstanceId ?? null,
+      response_context: context.responseContext ? JSON.stringify(context.responseContext) : null,
+      text: message,
+      sender_name: agent.name,
+      arrived_at: timestamp,
+      status: 'pending',
+      dispatch_id: null,
+      drop_reason: null,
+    },
+    {
+      queueKey,
+      sessionKey,
+      agentId,
+      pluginInstanceId: context.pluginInstanceId ?? null,
+      arrivedAt: timestamp,
+      debounceMs: APP_CHAT_DEBOUNCE_MS,
+      maxQueued: APP_CHAT_MAX_QUEUED,
+      mode: 'steer',
+    }
+  )
+
+  await touchAppSessionLastActivity(sessionKey)
+
+  if (linkWorkItemReceipt) {
+    const existingLinkedTicket = await findTicketByWorkItemId(workItem.id)
+    if (!existingLinkedTicket) {
+      await createTicketLink({
+        ticket_id: ticket.id,
+        kind: 'work_item',
+        ref: workItem.id,
+        label: `Queued from session ${sessionKey}`,
+        metadata_json: JSON.stringify({
+          receiptKind: 'ticket_run_spike',
+          sessionKey,
+        }),
+        created_by_kind: 'agent',
+        created_by_ref: agentId,
+      })
+    }
+  }
+
+  return {
+    success: true,
+    output: `Queued ticket ${ticket.id} in session ${sessionKey} as work item ${workItem.id}.`,
+  }
 }
 
 export const createGoalDefinition: Anthropic.Tool = {
@@ -681,6 +1087,8 @@ export const workDefinitions: Anthropic.Tool[] = [
   claimTicketDefinition,
   updateTicketDefinition,
   postWorkUpdateDefinition,
+  linkTicketReceiptDefinition,
+  runTicketNowDefinition,
   createGoalDefinition,
   deleteGoalDefinition,
   createTicketDefinition,

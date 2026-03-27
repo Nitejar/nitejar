@@ -4,6 +4,7 @@ import path from 'node:path'
 import process from 'node:process'
 import {
   addAppSessionParticipants,
+  buildStandaloneAppSessionKey,
   createAppSession,
   findAgentById,
   getDb,
@@ -209,12 +210,13 @@ async function main(): Promise<number> {
     })
     .execute()
 
-  const sessionKey = `app:${userId}:${crypto.randomUUID()}`
+  const sessionKey = buildStandaloneAppSessionKey(userId, crypto.randomUUID())
   await createAppSession({
     session_key: sessionKey,
     owner_user_id: userId,
     primary_agent_id: agent.id,
     title: 'Media workflow smoke',
+    forked_from_session_key: null,
   })
 
   await addAppSessionParticipants({

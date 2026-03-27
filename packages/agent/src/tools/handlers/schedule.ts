@@ -81,13 +81,6 @@ export const scheduleCheckTool: ToolHandler = async (input, context) => {
   const reference = typeof input.reference === 'string' ? input.reference.trim() : undefined
   const runAt = Math.floor(Date.now() / 1000) + delayMinutes * 60
 
-  if (!context.pluginInstanceId) {
-    return {
-      success: false,
-      error: 'Cannot schedule a check without a plugin instance delivery target.',
-    }
-  }
-
   const { routine, scheduledItem } = await createOneShotRoutineSchedule({
     agentId: context.agentId,
     name: `Scheduled check (${delayMinutes}m)`,
@@ -95,7 +88,7 @@ export const scheduleCheckTool: ToolHandler = async (input, context) => {
     actionPrompt: instructions,
     runAt,
     sourceRef: reference ?? null,
-    targetPluginInstanceId: context.pluginInstanceId,
+    targetPluginInstanceId: context.pluginInstanceId ?? null,
     targetSessionKey: context.sessionKey,
     targetResponseContext: context.responseContext ? JSON.stringify(context.responseContext) : null,
     createdByKind: 'agent',

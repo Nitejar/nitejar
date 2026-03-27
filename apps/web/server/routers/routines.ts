@@ -19,6 +19,14 @@ import { getAlwaysTrueRuleForEnvelope, parseRoutineRule } from '../services/rout
 const triggerKindSchema = z.enum(['cron', 'event', 'condition', 'oneshot'])
 const createdByKindSchema = z.enum(['admin', 'agent', 'system'])
 const GOAL_HEARTBEAT_SESSION_KEY_RE = /^work:goal:(.+):heartbeat$/
+const targetPluginInstanceIdSchema = z.preprocess((value) => {
+  if (typeof value !== 'string') {
+    return value ?? null
+  }
+
+  const trimmed = value.trim()
+  return trimmed ? trimmed : null
+}, z.string().nullable())
 
 const createUpdateInputSchema = z.object({
   name: z.string().trim().min(1),
@@ -29,7 +37,7 @@ const createUpdateInputSchema = z.object({
   ruleJson: z.unknown(),
   conditionProbe: z.string().trim().optional(),
   conditionConfig: z.unknown().optional(),
-  targetPluginInstanceId: z.string().trim().min(1),
+  targetPluginInstanceId: targetPluginInstanceIdSchema,
   targetSessionKey: z.string().trim().min(1),
   targetResponseContext: z.unknown().optional(),
   actionPrompt: z.string().trim().min(1),
@@ -279,7 +287,7 @@ export const routinesRouter = router({
       }),
       condition_probe: input.conditionProbe ?? null,
       condition_config: serializeConditionConfig(input.conditionConfig),
-      target_plugin_instance_id: input.targetPluginInstanceId,
+      target_plugin_instance_id: input.targetPluginInstanceId ?? null,
       target_session_key: input.targetSessionKey,
       target_response_context: normalizeTargetResponseContext(input.targetResponseContext),
       action_prompt: input.actionPrompt,
@@ -342,7 +350,9 @@ export const routinesRouter = router({
             ? serializeConditionConfig(input.patch.conditionConfig)
             : existing.condition_config,
         target_plugin_instance_id:
-          input.patch.targetPluginInstanceId ?? existing.target_plugin_instance_id,
+          input.patch.targetPluginInstanceId !== undefined
+            ? input.patch.targetPluginInstanceId
+            : existing.target_plugin_instance_id,
         target_session_key: input.patch.targetSessionKey ?? existing.target_session_key,
         target_response_context:
           input.patch.targetResponseContext !== undefined

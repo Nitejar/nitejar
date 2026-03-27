@@ -1,20 +1,10 @@
 import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
-import { getDb } from '@nitejar/database'
+import { GITHUB_REPO_CAPABILITY_IDS, getDb } from '@nitejar/database'
 import { createAppAuth, getGitHubAppConfig } from '@nitejar/plugin-handlers/github'
 import { protectedProcedure, router } from '../trpc'
 
-const capabilitySchema = z.enum([
-  'read_repo',
-  'create_branch',
-  'push_branch',
-  'open_pr',
-  'comment',
-  'request_review',
-  'label_issue_pr',
-  'review_pr',
-  'merge_pr',
-])
+const capabilitySchema = z.enum(GITHUB_REPO_CAPABILITY_IDS)
 
 export const capabilitiesRouter = router({
   listRepos: protectedProcedure

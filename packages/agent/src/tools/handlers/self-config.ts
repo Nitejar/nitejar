@@ -20,7 +20,7 @@ export const getSelfConfigDefinition: Anthropic.Tool = {
 
 export const getSelfPolicyDefinition: Anthropic.Tool = {
   name: 'get_self_policy',
-  description: 'View your effective roles, grants, defaults, and legacy compatibility posture.',
+  description: 'View your effective roles, grants, and defaults.',
   input_schema: {
     type: 'object' as const,
     properties: {},
@@ -51,9 +51,6 @@ export const getSelfConfigTool: ToolHandler = async (_input, context) => {
   const model = parsed.model ?? 'default'
   const temperature = parsed.temperature ?? 'default'
   const maxTokens = parsed.maxTokens ?? 'default'
-  const ephemeralCreationEnabled = parsed.allowEphemeralSandboxCreation === true
-  const routineManagementEnabled = parsed.allowRoutineManagement === true
-  const dangerousModeEnabled = parsed.dangerouslyUnrestricted === true
 
   const lines = [
     `Handle: @${agent.handle}`,
@@ -66,9 +63,6 @@ export const getSelfConfigTool: ToolHandler = async (_input, context) => {
     `Connected Plugins: ${pluginInstances.length}`,
     `Sandboxes: ${sandboxes.length}`,
     'Start Sandbox: home',
-    `Ephemeral Sandbox Creation: ${ephemeralCreationEnabled ? 'enabled' : 'disabled'}`,
-    `Routine Management: ${routineManagementEnabled ? 'enabled' : 'disabled'}`,
-    `Dangerously Unrestricted: ${dangerousModeEnabled ? 'enabled' : 'disabled'}`,
     `Sprite: ${agent.sprite_id ?? 'none'}`,
     `Created: ${new Date(agent.created_at * 1000).toISOString()}`,
   ]
@@ -104,7 +98,6 @@ export const getSelfPolicyTool: ToolHandler = async (_input, context) => {
           roles: resolved.roles,
           grants: resolved.grants,
           defaults: resolved.defaults,
-          legacyCompatibility: resolved.legacy,
         },
         null,
         2

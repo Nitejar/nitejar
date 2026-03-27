@@ -1,5 +1,12 @@
 import type Anthropic from '@anthropic-ai/sdk'
-import { assertAgentGrant, getDb } from '@nitejar/database'
+import {
+  assertAgentGrant,
+  filterGitHubRepoCapabilitiesByPolicy,
+  getDb,
+  listEffectiveGitHubRepoCapabilities,
+  resolveEffectiveGitHubRepoCapabilities,
+  resolveEffectivePolicy,
+} from '@nitejar/database'
 import { refreshSpriteNetworkPolicy, writeFile } from '@nitejar/sprites'
 import { getGitHubAppConfig } from '@nitejar/plugin-handlers/github'
 import { GitHubCredentialProvider } from '@nitejar/plugin-handlers/github/credential-provider'
@@ -103,9 +110,14 @@ async function resolveRepoRecord(
     return repoRecord ? { repoRecord } : { error: 'GitHub repository not found.' }
   }
 
+  const effectiveRepos = await listEffectiveGitHubRepoCapabilities(agentId)
+  const repoIds = effectiveRepos.map((repo) => repo.githubRepoId)
+  if (repoIds.length === 0) {
+    return { error: 'GitHub repository not found.' }
+  }
+
   const candidates = await db
-    .selectFrom('agent_repo_capabilities')
-    .innerJoin('github_repos', 'github_repos.id', 'agent_repo_capabilities.github_repo_id')
+    .selectFrom('github_repos')
     .innerJoin('github_installations', 'github_installations.id', 'github_repos.installation_id')
     .select([
       'github_repos.id as github_repo_id',
@@ -113,7 +125,7 @@ async function resolveRepoRecord(
       'github_installations.installation_id as installation_id',
       'github_installations.plugin_instance_id as plugin_instance_id',
     ])
-    .where('agent_repo_capabilities.agent_id', '=', agentId)
+    .where('github_repos.id', 'in', repoIds)
     .execute()
 
   if (candidates.length === 1) {
@@ -127,27 +139,6 @@ async function resolveRepoRecord(
   }
 
   return { error: 'GitHub repository not found.' }
-}
-
-async function loadGrantedCapabilities(agentId: string, githubRepoId: number): Promise<string[]> {
-  const db = getDb()
-  const capabilityRow = await db
-    .selectFrom('agent_repo_capabilities')
-    .select(['capabilities'])
-    .where('agent_id', '=', agentId)
-    .where('github_repo_id', '=', githubRepoId)
-    .executeTakeFirst()
-
-  if (!capabilityRow?.capabilities) {
-    return []
-  }
-
-  try {
-    const parsed = JSON.parse(capabilityRow.capabilities) as string[]
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
 }
 
 export const configureGitHubCredentialsTool: ToolHandler = async (input, context) => {
@@ -170,10 +161,15 @@ export const configureGitHubCredentialsTool: ToolHandler = async (input, context
     return { success: false, error: repoError ?? 'GitHub repository not found.' }
   }
 
-  const grantedCapabilities = await loadGrantedCapabilities(
-    context.agentId,
-    repoRecord.github_repo_id
-  )
+  const [resolvedPolicy, effectiveCapabilities] = await Promise.all([
+    resolveEffectivePolicy(context.agentId),
+    resolveEffectiveGitHubRepoCapabilities(context.agentId, repoRecord.github_repo_id),
+  ])
+
+  const grantedCapabilities = filterGitHubRepoCapabilitiesByPolicy({
+    capabilities: effectiveCapabilities,
+    grantedActions: resolvedPolicy.grants.map((grant) => grant.action),
+  })
   const scopedPermissions = mapCapabilitiesToPermissions(grantedCapabilities)
   const allowed = grantedCapabilities.length > 0 && Object.keys(scopedPermissions).length > 0
 
@@ -191,6 +187,7 @@ export const configureGitHubCredentialsTool: ToolHandler = async (input, context
       metadata: JSON.stringify({
         requestedCapability: 'github_token',
         allowed,
+        effectiveCapabilities,
         capabilities: grantedCapabilities,
         permissions: scopedPermissions,
       }),

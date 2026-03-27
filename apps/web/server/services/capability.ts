@@ -1,4 +1,9 @@
-import { getDb } from '@nitejar/database'
+import {
+  filterGitHubRepoCapabilitiesByPolicy,
+  getDb,
+  resolveEffectiveGitHubRepoCapabilities,
+  resolveEffectivePolicy,
+} from '@nitejar/database'
 
 const now = () => Math.floor(Date.now() / 1000)
 
@@ -13,23 +18,16 @@ export class CapabilityService {
     capability: string
   ): Promise<boolean> {
     const db = getDb()
+    const [resolvedPolicy, effectiveCapabilities] = await Promise.all([
+      resolveEffectivePolicy(agentId),
+      resolveEffectiveGitHubRepoCapabilities(agentId, repoId),
+    ])
 
-    const record = await db
-      .selectFrom('agent_repo_capabilities')
-      .select(['capabilities'])
-      .where('agent_id', '=', agentId)
-      .where('github_repo_id', '=', repoId)
-      .executeTakeFirst()
-
-    let allowed = false
-    if (record?.capabilities) {
-      try {
-        const parsed = JSON.parse(record.capabilities) as string[]
-        allowed = Array.isArray(parsed) && parsed.includes(capability)
-      } catch {
-        allowed = false
-      }
-    }
+    const allowedCapabilities = filterGitHubRepoCapabilitiesByPolicy({
+      capabilities: effectiveCapabilities,
+      grantedActions: resolvedPolicy.grants.map((grant) => grant.action),
+    })
+    const allowed = allowedCapabilities.includes(capability as never)
 
     await db
       .insertInto('audit_logs')
@@ -43,6 +41,7 @@ export class CapabilityService {
         metadata: JSON.stringify({
           requestedCapability: capability,
           allowed,
+          allowedCapabilities,
         }),
         created_at: now(),
       })

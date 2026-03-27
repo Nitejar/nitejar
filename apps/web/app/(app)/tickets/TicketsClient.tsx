@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
-import { ArrowRight, Filter, MoreHorizontal, Target, Ticket, X } from 'lucide-react'
+import { ArrowRight, Filter, MoreHorizontal, Play, Target, Ticket, X } from 'lucide-react'
 import { trpc, type RouterOutputs } from '@/lib/trpc'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -570,6 +570,19 @@ function TicketDetailPanel({ ticketId, onClose }: { ticketId: string; onClose?: 
       toast.error('Failed to start session')
     },
   })
+  const runTicketNowMutation = trpc.sessions.runTicketNow.useMutation({
+    onSuccess: async ({ sessionKey }) => {
+      await Promise.all([
+        utils.work.getTicket.invalidate({ ticketId }),
+        utils.work.listTickets.invalidate(),
+      ])
+      router.push(`/sessions/${encodeURIComponent(sessionKey)}`)
+      toast.success('Execution queued')
+    },
+    onError: () => {
+      toast.error('Failed to queue execution')
+    },
+  })
 
   const panelCreateSubTicketMutation = trpc.work.createTicket.useMutation({
     onSuccess: async () => {
@@ -636,8 +649,6 @@ function TicketDetailPanel({ ticketId, onClose }: { ticketId: string; onClose?: 
       </div>
     )
   }
-
-  const linkedSession = ticket.receiptSummary.links.find((l) => l.kind === 'session')
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -863,6 +874,22 @@ function TicketDetailPanel({ ticketId, onClose }: { ticketId: string; onClose?: 
               <Button
                 size="sm"
                 className="h-7 text-xs px-3"
+                disabled={!selectedAgentId || runTicketNowMutation.isPending}
+                onClick={async () => {
+                  if (!selectedAgentId) return
+                  await runTicketNowMutation.mutateAsync({
+                    ticketId,
+                    agentId: selectedAgentId,
+                  })
+                }}
+              >
+                <Play className="h-3.5 w-3.5" />
+                Run now
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs px-3"
                 disabled={!selectedAgentId || startSessionMutation.isPending}
                 onClick={async () => {
                   if (!selectedAgentId) return
@@ -882,7 +909,7 @@ function TicketDetailPanel({ ticketId, onClose }: { ticketId: string; onClose?: 
                   })
                 }}
               >
-                {linkedSession ? 'Resume' : 'Start'}
+                Start
               </Button>
             </div>
           </div>

@@ -55,13 +55,6 @@ export interface AgentConfig {
   // Network policy settings
   networkPolicy?: NetworkPolicy
 
-  // Sandbox settings
-  allowEphemeralSandboxCreation?: boolean
-  // Routine management settings
-  allowRoutineManagement?: boolean
-  // Dangerous unrestricted mode (platform-management tools + elevated writes)
-  dangerouslyUnrestricted?: boolean
-
   // Queue settings (per-agent override for queue behavior)
   queue?: AgentQueueConfig
 

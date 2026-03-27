@@ -1,12 +1,11 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import { findAgentById, updateAgent } from '@nitejar/database'
+import { findAgentById } from '@nitejar/database'
 import {
   createEphemeralSandboxForAgent,
   deleteAgentSandboxByName,
   listAgentSandboxesWithStale,
 } from '@nitejar/agent/sandboxes'
-import { parseAgentConfig, serializeAgentConfig } from '@nitejar/agent/config'
 import { publicProcedure, router } from '../trpc'
 
 export const sandboxesRouter = router({
@@ -16,14 +15,10 @@ export const sandboxesRouter = router({
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Agent not found' })
     }
 
-    const config = parseAgentConfig(agent.config)
     const sandboxes = await listAgentSandboxesWithStale(agent.id)
 
     return {
       sandboxes,
-      allowEphemeralSandboxCreation: config.allowEphemeralSandboxCreation === true,
-      allowRoutineManagement: config.allowRoutineManagement === true,
-      dangerouslyUnrestricted: config.dangerouslyUnrestricted === true,
     }
   }),
 
@@ -80,74 +75,6 @@ export const sandboxesRouter = router({
       }
     }),
 
-  setEphemeralCreationPolicy: publicProcedure
-    .input(
-      z.object({
-        agentId: z.string(),
-        enabled: z.boolean(),
-      })
-    )
-    .mutation(async ({ input }) => {
-      const agent = await findAgentById(input.agentId)
-      if (!agent) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Agent not found' })
-      }
-
-      const current = parseAgentConfig(agent.config)
-      const updatedConfig = serializeAgentConfig({
-        ...current,
-        allowEphemeralSandboxCreation: input.enabled,
-      })
-
-      await updateAgent(agent.id, { config: updatedConfig })
-      return { ok: true, enabled: input.enabled }
-    }),
-
-  setRoutineManagementPolicy: publicProcedure
-    .input(
-      z.object({
-        agentId: z.string(),
-        enabled: z.boolean(),
-      })
-    )
-    .mutation(async ({ input }) => {
-      const agent = await findAgentById(input.agentId)
-      if (!agent) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Agent not found' })
-      }
-
-      const current = parseAgentConfig(agent.config)
-      const updatedConfig = serializeAgentConfig({
-        ...current,
-        allowRoutineManagement: input.enabled,
-      })
-
-      await updateAgent(agent.id, { config: updatedConfig })
-      return { ok: true, enabled: input.enabled }
-    }),
-
-  setDangerouslyUnrestrictedPolicy: publicProcedure
-    .input(
-      z.object({
-        agentId: z.string(),
-        enabled: z.boolean(),
-      })
-    )
-    .mutation(async ({ input }) => {
-      const agent = await findAgentById(input.agentId)
-      if (!agent) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Agent not found' })
-      }
-
-      const current = parseAgentConfig(agent.config)
-      const updatedConfig = serializeAgentConfig({
-        ...current,
-        dangerouslyUnrestricted: input.enabled,
-      })
-
-      await updateAgent(agent.id, { config: updatedConfig })
-      return { ok: true, enabled: input.enabled }
-    }),
 })
 
 export type SandboxesRouter = typeof sandboxesRouter

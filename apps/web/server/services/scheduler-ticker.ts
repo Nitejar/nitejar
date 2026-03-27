@@ -10,9 +10,11 @@ import {
   findAgentById,
   linkRoutineRunToWorkItemByScheduledItem,
   updateRoutine,
-  setRoutineEnabled,
+  archiveRoutine,
+  parseAppSessionKey,
 } from '@nitejar/database'
 import { publishRoutineEnvelopeFromWorkItem } from './routines/publish'
+import { createRoutineAppSessionFromSeed } from './app-session-context'
 
 const TICK_INTERVAL_MS = 30_000
 const TICKER_STATE_KEY = '__nitejarSchedulerTicker'
@@ -80,14 +82,28 @@ async function tick(): Promise<void> {
 
       // Scheduler-specific queue_key — isolates from conversation lanes so mode='followup'
       // sticks (upsertQueueLaneOnMessage doesn't overwrite mode on existing lanes)
-      const queueKey = `sched:${item.session_key}:${item.agent_id}`
+      let effectiveSessionKey = item.session_key
+      if (item.routine_id) {
+        const parsed = parseAppSessionKey(item.session_key)
+        if (parsed.isAppSession) {
+          const freshSession = await createRoutineAppSessionFromSeed({
+            routineId: item.routine_id,
+            seedSessionKey: item.session_key,
+            agentId: item.agent_id,
+          })
+          if (freshSession) {
+            effectiveSessionKey = freshSession.session_key
+          }
+        }
+      }
+
+      const queueKey = `sched:${effectiveSessionKey}:${item.agent_id}`
       const arrivedAt = now()
       let createdWorkItemId: string | null = null
 
-      // Single atomic transaction: work item + queue message + lane + fired status.
-      // Either ALL writes commit or NONE do. No orphaned work items, no orphaned
-      // queue messages, no window between enqueue and confirm where stale sweep
-      // could recover an already-enqueued item back to pending.
+      // Single atomic transaction for the dispatch artifacts: work item + queue
+      // message + lane + fired status. The fresh app session, when needed for an
+      // app-targeted routine, is minted immediately beforehand.
       const db = getDb()
       await db.transaction().execute(async (trx) => {
         const workItem = await createWorkItem(
@@ -96,7 +112,7 @@ async function tick(): Promise<void> {
             source_ref: item.routine_id
               ? `routine:${item.routine_id}:scheduled:${item.id}`
               : `scheduled:${item.id}`,
-            session_key: item.session_key,
+            session_key: effectiveSessionKey,
             status: 'NEW',
             title: `Scheduled: ${item.type}`,
             payload: item.payload,
@@ -121,7 +137,7 @@ async function tick(): Promise<void> {
           },
           {
             queueKey,
-            sessionKey: item.session_key,
+            sessionKey: effectiveSessionKey,
             agentId: item.agent_id,
             pluginInstanceId: item.plugin_instance_id,
             arrivedAt,
@@ -158,8 +174,7 @@ async function tick(): Promise<void> {
             .executeTakeFirst()
 
           if (routineRow?.trigger_kind === 'oneshot') {
-            await setRoutineEnabled(item.routine_id, false, trx)
-            await updateRoutine(item.routine_id, { next_run_at: null }, trx)
+            await archiveRoutine(item.routine_id, trx)
           }
         }
       })

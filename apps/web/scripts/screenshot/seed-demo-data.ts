@@ -2,6 +2,7 @@ import { generateUuidV7 } from '@nitejar/core'
 import {
   addAppSessionParticipants,
   appendActivityEntry,
+  buildStandaloneAppSessionKey,
   closeDb,
   createAgent,
   createAppSession,
@@ -264,12 +265,16 @@ async function seedCollaborationSessions(input: {
   const [a1, a2, a3] = input.agents
   if (!a1 || !a2 || !a3) return
 
-  const sessionKey = `app:${input.ownerUserId}:demo-collab-${generateUuidV7()}`
+  const sessionKey = buildStandaloneAppSessionKey(
+    input.ownerUserId,
+    `demo-collab-${generateUuidV7()}`
+  )
   await createAppSession({
     session_key: sessionKey,
     owner_user_id: input.ownerUserId,
     primary_agent_id: a1.id,
     title: 'Ship v0.4 launch thread',
+    forked_from_session_key: null,
   })
 
   await addAppSessionParticipants({

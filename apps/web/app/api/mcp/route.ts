@@ -52,6 +52,7 @@ import {
   setPluginInstanceEnabledOp,
 } from '@/server/services/ops/plugin-instances'
 import { cancelRunByJob, pauseRunByJob, resumeRunByJob } from '@/server/services/runtime-control'
+import { sendAppSessionMessageForUser } from '@/server/services/app-session-messaging'
 
 type JsonRpcId = string | number | null
 
@@ -311,6 +312,29 @@ const toolCatalog: ToolMeta[] = [
     inputSchema: mcpInputSchemas.set_plugin_instance_agent_assignment,
   },
   {
+    name: 'send_app_session_message',
+    description:
+      'Send a message into an app chat session, or create a fresh app session with an agent and send the first message.',
+    requiredScope: 'agents.write',
+    write: true,
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['message'],
+      properties: {
+        sessionKey: { type: 'string' },
+        agentId: { type: 'string' },
+        agentHandle: { type: 'string' },
+        ticketId: { type: 'string' },
+        goalId: { type: 'string' },
+        routineId: { type: 'string' },
+        message: { type: 'string' },
+        clientMessageId: { type: 'string' },
+        sessionTitle: { type: 'string' },
+      },
+    },
+  },
+  {
     name: 'list_passive_memory_queue',
     description:
       'List passive memory extraction queue entries for an agent. Shows extraction job status, attempts, errors, and results. Use to inspect whether passive memory extraction is running, pending, or failing.',
@@ -373,27 +397,7 @@ function jsonRpcError(
   )
 }
 
-function toScopeSet(scopes: string): Set<string> {
-  return new Set(
-    scopes
-      .split(/[,\s]+/)
-      .map((value) => value.trim())
-      .filter(Boolean)
-  )
-}
-
-function hasScope(scopeSet: Set<string>, required: string): boolean {
-  if (scopeSet.has(required) || scopeSet.has('*')) return true
-  const [namespace] = required.split('.')
-  return !!namespace && scopeSet.has(`${namespace}.*`)
-}
-
 async function assertMcpAccess(session: McpSession, tool: ToolMeta): Promise<{ role: string }> {
-  const scopeSet = toScopeSet(session.scopes || '')
-  if (!hasScope(scopeSet, tool.requiredScope)) {
-    throw new AccessDeniedError(`Missing required scope: ${tool.requiredScope}`)
-  }
-
   const db = getDb()
   const user = await db
     .selectFrom('users')
@@ -521,6 +525,8 @@ function inferWriteChangedFields(
       return ['enabled']
     case 'set_plugin_instance_agent_assignment':
       return ['assignment']
+    case 'send_app_session_message':
+      return ['session_message']
     default:
       return undefined
   }
@@ -868,6 +874,53 @@ async function handleToolCall(
             enabled: input.enabled,
           },
         })
+        return result
+      }
+      case 'send_app_session_message': {
+        const message = requireString(parsedArgs, 'message')
+        const sessionKey = optionalString(parsedArgs, 'sessionKey')
+        const agentId = optionalString(parsedArgs, 'agentId')
+        const agentHandle = optionalString(parsedArgs, 'agentHandle')
+        const ticketId = optionalString(parsedArgs, 'ticketId')
+        const goalId = optionalString(parsedArgs, 'goalId')
+        const routineId = optionalString(parsedArgs, 'routineId')
+        const clientMessageId = optionalString(parsedArgs, 'clientMessageId')
+        const sessionTitle = optionalString(parsedArgs, 'sessionTitle')
+
+        if (!sessionKey && !agentId && !agentHandle) {
+          throw new Error('sessionKey or agentId or agentHandle is required')
+        }
+
+        const result = await sendAppSessionMessageForUser({
+          userId: session.userId,
+          senderName: 'MCP Operator',
+          message,
+          sessionKey: sessionKey ?? undefined,
+          agentId: agentId ?? undefined,
+          agentHandle: agentHandle ?? undefined,
+          ticketId: ticketId ?? undefined,
+          goalId: goalId ?? undefined,
+          routineId: routineId ?? undefined,
+          clientMessageId: clientMessageId ?? undefined,
+          sessionTitle: sessionTitle ?? undefined,
+        })
+
+        await appendMcpAuditLog({
+          toolName,
+          actorUserId: session.userId,
+          role: accessRole,
+          clientId: session.clientId,
+          targetAgentId: agentId ?? result.targetAgentIds[0] ?? null,
+          result: 'allowed',
+          details: {
+            changedFields: ['session_message'],
+            sessionKey: result.sessionKey,
+            workItemId: result.workItemId,
+            createdSession: result.createdSession,
+            targetAgentIds: result.targetAgentIds,
+          },
+        })
+
         return result
       }
       case 'list_passive_memory_queue': {

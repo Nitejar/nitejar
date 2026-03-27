@@ -41,6 +41,7 @@ import {
   getPluginRuntimePosture,
   resolvePluginTrustMode,
 } from '../services/plugins/runtime-posture'
+import { ensureBuiltinPluginHandlersLoaded } from '../services/plugins/ensure-builtin-handlers'
 
 const sourceKindSchema = z.enum(['builtin', 'npm', 'git', 'upload', 'local'])
 
@@ -533,6 +534,7 @@ async function resolveFromLocal(localPath: string): Promise<ResolvedSource> {
 
 export const pluginsRouter = router({
   catalog: protectedProcedure.query(async () => {
+    await ensureBuiltinPluginHandlersLoaded()
     const handlers = pluginHandlerRegistry.getAll()
     const installedTypes = new Set(handlers.map((h) => h.type))
 
@@ -589,7 +591,8 @@ export const pluginsRouter = router({
 
   catalogType: protectedProcedure
     .input(z.object({ type: z.string().trim().min(1) }))
-    .query(({ input }) => {
+    .query(async ({ input }) => {
+      await ensureBuiltinPluginHandlersLoaded()
       const handler = pluginHandlerRegistry.get(input.type)
       if (!handler) {
         throw new TRPCError({ code: 'NOT_FOUND', message: `Unknown plugin type: ${input.type}` })
@@ -614,6 +617,7 @@ export const pluginsRouter = router({
   }),
 
   listPlugins: protectedProcedure.query(async () => {
+    await ensureBuiltinPluginHandlersLoaded()
     await ensureBuiltinPluginsRegistered()
     const runtime = getPluginRuntimePosture(resolvePluginTrustMode())
     const plugins = await listPlugins()

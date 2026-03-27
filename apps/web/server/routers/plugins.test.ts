@@ -120,6 +120,14 @@ describe('plugins router contract', () => {
     expect(result.trustMode).toBe('self_host_guarded')
   })
 
+  it('returns builtin plugin entries in catalog', async () => {
+    const result = await caller.catalog()
+
+    expect(result.entries.length).toBeGreaterThan(0)
+    expect(result.entries.some((entry) => entry.type === 'telegram')).toBe(true)
+    expect(result.entries.some((entry) => entry.type === 'github')).toBe(true)
+  })
+
   it('returns runtime metadata in listPlugins responses', async () => {
     mockedListPlugins.mockResolvedValue([makePlugin()] as never)
     mockedListPluginDisclosureAcks.mockResolvedValue([

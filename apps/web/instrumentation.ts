@@ -5,9 +5,13 @@ export async function register() {
 
     // Boot third-party plugins (load enabled non-builtin plugins from DB)
     try {
+      const { ensureBuiltinPluginHandlersLoaded } = await import(
+        './server/services/plugins/ensure-builtin-handlers'
+      )
       const { bootPlugins } = await import('@nitejar/plugin-runtime')
       const { pluginHandlerRegistry } = await import('@nitejar/plugin-handlers/registry')
       const { providerRegistry } = await import('@nitejar/agent/integrations/registry')
+      await ensureBuiltinPluginHandlersLoaded()
       const result = await bootPlugins({
         handlerRegistry: pluginHandlerRegistry,
         providerRegistry,

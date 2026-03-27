@@ -1,0 +1,430 @@
+export type PolicyGrantDescriptor = {
+  action: string
+  resourceType: string | null
+  resourceLabel: string
+  resourceHint: string
+  operationId: string
+  operationLabel: string
+  uiSection: string
+  enforcementOwner: string
+}
+
+export const POLICY_GRANT_CATALOG: PolicyGrantDescriptor[] = [
+  {
+    action: 'policy.read',
+    resourceType: '*',
+    resourceLabel: 'Policy',
+    resourceHint: 'Manage roles, grants, and role assignments',
+    operationId: 'read',
+    operationLabel: 'read',
+    uiSection: 'policy',
+    enforcementOwner: 'agent/policy-tools',
+  },
+  {
+    action: 'policy.write',
+    resourceType: '*',
+    resourceLabel: 'Policy',
+    resourceHint: 'Manage roles, grants, and role assignments',
+    operationId: 'write',
+    operationLabel: 'write',
+    uiSection: 'policy',
+    enforcementOwner: 'agent/policy-tools',
+  },
+  {
+    action: 'policy.create',
+    resourceType: '*',
+    resourceLabel: 'Policy',
+    resourceHint: 'Manage roles, grants, and role assignments',
+    operationId: 'create',
+    operationLabel: 'create',
+    uiSection: 'policy',
+    enforcementOwner: 'agent/policy-tools',
+  },
+  {
+    action: 'policy.delete',
+    resourceType: '*',
+    resourceLabel: 'Policy',
+    resourceHint: 'Manage roles, grants, and role assignments',
+    operationId: 'delete',
+    operationLabel: 'delete',
+    uiSection: 'policy',
+    enforcementOwner: 'agent/policy-tools',
+  },
+  {
+    action: 'work.goal.read',
+    resourceType: 'goal',
+    resourceLabel: 'Goals',
+    resourceHint: 'Strategic objectives — create, update, and track progress',
+    operationId: 'read',
+    operationLabel: 'read',
+    uiSection: 'work',
+    enforcementOwner: 'agent/work-tools',
+  },
+  {
+    action: 'work.goal.write',
+    resourceType: 'goal',
+    resourceLabel: 'Goals',
+    resourceHint: 'Strategic objectives — create, update, and track progress',
+    operationId: 'write',
+    operationLabel: 'write',
+    uiSection: 'work',
+    enforcementOwner: 'agent/work-tools',
+  },
+  {
+    action: 'work.goal.create',
+    resourceType: 'goal',
+    resourceLabel: 'Goals',
+    resourceHint: 'Strategic objectives — create, update, and track progress',
+    operationId: 'create',
+    operationLabel: 'create',
+    uiSection: 'work',
+    enforcementOwner: 'agent/work-tools',
+  },
+  {
+    action: 'work.goal.delete',
+    resourceType: 'goal',
+    resourceLabel: 'Goals',
+    resourceHint: 'Strategic objectives — create, update, and track progress',
+    operationId: 'delete',
+    operationLabel: 'delete',
+    uiSection: 'work',
+    enforcementOwner: 'agent/work-tools',
+  },
+  {
+    action: 'work.ticket.read',
+    resourceType: 'ticket',
+    resourceLabel: 'Tickets',
+    resourceHint: 'Tactical work items — create, update, and track status',
+    operationId: 'read',
+    operationLabel: 'read',
+    uiSection: 'work',
+    enforcementOwner: 'agent/work-tools',
+  },
+  {
+    action: 'work.ticket.write',
+    resourceType: 'ticket',
+    resourceLabel: 'Tickets',
+    resourceHint: 'Tactical work items — create, update, and track status',
+    operationId: 'write',
+    operationLabel: 'write',
+    uiSection: 'work',
+    enforcementOwner: 'agent/work-tools',
+  },
+  {
+    action: 'work.ticket.create',
+    resourceType: 'ticket',
+    resourceLabel: 'Tickets',
+    resourceHint: 'Tactical work items — create, update, and track status',
+    operationId: 'create',
+    operationLabel: 'create',
+    uiSection: 'work',
+    enforcementOwner: 'agent/work-tools',
+  },
+  {
+    action: 'work.ticket.delete',
+    resourceType: 'ticket',
+    resourceLabel: 'Tickets',
+    resourceHint: 'Tactical work items — create, update, and track status',
+    operationId: 'delete',
+    operationLabel: 'delete',
+    uiSection: 'work',
+    enforcementOwner: 'agent/work-tools',
+  },
+  {
+    action: 'company.team.read',
+    resourceType: 'team',
+    resourceLabel: 'Teams',
+    resourceHint: 'Org structure — view, edit, and staff teams',
+    operationId: 'read',
+    operationLabel: 'read',
+    uiSection: 'company',
+    enforcementOwner: 'agent/team-tools',
+  },
+  {
+    action: 'company.team.write',
+    resourceType: 'team',
+    resourceLabel: 'Teams',
+    resourceHint: 'Org structure — view, edit, and staff teams',
+    operationId: 'write',
+    operationLabel: 'write',
+    uiSection: 'company',
+    enforcementOwner: 'agent/team-tools',
+  },
+  {
+    action: 'company.team.create',
+    resourceType: 'team',
+    resourceLabel: 'Teams',
+    resourceHint: 'Org structure — view, edit, and staff teams',
+    operationId: 'create',
+    operationLabel: 'create',
+    uiSection: 'company',
+    enforcementOwner: 'agent/team-tools',
+  },
+  {
+    action: 'company.team.delete',
+    resourceType: 'team',
+    resourceLabel: 'Teams',
+    resourceHint: 'Org structure — view, edit, and staff teams',
+    operationId: 'delete',
+    operationLabel: 'delete',
+    uiSection: 'company',
+    enforcementOwner: 'agent/team-tools',
+  },
+  {
+    action: 'fleet.agent.read',
+    resourceType: 'agent',
+    resourceLabel: 'Agents',
+    resourceHint: 'Fleet members — inspect, configure, create, and remove agents',
+    operationId: 'read',
+    operationLabel: 'read',
+    uiSection: 'fleet',
+    enforcementOwner: 'agent/platform-control',
+  },
+  {
+    action: 'fleet.agent.write',
+    resourceType: 'agent',
+    resourceLabel: 'Agents',
+    resourceHint: 'Fleet members — inspect, configure, create, and remove agents',
+    operationId: 'write',
+    operationLabel: 'write',
+    uiSection: 'fleet',
+    enforcementOwner: 'agent/platform-control',
+  },
+  {
+    action: 'fleet.agent.create',
+    resourceType: 'agent',
+    resourceLabel: 'Agents',
+    resourceHint: 'Fleet members — inspect, configure, create, and remove agents',
+    operationId: 'create',
+    operationLabel: 'create',
+    uiSection: 'fleet',
+    enforcementOwner: 'agent/platform-control',
+  },
+  {
+    action: 'fleet.agent.delete',
+    resourceType: 'agent',
+    resourceLabel: 'Agents',
+    resourceHint: 'Fleet members — inspect, configure, create, and remove agents',
+    operationId: 'delete',
+    operationLabel: 'delete',
+    uiSection: 'fleet',
+    enforcementOwner: 'agent/platform-control',
+  },
+  {
+    action: 'fleet.agent.control',
+    resourceType: 'agent',
+    resourceLabel: 'Agents',
+    resourceHint: 'Fleet members — inspect, configure, create, and remove agents',
+    operationId: 'control',
+    operationLabel: 'control',
+    uiSection: 'fleet',
+    enforcementOwner: 'agent/platform-control',
+  },
+  {
+    action: 'github.repo.read',
+    resourceType: '*',
+    resourceLabel: 'GitHub',
+    resourceHint: 'Repository operations — code access, branches, PRs, and reviews',
+    operationId: 'read',
+    operationLabel: 'read',
+    uiSection: 'github',
+    enforcementOwner: 'agent/github',
+  },
+  {
+    action: 'github.repo.create_branch',
+    resourceType: '*',
+    resourceLabel: 'GitHub',
+    resourceHint: 'Repository operations — code access, branches, PRs, and reviews',
+    operationId: 'branch',
+    operationLabel: 'branch',
+    uiSection: 'github',
+    enforcementOwner: 'agent/github',
+  },
+  {
+    action: 'github.repo.push_branch',
+    resourceType: '*',
+    resourceLabel: 'GitHub',
+    resourceHint: 'Repository operations — code access, branches, PRs, and reviews',
+    operationId: 'branch',
+    operationLabel: 'branch',
+    uiSection: 'github',
+    enforcementOwner: 'agent/github',
+  },
+  {
+    action: 'github.repo.open_pr',
+    resourceType: '*',
+    resourceLabel: 'GitHub',
+    resourceHint: 'Repository operations — code access, branches, PRs, and reviews',
+    operationId: 'pr',
+    operationLabel: 'pr',
+    uiSection: 'github',
+    enforcementOwner: 'agent/github',
+  },
+  {
+    action: 'github.repo.review_pr',
+    resourceType: '*',
+    resourceLabel: 'GitHub',
+    resourceHint: 'Repository operations — code access, branches, PRs, and reviews',
+    operationId: 'review',
+    operationLabel: 'review',
+    uiSection: 'github',
+    enforcementOwner: 'agent/github',
+  },
+  {
+    action: 'github.repo.comment',
+    resourceType: '*',
+    resourceLabel: 'GitHub',
+    resourceHint: 'Repository operations — code access, branches, PRs, and reviews',
+    operationId: 'review',
+    operationLabel: 'review',
+    uiSection: 'github',
+    enforcementOwner: 'agent/github',
+  },
+  {
+    action: 'github.repo.label_issue_pr',
+    resourceType: '*',
+    resourceLabel: 'GitHub',
+    resourceHint: 'Repository operations — code access, branches, PRs, and reviews',
+    operationId: 'review',
+    operationLabel: 'review',
+    uiSection: 'github',
+    enforcementOwner: 'agent/github',
+  },
+  {
+    action: 'github.repo.request_review',
+    resourceType: '*',
+    resourceLabel: 'GitHub',
+    resourceHint: 'Repository operations — code access, branches, PRs, and reviews',
+    operationId: 'review',
+    operationLabel: 'review',
+    uiSection: 'github',
+    enforcementOwner: 'agent/github',
+  },
+  {
+    action: 'github.repo.merge_pr',
+    resourceType: '*',
+    resourceLabel: 'GitHub',
+    resourceHint: 'Repository operations — code access, branches, PRs, and reviews',
+    operationId: 'merge',
+    operationLabel: 'merge',
+    uiSection: 'github',
+    enforcementOwner: 'agent/github',
+  },
+  {
+    action: 'capability.web_search',
+    resourceType: '*',
+    resourceLabel: 'Capabilities',
+    resourceHint: 'Feature access — web search, image and speech generation',
+    operationId: 'web-search',
+    operationLabel: 'web search',
+    uiSection: 'capabilities',
+    enforcementOwner: 'agent/web-tools',
+  },
+  {
+    action: 'capability.image_generation',
+    resourceType: '*',
+    resourceLabel: 'Capabilities',
+    resourceHint: 'Feature access — web search, image and speech generation',
+    operationId: 'images',
+    operationLabel: 'images',
+    uiSection: 'capabilities',
+    enforcementOwner: 'agent/media-tools',
+  },
+  {
+    action: 'capability.speech_to_text',
+    resourceType: '*',
+    resourceLabel: 'Capabilities',
+    resourceHint: 'Feature access — web search, image and speech generation',
+    operationId: 'speech',
+    operationLabel: 'speech',
+    uiSection: 'capabilities',
+    enforcementOwner: 'agent/media-tools',
+  },
+  {
+    action: 'capability.text_to_speech',
+    resourceType: '*',
+    resourceLabel: 'Capabilities',
+    resourceHint: 'Feature access — web search, image and speech generation',
+    operationId: 'speech',
+    operationLabel: 'speech',
+    uiSection: 'capabilities',
+    enforcementOwner: 'agent/media-tools',
+  },
+  {
+    action: 'routine.self.manage',
+    resourceType: '*',
+    resourceLabel: 'Routines',
+    resourceHint: 'Scheduled tasks — create, update, pause, and delete recurring jobs',
+    operationId: 'self-manage',
+    operationLabel: 'self-manage',
+    uiSection: 'routines',
+    enforcementOwner: 'agent/routines',
+  },
+  {
+    action: 'routine.manage',
+    resourceType: '*',
+    resourceLabel: 'Routines',
+    resourceHint: 'Scheduled tasks — create, update, pause, and delete recurring jobs',
+    operationId: 'manage-all',
+    operationLabel: 'manage all',
+    uiSection: 'routines',
+    enforcementOwner: 'agent/routines',
+  },
+  {
+    action: 'sandbox.ephemeral.create',
+    resourceType: '*',
+    resourceLabel: 'Sandboxes',
+    resourceHint: 'Temporary execution environments for running code and commands',
+    operationId: 'create',
+    operationLabel: 'create',
+    uiSection: 'sandboxes',
+    enforcementOwner: 'agent/sandboxes',
+  },
+] as const
+
+export type PolicyPermissionRow = {
+  resource: string
+  hint: string
+  ops: Array<{
+    op: string
+    grants: Array<{ action: string; resourceType: string | null }>
+  }>
+}
+
+export const FULL_ACCESS_POLICY_GRANTS = POLICY_GRANT_CATALOG.map((descriptor) => ({
+  action: descriptor.action,
+  resource_type: descriptor.resourceType,
+})) as Array<{ action: string; resource_type: string | null }>
+
+export function buildPolicyPermissionRows(): PolicyPermissionRow[] {
+  const rows = new Map<string, PolicyPermissionRow>()
+
+  for (const descriptor of POLICY_GRANT_CATALOG) {
+    const rowKey = `${descriptor.resourceLabel}::${descriptor.resourceHint}`
+    let row = rows.get(rowKey)
+    if (!row) {
+      row = {
+        resource: descriptor.resourceLabel,
+        hint: descriptor.resourceHint,
+        ops: [],
+      }
+      rows.set(rowKey, row)
+    }
+
+    const existingOp = row.ops.find((candidate) => candidate.op === descriptor.operationLabel)
+    if (existingOp) {
+      existingOp.grants.push({
+        action: descriptor.action,
+        resourceType: descriptor.resourceType,
+      })
+      continue
+    }
+
+    row.ops.push({
+      op: descriptor.operationLabel,
+      grants: [{ action: descriptor.action, resourceType: descriptor.resourceType }],
+    })
+  }
+
+  return [...rows.values()]
+}

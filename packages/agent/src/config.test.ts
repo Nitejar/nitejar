@@ -74,28 +74,15 @@ describe('memory passive update settings', () => {
     expect(merged.memorySettings?.passiveUpdatesEnabled).toBe(true)
   })
 
-  it('parses dangerouslyUnrestricted boolean from config JSON', () => {
+  it('ignores removed legacy capability flags in config JSON', () => {
     const config = parseAgentConfig(
       JSON.stringify({
+        allowEphemeralSandboxCreation: true,
+        allowRoutineManagement: true,
         dangerouslyUnrestricted: true,
       })
     )
 
-    expect(config.dangerouslyUnrestricted).toBe(true)
-  })
-
-  it('merges dangerouslyUnrestricted through mergeAgentConfig', () => {
-    const existing = parseAgentConfig(
-      JSON.stringify({
-        allowRoutineManagement: false,
-      })
-    )
-
-    const merged = mergeAgentConfig(existing, {
-      dangerouslyUnrestricted: true,
-    })
-
-    expect(merged.allowRoutineManagement).toBe(false)
-    expect(merged.dangerouslyUnrestricted).toBe(true)
+    expect(config).toEqual({})
   })
 })

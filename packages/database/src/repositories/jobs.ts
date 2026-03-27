@@ -328,7 +328,9 @@ export interface SearchRunsOptions {
   workItemId?: string
   sources?: string[]
   pluginInstanceId?: string
+  sessionKey?: string
   sessionKeyPrefix?: string
+  routineId?: string
   createdAfter?: number
   createdBefore?: number
   limit?: number
@@ -479,8 +481,16 @@ export async function searchRuns(opts: SearchRunsOptions = {}): Promise<SearchRu
     query = query.where('work_items.plugin_instance_id', '=', opts.pluginInstanceId)
   }
 
+  if (opts.sessionKey) {
+    query = query.where('work_items.session_key', '=', opts.sessionKey)
+  }
+
   if (opts.sessionKeyPrefix) {
     query = query.where('work_items.session_key', 'like', `${opts.sessionKeyPrefix}%`)
+  }
+
+  if (opts.routineId) {
+    query = query.where('work_items.source_ref', 'like', `routine:${opts.routineId}:%`)
   }
 
   if (typeof opts.createdAfter === 'number') {

@@ -1,4 +1,5 @@
 import { type Kysely, sql } from 'kysely'
+import { FULL_ACCESS_POLICY_GRANTS } from '../src/policy-grants'
 
 /**
  * Remove the policy_bundles abstraction. Move grants and defaults to live
@@ -17,56 +18,6 @@ function now(): number {
 }
 
 const PLATFORM_ADMIN_ROLE_ID = 'role_platform_admin'
-
-const FULL_GRANT_SET = [
-  // Policy
-  { action: 'policy.read', resource_type: '*' },
-  { action: 'policy.write', resource_type: '*' },
-  { action: 'policy.create', resource_type: '*' },
-  { action: 'policy.delete', resource_type: '*' },
-  // Goals
-  { action: 'work.goal.read', resource_type: 'goal' },
-  { action: 'work.goal.write', resource_type: 'goal' },
-  { action: 'work.goal.create', resource_type: 'goal' },
-  { action: 'work.goal.delete', resource_type: 'goal' },
-  // Tickets
-  { action: 'work.ticket.read', resource_type: 'ticket' },
-  { action: 'work.ticket.write', resource_type: 'ticket' },
-  { action: 'work.ticket.create', resource_type: 'ticket' },
-  { action: 'work.ticket.delete', resource_type: 'ticket' },
-  // Teams
-  { action: 'company.team.read', resource_type: 'team' },
-  { action: 'company.team.write', resource_type: 'team' },
-  { action: 'company.team.create', resource_type: 'team' },
-  { action: 'company.team.delete', resource_type: 'team' },
-  // Agents
-  { action: 'fleet.agent.read', resource_type: 'agent' },
-  { action: 'fleet.agent.write', resource_type: 'agent' },
-  { action: 'fleet.agent.create', resource_type: 'agent' },
-  { action: 'fleet.agent.delete', resource_type: 'agent' },
-  { action: 'fleet.agent.control', resource_type: 'agent' },
-  // GitHub
-  { action: 'github.repo.read', resource_type: '*' },
-  { action: 'github.repo.create_branch', resource_type: '*' },
-  { action: 'github.repo.push_branch', resource_type: '*' },
-  { action: 'github.repo.open_pr', resource_type: '*' },
-  { action: 'github.repo.review_pr', resource_type: '*' },
-  { action: 'github.repo.comment', resource_type: '*' },
-  { action: 'github.repo.label_issue_pr', resource_type: '*' },
-  { action: 'github.repo.request_review', resource_type: '*' },
-  { action: 'github.repo.merge_pr', resource_type: '*' },
-  // Capabilities
-  { action: 'capability.web_search', resource_type: '*' },
-  { action: 'capability.tool_execution', resource_type: '*' },
-  { action: 'capability.image_generation', resource_type: '*' },
-  { action: 'capability.speech_to_text', resource_type: '*' },
-  { action: 'capability.text_to_speech', resource_type: '*' },
-  // Routines
-  { action: 'routine.self.manage', resource_type: '*' },
-  { action: 'routine.manage', resource_type: '*' },
-  // Sandboxes
-  { action: 'sandbox.ephemeral.create', resource_type: '*' },
-]
 
 export async function up(db: Kysely<any>): Promise<void> {
   const timestamp = now()
@@ -213,7 +164,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .execute()
   const existingActions = new Set(existingGrants.map((g) => g.action))
 
-  for (const grant of FULL_GRANT_SET) {
+  for (const grant of FULL_ACCESS_POLICY_GRANTS) {
     if (existingActions.has(grant.action)) continue
     await db
       .insertInto('role_grants')

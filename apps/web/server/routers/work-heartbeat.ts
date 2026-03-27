@@ -96,6 +96,7 @@ export function buildGoalHeartbeatPrompt(input: GoalHeartbeatPromptInput): strin
     lines.push(
       `Then post exactly one heartbeat update with post_work_update using goal_id="${input.goalId}" and kind="heartbeat".`
     )
+    lines.push('Do not include team_id in that tool call.')
     lines.push(
       'Focus on descendant posture, missing coverage, cross-goal blockers, escalation risk, and the next coordination move.'
     )
@@ -121,6 +122,7 @@ export function buildGoalHeartbeatPrompt(input: GoalHeartbeatPromptInput): strin
   lines.push(
     `Then post exactly one heartbeat update with post_work_update using goal_id="${input.goalId}" and kind="heartbeat".`
   )
+  lines.push('Do not include team_id in that tool call.')
   lines.push(
     'The update should cover current progress, blockers, workload risk, and the next concrete move.'
   )

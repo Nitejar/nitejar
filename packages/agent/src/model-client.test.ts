@@ -147,28 +147,21 @@ describe('getOpenAITools', () => {
     const names = tools.map(
       (t) => (t as { type: string; function: { name: string } }).function.name
     )
-    expect(names).toContain('create_ephemeral_sandbox')
-  })
-
-  it('excludes create_ephemeral_sandbox when allowEphemeralSandboxCreation=false', () => {
-    const tools = getOpenAITools({ allowEphemeralSandboxCreation: false })
-    const names = tools.map(
-      (t) => (t as { type: string; function: { name: string } }).function.name
-    )
     expect(names).not.toContain('create_ephemeral_sandbox')
   })
 
-  it('excludes routine write tools when allowRoutineManagement=false', () => {
-    const tools = getOpenAITools({ allowRoutineManagement: false })
+  it('includes ephemeral sandbox tools when sandbox grant access is enabled', () => {
+    const tools = getOpenAITools({
+      runtimeToolAccess: {
+        grantedActions: ['sandbox.ephemeral.create'],
+        sandboxEphemeralCreate: true,
+      },
+    })
     const names = tools.map(
       (t) => (t as { type: string; function: { name: string } }).function.name
     )
-    expect(names).not.toContain('create_routine')
-    expect(names).not.toContain('update_routine')
-    expect(names).not.toContain('pause_routine')
-    expect(names).not.toContain('delete_routine')
-    expect(names).not.toContain('run_routine_now')
-    expect(names).toContain('list_routines')
+    expect(names).toContain('create_ephemeral_sandbox')
+    expect(names).toContain('delete_sandbox')
   })
 
   it('excludes routine write tools by default', () => {
@@ -176,6 +169,7 @@ describe('getOpenAITools', () => {
     const names = tools.map(
       (t) => (t as { type: string; function: { name: string } }).function.name
     )
+    expect(names).toContain('get_routine')
     expect(names).not.toContain('create_routine')
     expect(names).not.toContain('update_routine')
     expect(names).not.toContain('pause_routine')
@@ -184,11 +178,17 @@ describe('getOpenAITools', () => {
     expect(names).toContain('list_routines')
   })
 
-  it('includes routine write tools when allowRoutineManagement=true', () => {
-    const tools = getOpenAITools({ allowRoutineManagement: true })
+  it('includes routine write tools when routine manage access is enabled', () => {
+    const tools = getOpenAITools({
+      runtimeToolAccess: {
+        grantedActions: ['routine.manage'],
+        routineManage: true,
+      },
+    })
     const names = tools.map(
       (t) => (t as { type: string; function: { name: string } }).function.name
     )
+    expect(names).toContain('get_routine')
     expect(names).toContain('create_routine')
     expect(names).toContain('update_routine')
     expect(names).toContain('pause_routine')
@@ -208,8 +208,23 @@ describe('getOpenAITools', () => {
     expect(names).not.toContain('set_agent_status')
   })
 
-  it('includes platform control tools when dangerouslyUnrestricted=true', () => {
-    const tools = getOpenAITools({ dangerouslyUnrestricted: true })
+  it('includes only the matching platform control tools for each grant group', () => {
+    const tools = getOpenAITools({
+      runtimeToolAccess: {
+        grantedActions: [
+          'fleet.agent.read',
+          'fleet.agent.create',
+          'fleet.agent.control',
+          'fleet.agent.delete',
+          'fleet.agent.write',
+        ],
+        fleetAgentRead: true,
+        fleetAgentCreate: true,
+        fleetAgentControl: true,
+        fleetAgentDelete: true,
+        fleetAgentWrite: true,
+      },
+    })
     const names = tools.map(
       (t) => (t as { type: string; function: { name: string } }).function.name
     )
@@ -223,25 +238,34 @@ describe('getOpenAITools', () => {
     expect(names).toContain('update_agent_soul')
   })
 
-  it('includes routine and sandbox writes when dangerouslyUnrestricted=true', () => {
+  it('keeps unrelated gated tools hidden when only one policy grant group is enabled', () => {
     const tools = getOpenAITools({
-      dangerouslyUnrestricted: true,
-      allowEphemeralSandboxCreation: false,
-      allowRoutineManagement: false,
+      runtimeToolAccess: {
+        grantedActions: ['fleet.agent.read'],
+        fleetAgentRead: true,
+      },
     })
     const names = tools.map(
       (t) => (t as { type: string; function: { name: string } }).function.name
     )
-    expect(names).toContain('create_ephemeral_sandbox')
-    expect(names).toContain('create_routine')
-    expect(names).toContain('update_routine')
-    expect(names).toContain('pause_routine')
-    expect(names).toContain('delete_routine')
-    expect(names).toContain('run_routine_now')
+    expect(names).toContain('list_agents')
+    expect(names).toContain('get_agent_config')
+    expect(names).toContain('get_agent_soul')
+    expect(names).not.toContain('create_agent')
+    expect(names).not.toContain('set_agent_status')
+    expect(names).not.toContain('delete_agent')
+    expect(names).not.toContain('update_agent_config')
+    expect(names).not.toContain('create_ephemeral_sandbox')
+    expect(names).not.toContain('create_routine')
   })
 
-  it('keeps work tools while excluding sandbox tools', () => {
-    const tools = getOpenAITools({ excludeSandboxTools: true })
+  it('keeps granted work tools while excluding sandbox tools', () => {
+    const tools = getOpenAITools({
+      excludeSandboxTools: true,
+      runtimeToolAccess: {
+        grantedActions: ['work.ticket.read', 'work.goal.write'],
+      },
+    })
     const names = tools.map(
       (t) => (t as { type: string; function: { name: string } }).function.name
     )
@@ -252,7 +276,42 @@ describe('getOpenAITools', () => {
     expect(names).not.toContain('create_ephemeral_sandbox')
     expect(names).toContain('search_tickets')
     expect(names).toContain('post_work_update')
+    expect(names).not.toContain('run_ticket_now')
+    expect(names).not.toContain('link_ticket_receipt')
     expect(names).toContain('query_activity')
+  })
+
+  it('shows ticket receipt linking only with ticket write access', () => {
+    const names = getOpenAITools({
+      excludeSandboxTools: true,
+      runtimeToolAccess: {
+        grantedActions: ['work.ticket.write'],
+      },
+    }).map((t) => (t as { function: { name: string } }).function.name)
+
+    expect(names).toContain('link_ticket_receipt')
+    expect(names).toContain('run_ticket_now')
+  })
+
+  it('shows GitHub and media tools only when their grants are present', () => {
+    const names = getOpenAITools({
+      runtimeToolAccess: {
+        grantedActions: [
+          'github.repo.read',
+          'capability.web_search',
+          'capability.image_generation',
+          'capability.speech_to_text',
+          'capability.text_to_speech',
+        ],
+      },
+    }).map((t) => (t as { function: { name: string } }).function.name)
+
+    expect(names).toContain('configure_github_credentials')
+    expect(names).toContain('web_search')
+    expect(names).toContain('extract_url')
+    expect(names).toContain('generate_image')
+    expect(names).toContain('transcribe_audio')
+    expect(names).toContain('synthesize_speech')
   })
 })
 

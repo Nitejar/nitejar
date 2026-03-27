@@ -83,12 +83,6 @@ const QueueSchema = z.object({
   maxQueued: z.number().int().positive().optional(),
 })
 
-const FeaturesSchema = z.object({
-  allowEphemeralSandboxCreation: z.boolean().optional(),
-  allowRoutineManagement: z.boolean().optional(),
-  dangerouslyUnrestricted: z.boolean().optional(),
-})
-
 const PolicyGrantSchema = z.object({
   action: z.string().min(1),
   resourceType: z.string().optional().nullable(),
@@ -104,7 +98,6 @@ const PolicyRoleSchema = z.object({
   slug: z.string().min(1),
   name: z.string().min(1),
   charter: z.string().optional().nullable(),
-  jobDescription: z.string().optional().nullable(),
   escalationPosture: z.string().optional().nullable(),
   active: z.boolean().optional(),
   grants: z.array(PolicyGrantSchema).optional(),
@@ -163,7 +156,6 @@ export const AgentProfileV1Schema = z
     networkPolicy: NetworkPolicySchema.optional(),
     triageSettings: TriageSettingsSchema.optional(),
     queue: QueueSchema.optional(),
-    features: FeaturesSchema.optional(),
 
     pluginRequirements: z.array(PluginRequirementSchema).optional(),
     costLimits: z.array(CostLimitSchema).optional(),
@@ -189,7 +181,6 @@ export const AgentProfileV2Schema = z
     networkPolicy: NetworkPolicySchema.optional(),
     triageSettings: TriageSettingsSchema.optional(),
     queue: QueueSchema.optional(),
-    features: FeaturesSchema.optional(),
 
     policy: PolicySchema.optional(),
     pluginRequirements: z.array(PluginRequirementSchema).optional(),
