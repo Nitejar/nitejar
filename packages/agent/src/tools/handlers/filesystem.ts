@@ -218,7 +218,7 @@ export const readFileTool: ToolHandler = async (input, context) => {
   const startLine = (input.start_line as number) || 1
   const maxLines = (input.max_lines as number) || 500
 
-  const content = await readFile(context.spriteName, path)
+  const content = await readFile(context.spriteName, path, { session: context.session })
   const mode = context.editToolMode ?? 'hashline'
   const formattedOutput =
     mode === 'replace'
@@ -231,7 +231,7 @@ export const writeFileTool: ToolHandler = async (input, context) => {
   const path = input.path as string
   const content = input.content as string
   const { sanitizedContent, removedCount } = sanitizeFileWriteContent(content)
-  await writeFile(context.spriteName, path, sanitizedContent)
+  await writeFile(context.spriteName, path, sanitizedContent, { session: context.session })
   return {
     success: true,
     output:
@@ -250,7 +250,7 @@ export const listDirectoryTool: ToolHandler = async (input, context) => {
 
 export const createDirectoryTool: ToolHandler = async (input, context) => {
   const path = input.path as string
-  await mkdir(context.spriteName, path)
+  await mkdir(context.spriteName, path, { session: context.session })
   return { success: true, output: `Created directory ${path}` }
 }
 
@@ -568,7 +568,7 @@ async function editFileWithHashline(
     }
   }
 
-  const oldContent = await readFile(context.spriteName, path)
+  const oldContent = await readFile(context.spriteName, path, { session: context.session })
   const oldLines = oldContent.split('\n')
   const normalized = normalizeHashlineOperations(oldLines, rawEdits)
 
@@ -586,7 +586,7 @@ async function editFileWithHashline(
   const newLines = applyHashlineOperations(oldLines, normalized.operations)
   const newContent = newLines.join('\n')
   const { sanitizedContent, removedCount } = sanitizeFileWriteContent(newContent)
-  await writeFile(context.spriteName, path, sanitizedContent)
+  await writeFile(context.spriteName, path, sanitizedContent, { session: context.session })
   const diff = generateUnifiedDiff(path, oldContent, sanitizedContent)
 
   const editOperation =
@@ -614,7 +614,7 @@ async function editFileWithReplace(
   const replaceAll = (input.replace_all as boolean) || false
 
   // Read current content
-  const oldContent = await readFile(context.spriteName, path)
+  const oldContent = await readFile(context.spriteName, path, { session: context.session })
 
   // Count occurrences
   const occurrences = oldContent.split(oldString).length - 1
@@ -641,7 +641,7 @@ async function editFileWithReplace(
   const { sanitizedContent, removedCount } = sanitizeFileWriteContent(newContent)
 
   // Write updated content
-  await writeFile(context.spriteName, path, sanitizedContent)
+  await writeFile(context.spriteName, path, sanitizedContent, { session: context.session })
 
   // Generate diff
   const diff = generateUnifiedDiff(path, oldContent, sanitizedContent)
@@ -710,7 +710,9 @@ export const useSkillTool: ToolHandler = async (input, context) => {
   // Fall back to repo skills
   const repoMatch = repoSkills.find((s) => s.name.toLowerCase() === lower)
   if (repoMatch) {
-    const content = await readFile(context.spriteName, repoMatch.absolutePath)
+    const content = await readFile(context.spriteName, repoMatch.absolutePath, {
+      session: context.session,
+    })
     const lines: string[] = []
     lines.push(`Skill: ${repoMatch.name}`)
     lines.push(`Location: ${repoMatch.absolutePath}`)

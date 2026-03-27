@@ -8,7 +8,7 @@ import {
   type SessionMessage,
 } from '@nitejar/database'
 import { closeSpriteSessionForConversation } from '@nitejar/sprites'
-import type { SessionSettings, CompactionSettings } from './types'
+import type { SessionSettings, CompactionSettings, WorkItemAttachment } from './types'
 import { DEFAULT_SESSION_SETTINGS, DEFAULT_COMPACTION_SETTINGS } from './config'
 import { sanitize, sanitizeLabel, wrapBoundary } from './prompt-sanitize'
 
@@ -48,6 +48,8 @@ export interface SessionContext {
   previousSummary: string | null
   /** Whether the session was reset (by trigger or timeout) */
   wasReset: boolean
+  /** Most recent attachment set seen in the session history, if any */
+  recentAttachments?: WorkItemAttachment[] | null
 }
 
 /**
@@ -113,6 +115,20 @@ function parseMessageText(content: string | null): string {
     return ''
   } catch {
     return content
+  }
+}
+
+function parseMessageAttachments(content: string | null): WorkItemAttachment[] | null {
+  if (!content) return null
+
+  try {
+    const parsed: unknown = JSON.parse(content)
+    if (!parsed || typeof parsed !== 'object') return null
+    const attachments = (parsed as { attachments?: unknown }).attachments
+    if (!Array.isArray(attachments) || attachments.length === 0) return null
+    return attachments as WorkItemAttachment[]
+  } catch {
+    return null
   }
 }
 
@@ -523,6 +539,7 @@ export async function buildSessionContext(
       truncated: false,
       previousSummary: null,
       wasReset: false,
+      recentAttachments: null,
     }
   }
 
@@ -541,6 +558,11 @@ export async function buildSessionContext(
     afterTimestamp: dailyCutoff ?? undefined,
     completedBeforeTimestamp: asOfTimestamp,
   })
+
+  const latestUserMessageWithAttachments = [...messages]
+    .reverse()
+    .find((msg) => msg.role === 'user' && parseMessageAttachments(msg.content) != null)
+  const recentAttachments = parseMessageAttachments(latestUserMessageWithAttachments?.content ?? null)
 
   // Group into turn groups — pass currentAgentId so other agents' messages
   // are attributed (prefixed with [@handle]) and their tool calls are skipped
@@ -579,6 +601,7 @@ export async function buildSessionContext(
     truncated,
     previousSummary,
     wasReset,
+    recentAttachments,
   }
 }
 

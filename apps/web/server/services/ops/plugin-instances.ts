@@ -2,6 +2,7 @@ import {
   findAgentById,
   findPluginInstanceById,
   getAgentPluginInstanceAssignment,
+  getRuntimeControl,
   listAgentAssignmentsForPluginInstances,
   listAgentIdsForPluginInstance,
   searchPluginInstances,
@@ -16,6 +17,34 @@ import type {
   SetPluginInstanceEnabledInput,
 } from '@/server/services/ops/schemas'
 import { decodeCursor, encodeCursor } from './cursor'
+
+function resolveEnvBaseUrl(): string {
+  return (
+    process.env.APP_URL ||
+    process.env.APP_BASE_URL ||
+    process.env.NEXTAUTH_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    'http://localhost:3000'
+  )
+}
+
+function normalizeBaseUrl(input: string | null | undefined): string | null {
+  const value = input?.trim()
+  if (!value) return null
+  try {
+    const parsed = new URL(value)
+    return parsed.origin
+  } catch {
+    return null
+  }
+}
+
+async function resolveBaseUrl(): Promise<string> {
+  const control = await getRuntimeControl()
+  const configured = normalizeBaseUrl(control.app_base_url)
+  if (configured) return configured
+  return resolveEnvBaseUrl()
+}
 
 function isEncryptedValue(value: unknown): boolean {
   return typeof value === 'string' && value.startsWith('enc:')
@@ -130,13 +159,7 @@ export async function getPluginInstanceOp(input: GetPluginInstanceInput) {
   const agentIds = await listAgentIdsForPluginInstance(pluginInstance.id)
   const handler = pluginHandlerRegistry.get(pluginInstance.type)
   const safeConfig = parseAndRedactConfig(pluginInstance.config, handler?.sensitiveFields ?? [])
-
-  const baseUrl =
-    process.env.APP_URL ||
-    process.env.APP_BASE_URL ||
-    process.env.NEXTAUTH_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    'http://localhost:3000'
+  const baseUrl = await resolveBaseUrl()
 
   return {
     pluginInstance: {

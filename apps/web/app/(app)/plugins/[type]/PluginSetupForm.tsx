@@ -6,6 +6,7 @@ import { trpc } from '@/lib/trpc'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import {
   IconExternalLink,
   IconLoader2,
@@ -32,6 +33,8 @@ export function PluginSetupForm({
   const [name, setName] = useState('')
   const [fields, setFields] = useState<Record<string, unknown>>({})
   const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null)
+  const [githubOwnerType, setGitHubOwnerType] = useState<'personal' | 'organization'>('personal')
+  const [githubOwnerSlug, setGitHubOwnerSlug] = useState('')
 
   const utils = trpc.useUtils()
   const setupConfigQuery = trpc.pluginInstances.setupConfig.useQuery({ type: pluginType })
@@ -63,24 +66,38 @@ export function PluginSetupForm({
 
       if (isRedirect && pluginType === 'github') {
         // Fetch manifest imperatively using the new instance ID
-        const manifest = await utils.github.getManifest.fetch({
+        const manifestResult = await utils.github.getManifest.fetch({
           pluginInstanceId: result.id,
+          owner:
+            githubOwnerType === 'organization'
+              ? {
+                  ownerType: 'organization',
+                  ownerSlug: githubOwnerSlug.trim(),
+                }
+              : { ownerType: 'personal' },
         })
 
-        if (!manifest) {
+        if (!manifestResult?.manifest) {
           toast.error('Failed to generate GitHub App manifest')
+          return
+        }
+
+        if (!manifestResult.isPublicBaseUrl) {
+          toast.error(
+            'GitHub webhook URL is local. Set a public app URL in Settings -> Runtime, then retry setup.'
+          )
           return
         }
 
         // Create a hidden form and submit it (GitHub manifest flow requires POST)
         const form = document.createElement('form')
         form.method = 'POST'
-        form.action = config?.registrationUrl ?? 'https://github.com/settings/apps/new'
+        form.action = manifestResult.registrationUrl ?? 'https://github.com/settings/apps/new'
 
         const manifestInput = document.createElement('input')
         manifestInput.type = 'hidden'
         manifestInput.name = 'manifest'
-        manifestInput.value = JSON.stringify(manifest)
+        manifestInput.value = JSON.stringify(manifestResult.manifest)
         form.appendChild(manifestInput)
 
         // Pass instance ID as state so the callback knows which instance to update
@@ -215,6 +232,62 @@ export function PluginSetupForm({
         </div>
       )}
 
+      {isRedirect && pluginType === 'github' && (
+        <div className="space-y-3 rounded-md border border-white/10 bg-white/[0.03] px-3 py-3">
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-foreground">GitHub App owner</p>
+            <p className="text-xs text-muted-foreground">
+              Choose where the GitHub App itself should be created before we open the manifest
+              setup flow.
+            </p>
+          </div>
+
+          <RadioGroup
+            value={githubOwnerType}
+            onValueChange={(value) =>
+              setGitHubOwnerType(value === 'organization' ? 'organization' : 'personal')
+            }
+            className="gap-3"
+          >
+            <label className="flex items-start gap-2 rounded-md border border-white/10 bg-white/[0.02] px-3 py-2 text-xs">
+              <RadioGroupItem value="personal" />
+              <span className="space-y-0.5">
+                <span className="block font-medium text-foreground">Personal account</span>
+                <span className="block text-muted-foreground">
+                  Creates the app in your personal GitHub developer settings.
+                </span>
+              </span>
+            </label>
+
+            <label className="flex items-start gap-2 rounded-md border border-white/10 bg-white/[0.02] px-3 py-2 text-xs">
+              <RadioGroupItem value="organization" />
+              <span className="space-y-0.5">
+                <span className="block font-medium text-foreground">Organization</span>
+                <span className="block text-muted-foreground">
+                  Creates the app directly under a GitHub organization you manage.
+                </span>
+              </span>
+            </label>
+          </RadioGroup>
+
+          {githubOwnerType === 'organization' ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="github-owner-slug">Organization slug</Label>
+              <Input
+                id="github-owner-slug"
+                value={githubOwnerSlug}
+                onChange={(e) => setGitHubOwnerSlug((e.target as HTMLInputElement).value)}
+                placeholder="nitejar"
+                required
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Example: <span className="text-foreground">nitejar</span>
+              </p>
+            </div>
+          ) : null}
+        </div>
+      )}
+
       {/* Credential help link */}
       {config?.credentialHelpUrl && config?.credentialHelpLabel && (
         <a
@@ -256,7 +329,18 @@ export function PluginSetupForm({
         >
           Cancel
         </Button>
-        <Button type="submit" size="sm" disabled={isSubmitting || !name.trim()}>
+        <Button
+          type="submit"
+          size="sm"
+          disabled={
+            isSubmitting ||
+            !name.trim() ||
+            (isRedirect &&
+              pluginType === 'github' &&
+              githubOwnerType === 'organization' &&
+              !githubOwnerSlug.trim())
+          }
+        >
           {isSubmitting ? (
             <>
               <IconLoader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />

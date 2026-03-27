@@ -61,6 +61,19 @@ describe('filesystem helpers', () => {
     expect(command).toContain('SLOPBOT_EOF')
   })
 
+  it('forwards session-aware writes to spriteExec', async () => {
+    spriteExecMock.mockResolvedValue(okResult())
+    const session = { exec: vi.fn() } as never
+
+    await writeFile('sprite-1', '/tmp/file.txt', 'hello', { session })
+
+    expect(spriteExecMock).toHaveBeenCalledWith(
+      'sprite-1',
+      expect.stringContaining("cat > '/tmp/file.txt'"),
+      { session }
+    )
+  })
+
   it('appends file contents with heredoc', async () => {
     spriteExecMock.mockResolvedValue(okResult())
     await appendFile('sprite-1', '/tmp/file.txt', 'append')
@@ -95,10 +108,21 @@ describe('filesystem helpers', () => {
     expect(spriteExecMock).toHaveBeenCalledWith('sprite-1', "mkdir -p '/tmp/dir'")
   })
 
+  it('forwards session-aware mkdir to spriteExec', async () => {
+    spriteExecMock.mockResolvedValue(okResult())
+    const session = { exec: vi.fn() } as never
+
+    await mkdir('sprite-1', '/tmp/dir', { session })
+
+    expect(spriteExecMock).toHaveBeenCalledWith('sprite-1', "mkdir -p '/tmp/dir'", { session })
+  })
+
   it('removes files with recursive option', async () => {
     spriteExecMock.mockResolvedValue(okResult())
     await remove('sprite-1', '/tmp/dir', { recursive: true })
-    expect(spriteExecMock).toHaveBeenCalledWith('sprite-1', "rm -rf '/tmp/dir'")
+    expect(spriteExecMock).toHaveBeenCalledWith('sprite-1', "rm -rf '/tmp/dir'", {
+      recursive: true,
+    })
   })
 
   it('lists directory contents', async () => {
@@ -130,8 +154,7 @@ describe('filesystem helpers', () => {
 
     expect(spriteExecMock).toHaveBeenCalledWith(
       'sprite-1',
-      "git clone 'https://example.com/repo.git' '/tmp/repo'",
-      { timeout: undefined }
+      "git clone 'https://example.com/repo.git' '/tmp/repo'"
     )
   })
 })

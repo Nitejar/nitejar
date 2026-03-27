@@ -7,6 +7,7 @@ import {
   type MediaArtifact,
 } from '@nitejar/database'
 import { appendFile, mkdir, spriteExec, writeFile } from '@nitejar/sprites'
+import type { ISpriteSession } from '@nitejar/sprites'
 import {
   getImageGenModel,
   getSTTModel,
@@ -58,23 +59,29 @@ function fileNameFromPath(path: string | null): string | null {
   return idx >= 0 ? normalized.slice(idx + 1) : normalized
 }
 
-async function ensureDir(spriteName: string, path: string): Promise<void> {
+async function ensureDir(
+  spriteName: string,
+  path: string,
+  session?: ISpriteSession
+): Promise<void> {
   const dir = outputDir(path)
   if (!dir) return
-  await mkdir(spriteName, dir)
+  await mkdir(spriteName, dir, { session })
 }
 
 async function writeBinaryFile(params: {
   spriteName: string
   outputPath: string
   base64: string
+  session?: ISpriteSession
 }): Promise<void> {
-  await ensureDir(params.spriteName, params.outputPath)
+  await ensureDir(params.spriteName, params.outputPath, params.session)
   const tempPath = `${params.outputPath}.b64tmp`
-  await writeTextFileChunked(params.spriteName, tempPath, params.base64)
+  await writeTextFileChunked(params.spriteName, tempPath, params.base64, params.session)
   const decodeResult = await spriteExec(
     params.spriteName,
-    `base64 -d < ${shellQuote(tempPath)} > ${shellQuote(params.outputPath)} && rm ${shellQuote(tempPath)}`
+    `base64 -d < ${shellQuote(tempPath)} > ${shellQuote(params.outputPath)} && rm ${shellQuote(tempPath)}`,
+    { session: params.session }
   )
   if (decodeResult.exitCode !== 0) {
     throw new Error(`Failed to write binary file: ${decodeResult.stderr || 'unknown error'}`)
@@ -84,17 +91,18 @@ async function writeBinaryFile(params: {
 async function writeTextFileChunked(
   spriteName: string,
   path: string,
-  content: string
+  content: string,
+  session?: ISpriteSession
 ): Promise<void> {
   if (content.length <= SPRITE_WRITE_CHUNK_SIZE) {
-    await writeFile(spriteName, path, content)
+    await writeFile(spriteName, path, content, { session })
     return
   }
 
-  await writeFile(spriteName, path, '')
+  await writeFile(spriteName, path, '', { session })
   for (let offset = 0; offset < content.length; offset += SPRITE_WRITE_CHUNK_SIZE) {
     const chunk = content.slice(offset, offset + SPRITE_WRITE_CHUNK_SIZE)
-    await appendFile(spriteName, path, chunk)
+    await appendFile(spriteName, path, chunk, { session })
   }
 }
 
@@ -415,6 +423,7 @@ export const generateImageTool: ToolHandler = async (input, context) => {
     spriteName: context.spriteName,
     outputPath,
     base64: parsedDataUrl.base64,
+    session: context.session,
   })
 
   const imageBuffer = Buffer.from(parsedDataUrl.base64, 'base64')
@@ -650,6 +659,7 @@ export const synthesizeSpeechTool: ToolHandler = async (input, context) => {
     spriteName: context.spriteName,
     outputPath,
     base64: audioBuffer.toString('base64'),
+    session: context.session,
   })
 
   let estimatedCostUsd: number | null = null

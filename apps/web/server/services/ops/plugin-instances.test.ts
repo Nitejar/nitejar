@@ -9,6 +9,7 @@ vi.mock('@nitejar/database', () => ({
   listAgentAssignmentsForPluginInstances: vi.fn(),
   findPluginInstanceById: vi.fn(),
   listAgentIdsForPluginInstance: vi.fn(),
+  getRuntimeControl: vi.fn(),
   updatePluginInstance: vi.fn(),
   findAgentById: vi.fn(),
   getAgentPluginInstanceAssignment: vi.fn(),
@@ -25,6 +26,7 @@ import {
   findAgentById,
   findPluginInstanceById,
   getAgentPluginInstanceAssignment,
+  getRuntimeControl,
   listAgentAssignmentsForPluginInstances,
   listAgentIdsForPluginInstance,
   searchPluginInstances,
@@ -42,6 +44,7 @@ const mockedSearchPluginInstances = vi.mocked(searchPluginInstances)
 const mockedListAssignments = vi.mocked(listAgentAssignmentsForPluginInstances)
 const mockedFindPluginInstanceById = vi.mocked(findPluginInstanceById)
 const mockedListAgentIdsForPluginInstance = vi.mocked(listAgentIdsForPluginInstance)
+const mockedGetRuntimeControl = vi.mocked(getRuntimeControl)
 const mockedUpdatePluginInstance = vi.mocked(updatePluginInstance)
 const mockedFindAgentById = vi.mocked(findAgentById)
 const mockedGetAgentPluginInstanceAssignment = vi.mocked(getAgentPluginInstanceAssignment)
@@ -51,6 +54,9 @@ describe('plugin instances ops', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockedGetAgentPluginInstanceAssignment.mockResolvedValue(null)
+    mockedGetRuntimeControl.mockResolvedValue({
+      app_base_url: null,
+    } as never)
   })
 
   it('lists plugin instances with cursor contract and assignments', async () => {
@@ -147,6 +153,32 @@ describe('plugin instances ops', () => {
     expect(config.botToken).toBe('••••••••')
     expect(config.webhookSecret).toBe('••••••••')
     expect((config.nested as Record<string, unknown>).botToken).toBe('••••••••')
+  })
+
+  it('prefers runtime base url for webhook display', async () => {
+    mockedFindPluginInstanceById.mockResolvedValue({
+      id: 'int-1',
+      plugin_id: 'builtin.telegram',
+      type: 'telegram',
+      name: 'Main',
+      config: null,
+      config_json: null,
+      scope: 'global',
+      enabled: 1,
+      created_at: 100,
+      updated_at: 100,
+    })
+    mockedListAgentIdsForPluginInstance.mockResolvedValue(['a-1'])
+    mockedRegistryGet.mockReturnValue({ sensitiveFields: [] } as never)
+    mockedGetRuntimeControl.mockResolvedValue({
+      app_base_url: 'https://joshmatz.ngrok.io/some/path?ignored=yes',
+    } as never)
+
+    const result = await getPluginInstanceOp({ pluginInstanceId: 'int-1' })
+
+    expect(result.pluginInstance.webhookUrl).toBe(
+      'https://joshmatz.ngrok.io/api/webhooks/plugins/telegram/int-1'
+    )
   })
 
   it('updates enabled state and assignments through shared ops', async () => {

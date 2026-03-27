@@ -62,12 +62,12 @@ export const downloadAttachmentTool: ToolHandler = async (input, context) => {
 
     const dirPath = savePath.substring(0, savePath.lastIndexOf('/'))
     if (dirPath) {
-      await mkdir(context.spriteName, dirPath)
+      await mkdir(context.spriteName, dirPath, { session: context.session })
     }
 
     // Write base64, then decode on sprite
     const tmpBase64Path = `${savePath}.b64tmp`
-    await writeFile(context.spriteName, tmpBase64Path, base64Data)
+    await writeFile(context.spriteName, tmpBase64Path, base64Data, { session: context.session })
     const decodeResult = await spriteExec(
       context.spriteName,
       `base64 -d < "${tmpBase64Path}" > "${savePath}" && rm "${tmpBase64Path}"`,
@@ -114,16 +114,20 @@ export const downloadAttachmentTool: ToolHandler = async (input, context) => {
 
     const dirPath = savePath.substring(0, savePath.lastIndexOf('/'))
     if (dirPath) {
-      await mkdir(context.spriteName, dirPath)
+      await mkdir(context.spriteName, dirPath, { session: context.session })
     }
 
     const sizeKb = (buffer.byteLength / 1024).toFixed(1)
     if (attachment.mimeType?.startsWith('text/')) {
-      await writeFile(context.spriteName, savePath, buffer.toString('utf-8'))
+      await writeFile(context.spriteName, savePath, buffer.toString('utf-8'), {
+        session: context.session,
+      })
     } else {
       const base64Content = buffer.toString('base64')
       const tmpBase64Path = `${savePath}.b64tmp`
-      await writeFile(context.spriteName, tmpBase64Path, base64Content)
+      await writeFile(context.spriteName, tmpBase64Path, base64Content, {
+        session: context.session,
+      })
       const decodeResult = await spriteExec(
         context.spriteName,
         `base64 -d < "${tmpBase64Path}" > "${savePath}" && rm "${tmpBase64Path}"`,
@@ -184,7 +188,7 @@ export const downloadAttachmentTool: ToolHandler = async (input, context) => {
   // Ensure directory exists
   const dirPath = savePath.substring(0, savePath.lastIndexOf('/'))
   if (dirPath) {
-    await mkdir(context.spriteName, dirPath)
+    await mkdir(context.spriteName, dirPath, { session: context.session })
   }
 
   // Write file to sprite
@@ -193,12 +197,16 @@ export const downloadAttachmentTool: ToolHandler = async (input, context) => {
     ['application/json', 'application/xml', 'application/javascript'].includes(downloaded.mimeType)
 
   if (isText) {
-    await writeFile(context.spriteName, savePath, downloaded.buffer.toString('utf-8'))
+    await writeFile(context.spriteName, savePath, downloaded.buffer.toString('utf-8'), {
+      session: context.session,
+    })
   } else {
     // For binary files: write base64, then decode on sprite
     const base64Content = downloaded.buffer.toString('base64')
     const tmpBase64Path = `${savePath}.b64tmp`
-    await writeFile(context.spriteName, tmpBase64Path, base64Content)
+    await writeFile(context.spriteName, tmpBase64Path, base64Content, {
+      session: context.session,
+    })
     const decodeResult = await spriteExec(
       context.spriteName,
       `base64 -d < "${tmpBase64Path}" > "${savePath}" && rm "${tmpBase64Path}"`,

@@ -5,6 +5,7 @@ import {
   findPluginInstanceById,
   findPluginInstancesByType,
   getDb,
+  getRuntimeControl,
   updatePluginInstance,
 } from '@nitejar/database'
 import {
@@ -49,6 +50,16 @@ const PERMISSION_PRESETS: Record<z.infer<typeof permissionPresetSchema>, Permiss
 const DEFAULT_COMMENT_POLICY: CommentPolicy = 'all'
 const DEFAULT_MENTION_HANDLE = '@nitejar'
 const DEFAULT_TRACK_ISSUE_OPEN = true
+const githubManifestOwnerSchema = z.discriminatedUnion('ownerType', [
+  z.object({
+    ownerType: z.literal('personal'),
+  }),
+  z.object({
+    ownerType: z.literal('organization'),
+    ownerSlug: z.string().trim().min(1),
+  }),
+])
+type GitHubManifestOwner = z.infer<typeof githubManifestOwnerSchema>
 
 function getRequiredEvents(permissions: PermissionMap): string[] {
   const events: string[] = []
@@ -166,7 +177,7 @@ function findMissingPermissions(
     }))
 }
 
-function resolveBaseUrl(): string {
+function resolveEnvBaseUrl(): string {
   return (
     process.env.APP_URL ||
     process.env.APP_BASE_URL ||
@@ -174,6 +185,24 @@ function resolveBaseUrl(): string {
     process.env.NEXT_PUBLIC_APP_URL ||
     'http://localhost:3000'
   )
+}
+
+function normalizeBaseUrl(input: string | null | undefined): string | null {
+  const value = input?.trim()
+  if (!value) return null
+  try {
+    const parsed = new URL(value)
+    return parsed.origin
+  } catch {
+    return null
+  }
+}
+
+async function resolveBaseUrl(): Promise<string> {
+  const control = await getRuntimeControl()
+  const configured = normalizeBaseUrl(control.app_base_url)
+  if (configured) return configured
+  return resolveEnvBaseUrl()
 }
 
 function resolvePermissions(
@@ -206,7 +235,7 @@ function isPublicUrl(url: string): boolean {
   }
 }
 
-function buildManifest(params: {
+export function buildManifest(params: {
   baseUrl: string
   name: string
   permissions: PermissionMap
@@ -221,7 +250,7 @@ function buildManifest(params: {
   const manifest: Record<string, unknown> = {
     name,
     url: baseUrl,
-    redirect_url: `${baseUrl}/admin/plugins/github/callback`,
+    redirect_url: `${baseUrl}/plugins/github/callback`,
     public: false,
     default_permissions: permissions,
     default_events: events,
@@ -236,6 +265,13 @@ function buildManifest(params: {
   }
 
   return manifest
+}
+
+export function buildGitHubManifestRegistrationUrl(owner: GitHubManifestOwner): string {
+  if (owner.ownerType === 'organization') {
+    return `https://github.com/organizations/${encodeURIComponent(owner.ownerSlug)}/settings/apps/new`
+  }
+  return 'https://github.com/settings/apps/new'
 }
 
 export const githubRouter = router({
@@ -257,7 +293,7 @@ export const githubRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'GitHub plugin instance not found' })
       }
 
-      const baseUrl = resolveBaseUrl()
+      const baseUrl = await resolveBaseUrl()
       const config = await getGitHubAppConfig(input.pluginInstanceId)
       const permissionsPreset: PermissionPreset =
         (config?.permissions?.preset as PermissionPreset | undefined) ?? 'robust'
@@ -471,11 +507,12 @@ export const githubRouter = router({
           pluginInstanceId: z.string().optional(),
           permissionsPreset: permissionPresetSchema.optional(),
           appName: z.string().optional(),
+          owner: githubManifestOwnerSchema.optional(),
         })
         .optional()
     )
     .query(async ({ input }) => {
-      const baseUrl = resolveBaseUrl()
+      const baseUrl = await resolveBaseUrl()
 
       let pluginInstanceName: string | undefined
       let permissionsPreset: PermissionPreset | undefined = input?.permissionsPreset
@@ -506,7 +543,20 @@ export const githubRouter = router({
       const permissions = resolvePermissions(preset, overrides)
       const name = input?.appName ?? pluginInstanceName ?? 'Nitejar'
 
-      return buildManifest({ baseUrl, name, permissions, pluginInstanceId: input.pluginInstanceId })
+      const manifest = buildManifest({
+        baseUrl,
+        name,
+        permissions,
+        pluginInstanceId: input.pluginInstanceId,
+      })
+      const owner = input?.owner ?? { ownerType: 'personal' as const }
+
+      return {
+        manifest,
+        isPublicBaseUrl: isPublicUrl(baseUrl),
+        baseUrl,
+        registrationUrl: buildGitHubManifestRegistrationUrl(owner),
+      }
     }),
 
   exchangeCode: protectedProcedure
@@ -812,6 +862,12 @@ export const githubRouter = router({
       const db = getDb()
       const now = Math.floor(Date.now() / 1000)
       let discovered = 0
+      let syncedRepos = 0
+      const repoSyncFailures: Array<{
+        installationId: number
+        accountLogin: string | null
+        message: string
+      }> = []
 
       for (const ghInst of ghInstallations) {
         const existing = await db
@@ -850,7 +906,7 @@ export const githubRouter = router({
       // Now sync repos for each installation
       const allInstallations = await db
         .selectFrom('github_installations')
-        .select(['id', 'installation_id', 'plugin_instance_id'])
+        .select(['id', 'installation_id', 'plugin_instance_id', 'account_login'])
         .where('plugin_instance_id', '=', input.pluginInstanceId)
         .execute()
 
@@ -873,11 +929,20 @@ export const githubRouter = router({
             }
           )
 
-          if (!repoResponse.ok) continue
+          if (!repoResponse.ok) {
+            const errorBody = await repoResponse.text()
+            repoSyncFailures.push({
+              installationId: inst.installation_id,
+              accountLogin: inst.account_login,
+              message: `Repo sync failed (${repoResponse.status}): ${errorBody}`,
+            })
+            continue
+          }
 
           const repoPayload = (await repoResponse.json()) as {
             repositories: { id: number; full_name: string; html_url?: string }[]
           }
+          syncedRepos += repoPayload.repositories.length
 
           for (const repo of repoPayload.repositories) {
             await db
@@ -900,12 +965,22 @@ export const githubRouter = router({
               )
               .execute()
           }
-        } catch {
-          // Skip installations that fail to sync repos
+        } catch (error) {
+          repoSyncFailures.push({
+            installationId: inst.installation_id,
+            accountLogin: inst.account_login,
+            message: error instanceof Error ? error.message : String(error),
+          })
         }
       }
 
-      return { ok: true, discovered, total: ghInstallations.length }
+      return {
+        ok: true,
+        discovered,
+        total: ghInstallations.length,
+        syncedRepos,
+        repoSyncFailures,
+      }
     }),
 })
 

@@ -305,7 +305,7 @@ export const configureGitHubCredentialsTool: ToolHandler = async (input, context
   await runSpriteCommand(context, `mkdir -p ${nitejarDir}`, homeDir)
 
   const envContent = `export GH_TOKEN=${credential.token}\nexport GITHUB_TOKEN=${credential.token}\n`
-  await writeFile(context.spriteName, envPath, envContent)
+  await writeFile(context.spriteName, envPath, envContent, { session: context.session })
 
   const helperContent = [
     '#!/bin/sh',
@@ -317,7 +317,7 @@ export const configureGitHubCredentialsTool: ToolHandler = async (input, context
     '',
   ].join('\n')
 
-  await writeFile(context.spriteName, helperPath, helperContent)
+  await writeFile(context.spriteName, helperPath, helperContent, { session: context.session })
 
   await runSpriteCommand(context, `chmod 700 ${helperPath} && chmod 600 ${envPath}`, homeDir)
 

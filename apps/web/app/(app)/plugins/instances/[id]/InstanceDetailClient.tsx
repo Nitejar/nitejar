@@ -24,7 +24,7 @@ import {
 } from '@tabler/icons-react'
 import { trpc } from '@/lib/trpc'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -49,6 +49,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { PageHeader } from '@/app/(app)/components/PageHeader'
+import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -523,7 +524,18 @@ function GitHubSettingsCard({ pluginInstanceId }: { pluginInstanceId: string }) 
   const discoverMutation = trpc.github.discoverInstallations.useMutation({
     onSuccess: (data) => {
       void installationsQuery.refetch()
-      toast.success(`Discovered ${data.discovered} new installation(s), ${data.total} total`)
+      if (data.repoSyncFailures.length > 0) {
+        const firstFailure = data.repoSyncFailures[0]
+        const accountLabel = firstFailure?.accountLogin ?? `installation ${firstFailure?.installationId}`
+        toast.error(
+          `Found ${data.total} installation(s), but repo sync failed for ${accountLabel}: ${firstFailure?.message ?? 'unknown error'}`
+        )
+        return
+      }
+
+      toast.success(
+        `Discovered ${data.discovered} new installation(s), ${data.syncedRepos} repos synced across ${data.total} installation(s)`
+      )
     },
   })
 
@@ -544,6 +556,9 @@ function GitHubSettingsCard({ pluginInstanceId }: { pluginInstanceId: string }) 
     settings.permissionsPreset === 'minimal' ? 'Minimal (read-only)' : 'Robust (recommended)'
   const commentPolicyLabel =
     settings.commentPolicy === 'mentions' ? 'Mentions only' : 'Respond to all'
+  const appSlug = settings.appSlug
+  const appSettingsUrl = appSlug ? `https://github.com/settings/apps/${appSlug}` : null
+  const appInstallUrl = appSlug ? `https://github.com/apps/${appSlug}/installations/new` : null
 
   return (
     <Card className="border-white/10 bg-white/[0.02]">
@@ -633,6 +648,51 @@ function GitHubSettingsCard({ pluginInstanceId }: { pluginInstanceId: string }) 
           </div>
         </div>
 
+        {settings.connected ? (
+          <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="text-[10px] uppercase tracking-[0.14em]">
+                GitHub App
+              </Badge>
+              {settings.appSlug ? (
+                <span className="text-xs text-foreground">{settings.appSlug}</span>
+              ) : null}
+              {settings.appId ? (
+                <span className="text-[10px] text-muted-foreground">App ID {settings.appId}</span>
+              ) : null}
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              This app lives in your GitHub account under Developer settings. Registering the app
+              only saves credentials here. You still need to install it on a GitHub account or org
+              before Nitejar will discover any installations.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {appSettingsUrl ? (
+                <a
+                  href={appSettingsUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={cn(buttonVariants({ size: 'sm', variant: 'outline' }))}
+                >
+                  Open GitHub App
+                  <IconExternalLink className="ml-1.5 h-3.5 w-3.5" />
+                </a>
+              ) : null}
+              {appInstallUrl ? (
+                <a
+                  href={appInstallUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={cn(buttonVariants({ size: 'sm', variant: 'outline' }))}
+                >
+                  Install App
+                  <IconExternalLink className="ml-1.5 h-3.5 w-3.5" />
+                </a>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
         {/* Installations */}
         <div className="space-y-2 pt-2">
           <div className="flex items-center justify-between">
@@ -655,10 +715,30 @@ function GitHubSettingsCard({ pluginInstanceId }: { pluginInstanceId: string }) 
           {installationsQuery.isLoading ? (
             <div className="h-12 animate-pulse rounded bg-white/5" />
           ) : !installationsQuery.data || installationsQuery.data.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              No installations found. Install the GitHub App on an organization or account, then
-              sync.
-            </p>
+            <div className="rounded-lg border border-dashed border-white/10 bg-white/[0.02] px-3 py-3">
+              <p className="text-xs text-muted-foreground">
+                No installations found yet. That usually means the GitHub App is connected here but
+                has not been installed on any GitHub account or organization.
+              </p>
+              <ol className="mt-3 space-y-1 text-xs text-muted-foreground">
+                <li>1. Open the GitHub App in your GitHub account.</li>
+                <li>2. Install it on the account or organization you want Nitejar to access.</li>
+                <li>3. Come back here and click <span className="text-foreground">Sync Installations</span>.</li>
+              </ol>
+              {appInstallUrl ? (
+                <div className="mt-3">
+                  <a
+                    href={appInstallUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={cn(buttonVariants({ size: 'sm', variant: 'outline' }))}
+                  >
+                    Install on GitHub
+                    <IconExternalLink className="ml-1.5 h-3.5 w-3.5" />
+                  </a>
+                </div>
+              ) : null}
+            </div>
           ) : (
             <div className="space-y-1">
               {installationsQuery.data.map((inst) => (

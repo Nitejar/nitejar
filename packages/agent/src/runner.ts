@@ -797,6 +797,7 @@ async function runInferenceLoop(
   }
 
   // Always go through buildUserMessageForModel so image attachments are included
+  const parsedPayload = safeParsePayload(workItem.payload)
   const userModelMessage = await buildUserMessageForModel(workItem, userMessage)
   const retrySeed = resumeFromJobId
     ? await buildRetrySeedFromJob(resumeFromJobId, userMessage)
@@ -813,6 +814,10 @@ async function runInferenceLoop(
     sessionSettings,
     workItem.created_at
   )
+  const carryForwardAttachments =
+    Array.isArray(parsedPayload?.attachments) && parsedPayload.attachments.length > 0
+      ? null
+      : (sessionContext.recentAttachments ?? null)
 
   // Store initial messages
   // Persist multimodal content (with image data URLs) so session replay includes images
@@ -821,8 +826,12 @@ async function runInferenceLoop(
     job.id,
     'user',
     Array.isArray(userModelMessage.content)
-      ? { text: userMessage, content_parts: userModelMessage.content }
-      : { text: userMessage }
+      ? {
+          text: userMessage,
+          content_parts: userModelMessage.content,
+          attachments: parsedPayload?.attachments,
+        }
+      : { text: userMessage, attachments: parsedPayload?.attachments }
   )
 
   // Preamble injection via source context provider (e.g. GitHub issue/PR context)
@@ -867,6 +876,16 @@ async function runInferenceLoop(
     userModelMessage,
     ...(retrySeed?.promptMessages ?? []),
   ]
+  if (carryForwardAttachments && carryForwardAttachments.length > 0) {
+    const carryForwardNote =
+      '[Attachment context] The current message has no new attachments, but the most recent user attachments in this session remain downloadable in this run. Use the same attachment indices from that prior message if you need the raw files.'
+    messages.splice(
+      issuePreamble ? 2 : 1,
+      0,
+      { role: 'system', content: carryForwardNote }
+    )
+    await appendMessage(job.id, 'system', { text: carryForwardNote })
+  }
   // Track where this run's messages start (after system + preamble + session history)
   // so post-processing can exclude session history and only synthesize current work.
   const currentRunStartIndex = messages.length - 1 // the userModelMessage
@@ -1100,7 +1119,6 @@ async function runInferenceLoop(
       }
     }
 
-    const parsedPayload = safeParsePayload(workItem.payload)
     return {
       spriteName: activeSpriteName,
       cwd: trackedCwd,
@@ -1112,7 +1130,10 @@ async function runInferenceLoop(
       resolvedDbSkills,
       pluginInstanceId: workItem.plugin_instance_id ?? undefined,
       responseContext: extractResponseContext(workItem, explicitResponseContext),
-      attachments: parsedPayload?.attachments,
+      attachments:
+        Array.isArray(parsedPayload?.attachments) && parsedPayload.attachments.length > 0
+          ? parsedPayload.attachments
+          : (sessionContext.recentAttachments ?? undefined),
       editToolMode,
       backgroundTaskManager: backgroundTaskManager ?? undefined,
       activeSandboxName,
