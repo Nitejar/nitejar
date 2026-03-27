@@ -7,7 +7,11 @@ export function getWorkItemSourceLabel(input: {
   linkedTicketTitle?: string | null
   linkedGoalTitle?: string | null
 }): string {
-  if (input.source?.toLowerCase() === 'routine') {
+  const normalizedSource = input.source?.toLowerCase()
+  if (normalizedSource === 'ticket_delegate' || normalizedSource === 'ticket_comment') {
+    return 'ticket'
+  }
+  if (normalizedSource === 'routine') {
     if (input.linkedTicketTitle) return 'ticket'
     if (input.linkedGoalTitle) return 'goal'
   }

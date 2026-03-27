@@ -16,6 +16,7 @@ import {
   IconCircleDashed,
   IconX,
   IconSearch,
+  IconInbox,
   IconTarget,
   IconTicket,
   IconRobot,
@@ -121,6 +122,7 @@ type AttentionDetail =
       goalTitle: string | null
       blockedByCount: number
       isUnclaimed: boolean
+      attentionTitle: string | null
     }
   | {
       kind: 'agent'
@@ -540,7 +542,33 @@ function buildAttentionFeed(
     })
   }
 
-  // 3. blockedTickets
+  // 3. direct in-app attention from ticket comments / delegation
+  for (const item of work.attentionItems) {
+    const ticket = item.ticket
+    items.push({
+      id: `attention:${item.id}`,
+      type: 'ticket',
+      severity: 'warning',
+      title: ticket?.title ?? item.title,
+      reason: item.title,
+      timestamp: item.created_at,
+      link: ticket ? `/tickets/${ticket.id}` : '/tickets',
+      detail: {
+        kind: 'ticket',
+        ticketId: ticket?.id ?? item.ticket_id ?? 'unknown',
+        body: ticket?.body ?? item.body,
+        status: ticket?.status ?? 'blocked',
+        assignee: ticket?.assignee ?? null,
+        goalTitle: ticket?.goal?.title ?? null,
+        blockedByCount: ticket?.blockedByCount ?? 0,
+        isUnclaimed: false,
+        attentionTitle: item.title,
+      },
+      isOwned: true,
+    })
+  }
+
+  // 4. blockedTickets
   for (const ticket of work.blockedTickets) {
     const goalCtx = ticket.goal?.title ? `${ticket.goal.title} · ` : ''
     items.push({
@@ -560,12 +588,13 @@ function buildAttentionFeed(
         goalTitle: ticket.goal?.title ?? null,
         blockedByCount: ticket.blockedByCount,
         isUnclaimed: false,
+        attentionTitle: null,
       },
       isOwned: false,
     })
   }
 
-  // 4. unclaimedTickets
+  // 5. unclaimedTickets
   for (const ticket of work.unclaimedTickets) {
     items.push({
       id: `ticket:unclaimed:${ticket.id}`,
@@ -584,12 +613,13 @@ function buildAttentionFeed(
         goalTitle: ticket.goal?.title ?? null,
         blockedByCount: ticket.blockedByCount,
         isUnclaimed: true,
+        attentionTitle: null,
       },
       isOwned: false,
     })
   }
 
-  // 5. activeOperations running long (>5 min, not already in needsAttention)
+  // 6. activeOperations running long (>5 min, not already in needsAttention)
   const alreadyFlagged = new Set(fleet.needsAttention.map((n) => n.agentId))
   for (const op of fleet.activeOperations) {
     if (op.status !== 'running' || !op.startedAt) continue
@@ -618,7 +648,7 @@ function buildAttentionFeed(
     })
   }
 
-  // 6. overloadedAgents
+  // 7. overloadedAgents
   for (const agent of work.overloadedAgents) {
     items.push({
       id: `agent:overloaded:${agent.ref}`,
@@ -1088,6 +1118,14 @@ function TicketDetail({
 }) {
   return (
     <div className="space-y-3">
+      {detail.attentionTitle ? (
+        <div className="rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2">
+          <p className="text-[0.6rem] uppercase tracking-[0.2em] text-amber-300/70">
+            Needs your attention
+          </p>
+          <p className="mt-1 text-sm text-amber-100/85">{detail.attentionTitle}</p>
+        </div>
+      ) : null}
       {detail.body && (
         <div>
           <p className="text-[0.6rem] uppercase tracking-[0.2em] text-muted-foreground">
@@ -1302,7 +1340,7 @@ function InboxState({
   const allFeed = useMemo(() => {
     const items = buildAttentionFeed(fleet, work)
     for (const item of items) {
-      item.isOwned = isItemOwnedByUser(item, currentUserId, myTeamIds)
+      item.isOwned = item.isOwned || isItemOwnedByUser(item, currentUserId, myTeamIds)
     }
     return items
   }, [fleet, work, currentUserId, myTeamIds])
@@ -1390,6 +1428,18 @@ function InboxState({
         <h1 className="text-sm font-semibold text-zinc-200">Command Center</h1>
 
         <div className="flex items-center gap-2">
+          <Link
+            href="/inbox"
+            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-zinc-800 px-2 text-xs text-zinc-400 transition hover:border-zinc-700 hover:text-zinc-200"
+          >
+            <IconInbox className="h-3.5 w-3.5" />
+            Inbox
+            {work.attentionSummary.unreadOpenCount > 0 ? (
+              <span className="inline-flex min-w-[1rem] items-center justify-center rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-amber-300">
+                {work.attentionSummary.unreadOpenCount > 99 ? '99+' : work.attentionSummary.unreadOpenCount}
+              </span>
+            ) : null}
+          </Link>
           <Popover>
             <PopoverTrigger
               className={`inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-2 text-xs transition ${

@@ -18,6 +18,7 @@ import {
 
 import { cn } from '@/lib/utils'
 import { Textarea } from '@/components/ui/textarea'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { RelativeTime } from '@/app/(app)/components/RelativeTime'
 import { EditableDescription } from '@/app/(app)/components/EditableDescription'
 import { SkeletonTicketDetail } from '@/app/(app)/work/skeletons'
@@ -29,6 +30,55 @@ import {
   StatusDot,
   type TicketStatus,
 } from '@/app/(app)/work/shared'
+
+type MentionTarget = {
+  id: string
+  kind: 'agent' | 'user'
+  token: string
+  label: string
+  subtitle: string
+}
+
+function slugifyMentionToken(value: string): string {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'person'
+  )
+}
+
+function getMentionTokenContext(text: string, cursorPos: number): { token: string; start: number } | null {
+  const safePos = Math.max(0, Math.min(cursorPos, text.length))
+  const before = text.slice(0, safePos)
+  const tokenStart = Math.max(before.lastIndexOf(' '), before.lastIndexOf('\n')) + 1
+  const token = before.slice(tokenStart)
+  if (!token.startsWith('@')) return null
+  return { token, start: tokenStart }
+}
+
+function parseMentionIds(
+  text: string,
+  targets: MentionTarget[]
+): { agentIds: string[]; userIds: string[] } {
+  const byToken = new Map(targets.map((target) => [target.token.toLowerCase(), target]))
+  const mentionRegex = /@([a-z0-9_][a-z0-9_-]*)/gi
+  const agentIds = new Set<string>()
+  const userIds = new Set<string>()
+
+  let match: RegExpExecArray | null
+  while ((match = mentionRegex.exec(text)) !== null) {
+    const target = byToken.get(match[1]!.toLowerCase())
+    if (!target) continue
+    if (target.kind === 'agent') agentIds.add(target.id)
+    else userIds.add(target.id)
+  }
+
+  return {
+    agentIds: [...agentIds],
+    userIds: [...userIds],
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Inline editable title
@@ -197,8 +247,15 @@ function SubTicketRow({
 export function TicketDetailClient({ ticketId }: { ticketId: string }) {
   const router = useRouter()
   const utils = trpc.useUtils()
+  const commentComposerRef = useRef<HTMLTextAreaElement | null>(null)
   const [note, setNote] = useState('')
   const [noteExpanded, setNoteExpanded] = useState(false)
+  const [commentValue, setCommentValue] = useState('')
+  const [commentKind, setCommentKind] = useState<
+    'comment' | 'question' | 'decision_needed' | 'review_requested' | 'blocked'
+  >('comment')
+  const [commentMarkBlocked, setCommentMarkBlocked] = useState(false)
+  const [commentCursor, setCommentCursor] = useState(0)
   const [assigneeKind, setAssigneeKind] = useState<'user' | 'agent'>('agent')
   const [activityOpen, setActivityOpen] = useState(false)
   const [newSubTicketTitle, setNewSubTicketTitle] = useState('')
@@ -246,6 +303,34 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
       toast.error('Failed to post update')
     },
   })
+  const postCommentMutation = trpc.work.postTicketComment.useMutation({
+    onSuccess: async () => {
+      setCommentValue('')
+      setCommentKind('comment')
+      setCommentMarkBlocked(false)
+      await Promise.all([
+        utils.work.getTicket.invalidate({ ticketId }),
+        utils.work.getDashboard.invalidate(),
+        utils.work.listTickets.invalidate(),
+      ])
+    },
+    onError: () => {
+      toast.error('Failed to post comment')
+    },
+  })
+  const markInboxAttentionReadMutation = trpc.work.markInboxAttentionRead.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.work.getTicket.invalidate({ ticketId }),
+        utils.work.getDashboard.invalidate(),
+        utils.work.getInboxSummary.invalidate(),
+        utils.work.listInboxAttention.invalidate(),
+      ])
+    },
+    onError: () => {
+      toast.error('Failed to update inbox state')
+    },
+  })
   const createSubTicketMutation = trpc.work.createTicket.useMutation({
     onSuccess: async () => {
       setNewSubTicketTitle('')
@@ -287,6 +372,26 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
     if (!ticket) return
     setAssigneeKind(ticket.assignee?.kind === 'user' ? 'user' : 'agent')
   }, [ticket])
+
+  useEffect(() => {
+    if (!ticket?.currentUserId) return
+    if (markInboxAttentionReadMutation.isPending) return
+
+    const hasUnreadForCurrentUser = ticket.attentionItems.some(
+      (item) =>
+        item.target_kind === 'user' &&
+        item.target_ref === ticket.currentUserId &&
+        item.read_at == null
+    )
+
+    if (!hasUnreadForCurrentUser) return
+
+    markInboxAttentionReadMutation.mutate({
+      ticketId,
+      state: 'all',
+      unreadOnly: true,
+    })
+  }, [markInboxAttentionReadMutation, ticket, ticketId])
 
   const agentOptions = useMemo(
     () =>
@@ -339,6 +444,63 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
     [ticketsForParentQuery.data, ticketId, ticket?.parentTicket]
   )
   const assigneeOptions = assigneeKind === 'user' ? memberOptions : agentOptions
+  const mentionTargets = useMemo(() => {
+    const used = new Set<string>()
+    const targets: MentionTarget[] = []
+
+    for (const agent of agentsQuery.data ?? []) {
+      const token = agent.handle.toLowerCase()
+      if (used.has(token)) continue
+      used.add(token)
+      targets.push({
+        id: agent.id,
+        kind: 'agent',
+        token,
+        label: agent.name,
+        subtitle: `@${agent.handle}`,
+      })
+    }
+
+    for (const member of membersQuery.data ?? []) {
+      if (member.kind !== 'user') continue
+      const baseToken = slugifyMentionToken(member.name || member.email.split('@')[0] || 'person')
+      let token = baseToken
+      let suffix = 2
+      while (used.has(token)) {
+        token = `${baseToken}-${suffix}`
+        suffix += 1
+      }
+      used.add(token)
+      targets.push({
+        id: member.id,
+        kind: 'user',
+        token,
+        label: member.name || member.email,
+        subtitle: member.email,
+      })
+    }
+
+    return targets
+  }, [agentsQuery.data, membersQuery.data])
+  const mentionContext = useMemo(() => {
+    const context = getMentionTokenContext(commentValue, commentCursor)
+    if (!context) return null
+    const query = context.token.slice(1).toLowerCase()
+    const matches = mentionTargets.filter((target) => target.token.startsWith(query)).slice(0, 8)
+    return { ...context, matches }
+  }, [commentCursor, commentValue, mentionTargets])
+
+  const insertMention = (token: string) => {
+    if (!mentionContext) return
+    const nextValue = `${commentValue.slice(0, mentionContext.start)}@${token} ${commentValue.slice(commentCursor)}`
+    setCommentValue(nextValue)
+    const nextCursor = mentionContext.start + token.length + 2
+    setCommentCursor(nextCursor)
+    requestAnimationFrame(() => {
+      commentComposerRef.current?.focus()
+      commentComposerRef.current?.setSelectionRange(nextCursor, nextCursor)
+    })
+  }
 
   if (ticketQuery.isLoading) {
     return <SkeletonTicketDetail />
@@ -540,6 +702,33 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
             Updated <RelativeTime timestamp={ticket.updatedAt} />
           </span>
         </div>
+        {ticket.participants.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-white/45">
+            <span className="uppercase tracking-[0.16em] text-white/30">Participants</span>
+            {ticket.participants.slice(0, 6).map((participant) => (
+              <span
+                key={`${participant.kind}:${participant.ref}`}
+                className="inline-flex items-center gap-1.5 rounded-full border border-zinc-800/80 bg-zinc-950/60 px-2 py-1 text-zinc-300"
+              >
+                <AvatarCircle name={participant.actor?.label ?? participant.ref} className="h-4 w-4 text-[8px]" />
+                {participant.actor?.label ?? participant.ref}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {ticket.attentionItems.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-amber-200/80">
+            <span className="uppercase tracking-[0.16em] text-amber-300/60">Waiting on</span>
+            {ticket.attentionItems.map((item) => (
+              <span
+                key={item.id}
+                className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-1"
+              >
+                {item.target?.label ?? item.target_ref}
+              </span>
+            ))}
+          </div>
+        ) : null}
         {showCompletionNote && (
           <div className="flex items-start gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-100/85 motion-safe:animate-[fadeSlideIn_0.4s_ease-out]">
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
@@ -816,6 +1005,134 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
             </div>
           </div>
         )}
+      </section>
+
+      <section className="space-y-3 border-t border-zinc-800/60 pt-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[0.65rem] uppercase tracking-[0.2em] text-white/35">Discussion</p>
+            <p className="mt-1 text-sm text-zinc-500">
+              Questions, approvals, and coordination live here. Keep receipts below.
+            </p>
+          </div>
+          <div className="text-xs text-zinc-500">{ticket.comments.length} comments</div>
+        </div>
+
+        <div className="space-y-3">
+          {ticket.comments.length > 0 ? (
+            ticket.comments.map((comment) => (
+              <div key={comment.id} className="rounded-lg border border-zinc-800/60 bg-zinc-950/40 px-3 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline">{comment.kind}</Badge>
+                  <span className="text-sm text-zinc-300">
+                    {comment.author?.label ?? comment.author_ref ?? comment.author_kind}
+                  </span>
+                  <span className="text-[10px] text-zinc-600">
+                    <RelativeTime timestamp={comment.created_at} />
+                  </span>
+                </div>
+                <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-300">
+                  {comment.body}
+                </p>
+                {comment.mentions.length > 0 ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-zinc-500">
+                    <span className="uppercase tracking-[0.14em] text-zinc-600">Mentions</span>
+                    {comment.mentions.map((mention) => (
+                      <span
+                        key={`${comment.id}:${mention.kind}:${mention.ref}`}
+                        className="rounded-full border border-zinc-800 px-2 py-0.5 text-zinc-400"
+                      >
+                        {mention.label}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-zinc-500">
+              No coordination thread yet. Use this section when someone needs an answer or approval.
+            </p>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-zinc-800/60 bg-zinc-950/40 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <NativeSelect
+              value={commentKind}
+              onChange={(e) =>
+                setCommentKind(
+                  e.target.value as 'comment' | 'question' | 'decision_needed' | 'review_requested' | 'blocked'
+                )
+              }
+              className="h-8 w-[180px] text-xs"
+            >
+              <NativeSelectOption value="comment">Comment</NativeSelectOption>
+              <NativeSelectOption value="question">Question</NativeSelectOption>
+              <NativeSelectOption value="decision_needed">Decision needed</NativeSelectOption>
+              <NativeSelectOption value="review_requested">Review requested</NativeSelectOption>
+              <NativeSelectOption value="blocked">Blocked</NativeSelectOption>
+            </NativeSelect>
+            <label className="inline-flex items-center gap-2 text-xs text-zinc-400">
+              <input
+                type="checkbox"
+                checked={commentMarkBlocked || commentKind === 'blocked'}
+                onChange={(event) => setCommentMarkBlocked(event.target.checked)}
+                disabled={commentKind === 'blocked'}
+              />
+              Mark ticket blocked
+            </label>
+          </div>
+          <div className="mt-3">
+            <Textarea
+              ref={commentComposerRef}
+              value={commentValue}
+              onChange={(event) => setCommentValue(event.target.value)}
+              onClick={(event) => setCommentCursor(event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
+              onKeyUp={(event) => setCommentCursor(event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
+              placeholder="Ask a question, request approval, or @mention the next person who needs to act…"
+              rows={4}
+              className="min-h-[100px] resize-y text-sm"
+            />
+            {mentionContext && mentionContext.matches.length > 0 ? (
+              <div className="mt-2 rounded-md border border-zinc-800/80 bg-zinc-950/80 p-1">
+                {mentionContext.matches.map((target) => (
+                  <button
+                    key={`${target.kind}:${target.id}`}
+                    type="button"
+                    className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm text-zinc-300 transition hover:bg-white/[0.04]"
+                    onClick={() => insertMention(target.token)}
+                  >
+                    <span>{target.label}</span>
+                    <span className="text-xs text-zinc-500">@{target.token}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <p className="text-[11px] text-zinc-500">
+              Agent handles keep their real `@handle`. People get local mention tokens for this composer.
+            </p>
+            <Button
+              size="sm"
+              disabled={!commentValue.trim() || postCommentMutation.isPending}
+              onClick={() => {
+                const mentions = parseMentionIds(commentValue, mentionTargets)
+                postCommentMutation.mutate({
+                  ticketId,
+                  body: commentValue,
+                  kind: commentKind,
+                  mentionAgentIds: mentions.agentIds,
+                  mentionUserIds: mentions.userIds,
+                  markBlocked: commentKind === 'blocked' ? true : commentMarkBlocked,
+                })
+              }}
+            >
+              Post comment
+            </Button>
+          </div>
+        </div>
       </section>
 
       {/* Post update */}

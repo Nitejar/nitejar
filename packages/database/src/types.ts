@@ -44,6 +44,9 @@ export interface Database {
   ticket_relations: TicketRelationTable
   work_updates: WorkUpdateTable
   ticket_links: TicketLinkTable
+  ticket_comments: TicketCommentTable
+  ticket_participants: TicketParticipantTable
+  attention_items: AttentionItemTable
   work_views: WorkViewTable
   collections: CollectionTable
   collection_rows: CollectionRowTable
@@ -764,6 +767,61 @@ export interface TicketLinkTable {
 export type TicketLink = Selectable<TicketLinkTable>
 export type NewTicketLink = Insertable<TicketLinkTable>
 export type TicketLinkUpdate = Updateable<TicketLinkTable>
+
+export interface TicketCommentTable {
+  id: Generated<string>
+  ticket_id: string
+  author_kind: string // 'user' | 'agent' | 'system'
+  author_ref: string | null
+  kind: Generated<string> // 'comment' | 'question' | 'decision_needed' | 'review_requested' | 'blocked'
+  body: string
+  metadata_json: string | null
+  created_at: Generated<number>
+  updated_at: Generated<number>
+}
+
+export type TicketComment = Selectable<TicketCommentTable>
+export type NewTicketComment = Insertable<TicketCommentTable>
+export type TicketCommentUpdate = Updateable<TicketCommentTable>
+
+export interface TicketParticipantTable {
+  ticket_id: string
+  participant_kind: string // 'user' | 'agent'
+  participant_ref: string
+  added_by_kind: string // 'user' | 'agent' | 'system'
+  added_by_ref: string | null
+  created_at: Generated<number>
+}
+
+export type TicketParticipant = Selectable<TicketParticipantTable>
+export type NewTicketParticipant = Insertable<TicketParticipantTable>
+export type TicketParticipantUpdate = Updateable<TicketParticipantTable>
+
+export interface AttentionItemTable {
+  id: Generated<string>
+  target_kind: string // 'user' | 'agent'
+  target_ref: string
+  source_kind: string // 'ticket_comment'
+  source_ref: string
+  ticket_id: string | null
+  goal_id: string | null
+  status: Generated<string> // 'open' | 'resolved' | 'dismissed'
+  title: string
+  body: string | null
+  metadata_json: string | null
+  created_at: Generated<number>
+  updated_at: Generated<number>
+  read_at: number | null
+  read_by_kind: string | null
+  read_by_ref: string | null
+  resolved_at: number | null
+  resolved_by_kind: string | null
+  resolved_by_ref: string | null
+}
+
+export type AttentionItem = Selectable<AttentionItemTable>
+export type NewAttentionItem = Insertable<AttentionItemTable>
+export type AttentionItemUpdate = Updateable<AttentionItemTable>
 
 export interface WorkViewTable {
   id: Generated<string>

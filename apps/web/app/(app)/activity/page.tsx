@@ -64,6 +64,8 @@ const sourceIcons: Record<string, string> = {
   app_chat: '\u263A',
   scheduler: '\u23F1',
   routine: '\u27F3',
+  ticket_delegate: '\u2197',
+  ticket_comment: '\u2709',
   'builder-test': '\u2697',
 }
 

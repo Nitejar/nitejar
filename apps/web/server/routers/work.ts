@@ -1,37 +1,48 @@
 import { TRPCError } from '@trpc/server'
 import { parseAgentConfig } from '@nitejar/agent/config'
 import {
+  addTicketParticipants,
   addAppSessionParticipants,
   claimTicket,
+  createAttentionItem,
   createAppSession,
   createGoal,
   createRoutine,
+  createTicketComment,
   createTicket,
   createTicketLink,
   createWorkView,
   createWorkUpdate,
   deleteWorkView,
+  enqueueTicketAgentWork,
   findAppSessionByKey,
+  findAgentById,
   findGoalById,
   findTicketById,
   findTicketBySessionKey,
   findTicketByWorkItemId,
+  getAttentionSummary,
   findWorkViewById,
   getDb,
   listGoals,
   reorderGoal,
   reorderTicket,
   listGoalHealthSummaries,
+  listAttentionItems,
   listAgentWorkloadRollups,
   listLinkedWorkItemsForTicket,
   listRelatedTickets,
+  listTicketComments,
   listTicketRelations,
   listTicketLinksByTicket,
+  listTicketParticipants,
   listTicketWorkloadRollups,
   listTickets,
   listUntrackedAppSessions,
   listWorkViews,
   listWorkUpdates,
+  markAttentionItemsRead,
+  resolveAttentionItemsForTargetOnTicket,
   sql,
   WORK_TICKET_STALE_AFTER_SECONDS,
   updateRoutine,
@@ -57,6 +68,14 @@ const progressSourceSchema = z.enum([
 ])
 const ticketStatusSchema = z.enum(['inbox', 'ready', 'in_progress', 'blocked', 'done', 'canceled'])
 const actorKindSchema = z.enum(['user', 'agent'])
+const attentionStateSchema = z.enum(['all', 'open', 'resolved'])
+const ticketCommentKindSchema = z.enum([
+  'comment',
+  'question',
+  'decision_needed',
+  'review_requested',
+  'blocked',
+])
 const ticketLinkKindSchema = z.enum(['session', 'work_item', 'external'])
 const heartbeatTargetKindSchema = z.enum(['goal'])
 const workViewEntityKindSchema = z.enum(['goal', 'ticket'])
@@ -720,6 +739,107 @@ function presentWorkUpdate(
   }
 }
 
+type TicketCommentMetadata = {
+  mentionAgentIds?: string[]
+  mentionUserIds?: string[]
+  mentionTokens?: string[]
+}
+
+function parseTicketCommentMetadata(value: string | null): TicketCommentMetadata {
+  if (!value) return {}
+  try {
+    return (JSON.parse(value) as TicketCommentMetadata) ?? {}
+  } catch {
+    return {}
+  }
+}
+
+function presentTicketComment(
+  comment: Awaited<ReturnType<typeof listTicketComments>>[number],
+  resolved: Awaited<ReturnType<typeof resolveActors>>
+) {
+  const metadata = parseTicketCommentMetadata(comment.metadata_json)
+  const mentionedAgents = (metadata.mentionAgentIds ?? [])
+    .map((agentId) => presentActor('agent', agentId, resolved))
+    .filter((actor): actor is NonNullable<typeof actor> => actor !== null)
+  const mentionedUsers = (metadata.mentionUserIds ?? [])
+    .map((userId) => presentActor('user', userId, resolved))
+    .filter((actor): actor is NonNullable<typeof actor> => actor !== null)
+
+  return {
+    ...comment,
+    author: presentActor(comment.author_kind, comment.author_ref, resolved),
+    mentions: [...mentionedAgents, ...mentionedUsers],
+    mentionTokens: metadata.mentionTokens ?? [],
+  }
+}
+
+function presentAttentionItem(
+  item: Awaited<ReturnType<typeof listAttentionItems>>[number],
+  resolved: Awaited<ReturnType<typeof resolveActors>>
+) {
+  return {
+    ...item,
+    target: presentActor(item.target_kind, item.target_ref, resolved),
+  }
+}
+
+function presentInboxAttentionItem(input: {
+  item: Awaited<ReturnType<typeof listAttentionItems>>[number]
+  resolved: Awaited<ReturnType<typeof resolveActors>>
+  ticket: Awaited<ReturnType<typeof enrichTickets>>[number] | null
+  comment:
+    | {
+        id: string
+        kind: string
+        body: string
+        created_at: number
+        author_kind: string
+        author_ref: string | null
+      }
+    | null
+}) {
+  const target = presentActor(input.item.target_kind, input.item.target_ref, input.resolved)
+  const sourceAuthor = input.comment
+    ? presentActor(input.comment.author_kind, input.comment.author_ref, input.resolved)
+    : null
+
+  return {
+    id: input.item.id,
+    targetKind: input.item.target_kind,
+    targetRef: input.item.target_ref,
+    sourceKind: input.item.source_kind,
+    sourceRef: input.item.source_ref,
+    ticketId: input.item.ticket_id,
+    goalId: input.item.goal_id,
+    status: input.item.status,
+    title: input.item.title,
+    body: input.item.body,
+    metadataJson: input.item.metadata_json,
+    createdAt: input.item.created_at,
+    updatedAt: input.item.updated_at,
+    readAt: input.item.read_at,
+    readByKind: input.item.read_by_kind,
+    readByRef: input.item.read_by_ref,
+    resolvedAt: input.item.resolved_at,
+    resolvedByKind: input.item.resolved_by_kind,
+    resolvedByRef: input.item.resolved_by_ref,
+    isUnread: input.item.read_at == null,
+    target,
+    ticket: input.ticket,
+    goal: input.ticket?.goal ?? null,
+    comment: input.comment
+      ? {
+          id: input.comment.id,
+          kind: input.comment.kind,
+          body: input.comment.body,
+          createdAt: input.comment.created_at,
+          author: sourceAuthor,
+        }
+      : null,
+  }
+}
+
 async function enrichGoals(rows: Awaited<ReturnType<typeof listGoals>>) {
   if (rows.length === 0) return []
   const db = getDb()
@@ -1266,6 +1386,8 @@ export const workRouter = router({
       openTickets,
       recentUpdates,
       heartbeatUpdates,
+      attentionItems,
+      attentionSummary,
       teamMemberships,
       untrackedWork,
       workloadRollups,
@@ -1279,6 +1401,13 @@ export const workRouter = router({
       }),
       listWorkUpdates({ limit: 10 }),
       listWorkUpdates({ kinds: ['heartbeat'], limit: 5 }),
+      listAttentionItems({
+        targetKind: 'user',
+        targetRef: userId,
+        statuses: ['open'],
+        limit: 20,
+      }),
+      getAttentionSummary({ targetKind: 'user', targetRef: userId }),
       db.selectFrom('team_members').select(['team_id']).where('user_id', '=', userId).execute(),
       listUntrackedAppSessions({ ownerUserId: userId, limit: 6 }),
       listTicketWorkloadRollups({
@@ -1290,6 +1419,20 @@ export const workRouter = router({
 
     const goalRows = await enrichGoals(goals)
     const ticketRows = await enrichTickets(openTickets)
+    const attentionTicketIds = [...new Set(attentionItems.map((item) => item.ticket_id).filter(Boolean))]
+    const attentionTickets =
+      attentionTicketIds.length > 0
+        ? await enrichTickets(
+            (
+              await db
+                .selectFrom('tickets')
+                .selectAll()
+                .where('id', 'in', attentionTicketIds)
+                .execute()
+            ).filter(Boolean)
+          )
+        : []
+    const attentionTicketById = new Map(attentionTickets.map((ticket) => [ticket.id, ticket]))
     const workloadActors = await resolveActors(
       workloadRollups.map((entry) => ({
         kind: entry.assignee_kind,
@@ -1384,6 +1527,11 @@ export const workRouter = router({
       unclaimedTickets: unclaimedTickets.slice(0, 6),
       staleTickets: staleTickets.slice(0, 6),
       activeTickets: activeTickets.slice(0, 6),
+      attentionSummary,
+      attentionItems: attentionItems.map((item) => ({
+        ...item,
+        ticket: item.ticket_id ? (attentionTicketById.get(item.ticket_id) ?? null) : null,
+      })),
       recentUpdates: recentUpdates.slice(0, 8),
       heartbeatUpdates: heartbeatUpdates.slice(0, 5),
       workload: workload.slice(0, 8),
@@ -1394,6 +1542,134 @@ export const workRouter = router({
         `${atRiskGoals.length} at-risk goals, ${blockedTickets.length} blocked tickets, ${unclaimedTickets.length} unclaimed tickets.`,
     }
   }),
+
+  getInboxSummary: protectedProcedure.query(async ({ ctx }) => {
+    const userId = requireUserId(ctx.session)
+    return getAttentionSummary({ targetKind: 'user', targetRef: userId })
+  }),
+
+  listInboxAttention: protectedProcedure
+    .input(
+      z
+        .object({
+          state: attentionStateSchema.default('all'),
+          unreadOnly: z.boolean().default(false),
+          limit: z.number().int().min(1).max(100).default(50),
+          offset: z.number().int().min(0).default(0),
+        })
+        .optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const userId = requireUserId(ctx.session)
+      const db = getDb()
+      const state = input?.state ?? 'all'
+      const unreadOnly = input?.unreadOnly ?? false
+      const statuses = state === 'all' ? undefined : [state]
+
+      const [summary, items, totalRow] = await Promise.all([
+        getAttentionSummary({ targetKind: 'user', targetRef: userId }),
+        listAttentionItems({
+          targetKind: 'user',
+          targetRef: userId,
+          statuses,
+          unreadOnly,
+          limit: input?.limit ?? 50,
+          offset: input?.offset ?? 0,
+        }),
+        (async () => {
+          let query = db
+            .selectFrom('attention_items')
+            .select((eb) => eb.fn.countAll<number>().as('count'))
+            .where('target_kind', '=', 'user')
+            .where('target_ref', '=', userId)
+          if (statuses && statuses.length > 0) {
+            query = query.where('status', 'in', statuses)
+          }
+          if (unreadOnly) {
+            query = query.where('read_at', 'is', null)
+          }
+          return query.executeTakeFirst()
+        })(),
+      ])
+
+      const ticketIds = [...new Set(items.map((item) => item.ticket_id).filter(Boolean))]
+      const commentIds = [
+        ...new Set(
+          items
+            .filter((item) => item.source_kind === 'ticket_comment' && item.source_ref)
+            .map((item) => item.source_ref)
+        ),
+      ]
+
+      const [tickets, comments] = await Promise.all([
+        ticketIds.length > 0
+          ? enrichTickets(
+              (
+                await db
+                  .selectFrom('tickets')
+                  .selectAll()
+                  .where('id', 'in', ticketIds)
+                  .execute()
+              ).filter(Boolean)
+            )
+          : Promise.resolve([]),
+        commentIds.length > 0
+          ? db
+              .selectFrom('ticket_comments')
+              .select(['id', 'kind', 'body', 'created_at', 'author_kind', 'author_ref'])
+              .where('id', 'in', commentIds)
+              .execute()
+          : Promise.resolve([]),
+      ])
+
+      const ticketById = new Map(tickets.map((ticket) => [ticket.id, ticket]))
+      const commentById = new Map(comments.map((comment) => [comment.id, comment]))
+      const actors = await resolveActors([
+        ...items.map((item) => ({ kind: item.target_kind, ref: item.target_ref })),
+        ...comments.map((comment) => ({ kind: comment.author_kind, ref: comment.author_ref })),
+      ])
+
+      return {
+        total: Number(totalRow?.count ?? 0),
+        summary,
+        items: items.map((item) =>
+          presentInboxAttentionItem({
+            item,
+            resolved: actors,
+            ticket: item.ticket_id ? (ticketById.get(item.ticket_id) ?? null) : null,
+            comment:
+              item.source_kind === 'ticket_comment' ? (commentById.get(item.source_ref) ?? null) : null,
+          })
+        ),
+      }
+    }),
+
+  markInboxAttentionRead: protectedProcedure
+    .input(
+      z.object({
+        ids: z.array(z.string().trim().min(1)).optional(),
+        ticketId: z.string().trim().min(1).optional(),
+        state: attentionStateSchema.default('all'),
+        unreadOnly: z.boolean().default(true),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const userId = requireUserId(ctx.session)
+      const statuses = input.state === 'all' ? undefined : [input.state]
+      const ids = [...new Set((input.ids ?? []).filter(Boolean))]
+      const updated = await markAttentionItemsRead({
+        targetKind: 'user',
+        targetRef: userId,
+        ids: ids.length > 0 ? ids : undefined,
+        ticketId: input.ticketId,
+        statuses,
+        unreadOnly: input.unreadOnly,
+        readByKind: 'user',
+        readByRef: userId,
+      })
+
+      return { updated }
+    }),
 
   listUpdates: protectedProcedure
     .input(
@@ -1877,7 +2153,8 @@ export const workRouter = router({
 
   getTicket: protectedProcedure
     .input(z.object({ ticketId: z.string().min(1) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      const userId = requireUserId(ctx.session)
       const ticket = await findTicketById(input.ticketId)
       if (!ticket) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Ticket not found.' })
@@ -1885,7 +2162,8 @@ export const workRouter = router({
 
       const ticketRow = requireFirst(await enrichTickets([ticket]), 'ticket')
       const db = getDb()
-      const [updates, related, receiptSummary] = await Promise.all([
+      const [updates, related, receiptSummary, comments, participants, attentionItems] =
+        await Promise.all([
         listWorkUpdates({ ticketId: ticket.id, limit: 30 }),
         listRelatedTickets({
           text: `${ticket.title} ${ticket.body ?? ''}`,
@@ -1893,9 +2171,27 @@ export const workRouter = router({
           limit: 5,
         }),
         buildTicketReceiptSummary(ticket.id),
+        listTicketComments({ ticketId: ticket.id, limit: 100 }),
+        listTicketParticipants(ticket.id),
+        listAttentionItems({ ticketId: ticket.id, statuses: ['open'], limit: 50 }),
       ])
       const updateActors = await resolveActors(
-        updates.map((update) => ({ kind: update.author_kind, ref: update.author_ref }))
+        [
+          ...updates.map((update) => ({ kind: update.author_kind, ref: update.author_ref })),
+          ...comments.flatMap((comment) => {
+            const metadata = parseTicketCommentMetadata(comment.metadata_json)
+            return [
+              { kind: comment.author_kind, ref: comment.author_ref },
+              ...(metadata.mentionAgentIds ?? []).map((id) => ({ kind: 'agent', ref: id })),
+              ...(metadata.mentionUserIds ?? []).map((id) => ({ kind: 'user', ref: id })),
+            ]
+          }),
+          ...participants.map((participant) => ({
+            kind: participant.participant_kind,
+            ref: participant.participant_ref,
+          })),
+          ...attentionItems.map((item) => ({ kind: item.target_kind, ref: item.target_ref })),
+        ]
       )
 
       // Fetch full descendant tree iteratively (breadth-first)
@@ -1958,7 +2254,18 @@ export const workRouter = router({
 
       return {
         ...ticketRow,
+        currentUserId: userId,
         updates: updates.map((update) => presentWorkUpdate(update, updateActors)),
+        comments: comments.map((comment) => presentTicketComment(comment, updateActors)),
+        participants: participants
+          .map((participant) => ({
+            kind: participant.participant_kind,
+            ref: participant.participant_ref,
+            addedAt: participant.created_at,
+            actor: presentActor(participant.participant_kind, participant.participant_ref, updateActors),
+          }))
+          .filter((participant) => participant.actor),
+        attentionItems: attentionItems.map((item) => presentAttentionItem(item, updateActors)),
         childTickets: rootChildren,
         childProgress,
         relatedTickets: await enrichTickets(related.map((entry) => entry.ticket)),
@@ -2166,6 +2473,191 @@ export const workRouter = router({
       }
 
       return requireFirst(await enrichTickets([updated]), 'ticket')
+    }),
+
+  postTicketComment: protectedProcedure
+    .input(
+      z.object({
+        ticketId: z.string().trim().min(1),
+        kind: ticketCommentKindSchema.default('comment'),
+        body: z.string().trim().min(1).max(4000),
+        mentionAgentIds: z.array(z.string().trim().min(1)).default([]),
+        mentionUserIds: z.array(z.string().trim().min(1)).default([]),
+        markBlocked: z.boolean().default(false),
+        kickstartAgentMentions: z.boolean().default(true),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const userId = requireUserId(ctx.session)
+      const db = getDb()
+      const [ticket, author] = await Promise.all([
+        findTicketById(input.ticketId),
+        db.selectFrom('users').select(['id', 'name']).where('id', '=', userId).executeTakeFirst(),
+      ])
+
+      if (!ticket) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Ticket not found.' })
+      }
+      if (!author) {
+        throw new TRPCError({ code: 'UNAUTHORIZED' })
+      }
+
+      const mentionAgentIds = [...new Set(input.mentionAgentIds.filter(Boolean))]
+      const mentionUserIds = [...new Set(input.mentionUserIds.filter((id) => id && id !== userId))]
+      const mentionedAgents =
+        mentionAgentIds.length > 0
+          ? await db
+              .selectFrom('agents')
+              .select(['id', 'name', 'handle'])
+              .where('id', 'in', mentionAgentIds)
+              .execute()
+          : []
+      const mentionedUsers =
+        mentionUserIds.length > 0
+          ? await db
+              .selectFrom('users')
+              .select(['id', 'name'])
+              .where('id', 'in', mentionUserIds)
+              .execute()
+          : []
+
+      const metadataJson = JSON.stringify({
+        mentionAgentIds: mentionedAgents.map((agent) => agent.id),
+        mentionUserIds: mentionedUsers.map((user) => user.id),
+      })
+
+      const comment = await createTicketComment({
+        ticket_id: ticket.id,
+        author_kind: 'user',
+        author_ref: userId,
+        kind: input.kind,
+        body: input.body,
+        metadata_json: metadataJson,
+      })
+
+      await addTicketParticipants({
+        ticketId: ticket.id,
+        participants: [
+          { kind: 'user', ref: userId },
+          ...mentionedAgents.map((agent) => ({ kind: 'agent' as const, ref: agent.id })),
+          ...mentionedUsers.map((user) => ({ kind: 'user' as const, ref: user.id })),
+        ],
+        addedByKind: 'user',
+        addedByRef: userId,
+      })
+
+      await resolveAttentionItemsForTargetOnTicket({
+        ticketId: ticket.id,
+        targetKind: 'user',
+        targetRef: userId,
+        resolvedByKind: 'user',
+        resolvedByRef: userId,
+      })
+
+      for (const user of mentionedUsers) {
+        await createAttentionItem({
+          target_kind: 'user',
+          target_ref: user.id,
+          source_kind: 'ticket_comment',
+          source_ref: comment.id,
+          ticket_id: ticket.id,
+          goal_id: ticket.goal_id,
+          status: 'open',
+          title: `${author.name} mentioned you on ${ticket.title}`,
+          body: input.body,
+          metadata_json: metadataJson,
+          resolved_at: null,
+          resolved_by_kind: null,
+          resolved_by_ref: null,
+        })
+      }
+
+      const queuedAgentWorkItems = []
+      for (const agent of mentionedAgents) {
+        await createAttentionItem({
+          target_kind: 'agent',
+          target_ref: agent.id,
+          source_kind: 'ticket_comment',
+          source_ref: comment.id,
+          ticket_id: ticket.id,
+          goal_id: ticket.goal_id,
+          status: 'open',
+          title: `${author.name} mentioned @${agent.handle} on ${ticket.title}`,
+          body: input.body,
+          metadata_json: metadataJson,
+          resolved_at: null,
+          resolved_by_kind: null,
+          resolved_by_ref: null,
+        })
+
+        if (!input.kickstartAgentMentions) continue
+
+        const workItem = await enqueueTicketAgentWork({
+          ticketId: ticket.id,
+          agentId: agent.id,
+          source: 'ticket_comment',
+          sourceRef: `ticket:${ticket.id}:comment:${comment.id}:mention:${agent.id}`,
+          title: `Ticket comment: ${ticket.title}`,
+          body: [
+            `${author.name} mentioned you on ticket "${ticket.title}".`,
+            '',
+            `Comment type: ${input.kind.replace(/_/g, ' ')}`,
+            `Comment: ${input.body}`,
+            '',
+            'Reply on the ticket thread with a concrete answer, question, or status update before you stop.',
+          ].join('\n'),
+          senderName: author.name,
+          senderUserId: author.id,
+          actor: {
+            kind: 'user',
+            userId: author.id,
+            displayName: author.name,
+            source: 'ticket_comment',
+          },
+          createReceiptLink: true,
+          metadata: {
+            ticketCommentId: comment.id,
+            ticketCommentKind: input.kind,
+          },
+        })
+        queuedAgentWorkItems.push(workItem.id)
+      }
+
+      if (input.markBlocked || input.kind === 'blocked') {
+        const nextStatus =
+          ticket.status === 'done' || ticket.status === 'canceled' ? ticket.status : 'blocked'
+        if (nextStatus !== ticket.status) {
+          await updateTicket(ticket.id, {
+            goal_id: ticket.goal_id,
+            parent_ticket_id: ticket.parent_ticket_id,
+            title: ticket.title,
+            body: ticket.body,
+            status: nextStatus,
+            assignee_kind: ticket.assignee_kind,
+            assignee_ref: ticket.assignee_ref,
+            claimed_by_kind: ticket.claimed_by_kind,
+            claimed_by_ref: ticket.claimed_by_ref,
+            claimed_at: ticket.claimed_at,
+            archived_at: ticket.archived_at,
+          })
+
+          await createWorkUpdate({
+            goal_id: ticket.goal_id,
+            ticket_id: ticket.id,
+            team_id: null,
+            author_kind: 'system',
+            author_ref: null,
+            kind: 'status',
+            body: `Status changed from ${ticket.status} to blocked.`,
+            metadata_json: JSON.stringify({ ticketCommentId: comment.id }),
+          })
+        }
+      }
+
+      return {
+        commentId: comment.id,
+        queuedAgentWorkItems,
+      }
     }),
 
   bulkUpdateTickets: protectedProcedure

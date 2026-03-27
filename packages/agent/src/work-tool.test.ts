@@ -6,12 +6,16 @@ vi.mock('@nitejar/database', async () => {
   const actual = await vi.importActual<typeof Database>('@nitejar/database')
   return {
     ...actual,
+    addTicketParticipants: vi.fn(),
     assertAgentGrant: vi.fn(),
     claimTicket: vi.fn(),
+    createAttentionItem: vi.fn(),
     createOneShotRoutineSchedule: vi.fn(),
+    createTicketComment: vi.fn(),
     createTicketLink: vi.fn(),
     createWorkItem: vi.fn(),
     createWorkUpdate: vi.fn(),
+    enqueueTicketAgentWork: vi.fn(),
     enqueueToLane: vi.fn(),
     findAgentById: vi.fn(),
     findTicketById: vi.fn(),
@@ -27,19 +31,27 @@ vi.mock('@nitejar/database', async () => {
       }),
     })),
     listAppSessionParticipantAgents: vi.fn(),
+    listTicketComments: vi.fn(),
     listGoals: vi.fn(),
+    listTicketParticipants: vi.fn(),
     listTicketLinksByTicket: vi.fn(),
     listTickets: vi.fn(),
     findGoalById: vi.fn(),
+    resolveAttentionItemsForTargetOnTicket: vi.fn(),
     touchAppSessionLastActivity: vi.fn(),
     listLinkedWorkItemsForTicket: vi.fn(),
+    updateTicket: vi.fn(),
   }
 })
 
+const mockedAddTicketParticipants = vi.mocked(Database.addTicketParticipants)
 const mockedClaimTicket = vi.mocked(Database.claimTicket)
+const mockedCreateAttentionItem = vi.mocked(Database.createAttentionItem)
 const mockedCreateOneShotRoutineSchedule = vi.mocked(Database.createOneShotRoutineSchedule)
+const mockedCreateTicketComment = vi.mocked(Database.createTicketComment)
 const mockedListGoals = vi.mocked(Database.listGoals)
 const mockedListTickets = vi.mocked(Database.listTickets)
+const mockedEnqueueTicketAgentWork = vi.mocked(Database.enqueueTicketAgentWork)
 const mockedFindAgentById = vi.mocked(Database.findAgentById)
 const mockedFindGoalById = vi.mocked(Database.findGoalById)
 const mockedFindTicketById = vi.mocked(Database.findTicketById)
@@ -50,9 +62,14 @@ const mockedEnqueueToLane = vi.mocked(Database.enqueueToLane)
 const mockedCreateTicketLink = vi.mocked(Database.createTicketLink)
 const mockedCreateWorkUpdate = vi.mocked(Database.createWorkUpdate)
 const mockedListAppSessionParticipantAgents = vi.mocked(Database.listAppSessionParticipantAgents)
+const mockedListTicketComments = vi.mocked(Database.listTicketComments)
+const mockedListTicketParticipants = vi.mocked(Database.listTicketParticipants)
 const mockedListTicketLinksByTicket = vi.mocked(Database.listTicketLinksByTicket)
+const mockedResolveAttentionItemsForTargetOnTicket = vi.mocked(Database.resolveAttentionItemsForTargetOnTicket)
 const mockedTouchAppSessionLastActivity = vi.mocked(Database.touchAppSessionLastActivity)
 const mockedListLinkedWorkItemsForTicket = vi.mocked(Database.listLinkedWorkItemsForTicket)
+const mockedUpdateTicket = vi.mocked(Database.updateTicket)
+const mockedGetDb = vi.mocked(Database.getDb)
 
 const context: ToolContext = {
   agentId: 'agent-1',
@@ -63,10 +80,14 @@ const context: ToolContext = {
 
 describe('work tools', () => {
   beforeEach(() => {
+    mockedAddTicketParticipants.mockReset()
     mockedClaimTicket.mockReset()
+    mockedCreateAttentionItem.mockReset()
     mockedCreateOneShotRoutineSchedule.mockReset()
+    mockedCreateTicketComment.mockReset()
     mockedListGoals.mockReset()
     mockedListTickets.mockReset()
+    mockedEnqueueTicketAgentWork.mockReset()
     mockedFindAgentById.mockReset()
     mockedFindGoalById.mockReset()
     mockedFindTicketById.mockReset()
@@ -77,9 +98,23 @@ describe('work tools', () => {
     mockedCreateTicketLink.mockReset()
     mockedCreateWorkUpdate.mockReset()
     mockedListAppSessionParticipantAgents.mockReset()
+    mockedListTicketComments.mockReset()
+    mockedListTicketParticipants.mockReset()
     mockedListTicketLinksByTicket.mockReset()
+    mockedResolveAttentionItemsForTargetOnTicket.mockReset()
     mockedTouchAppSessionLastActivity.mockReset()
     mockedListLinkedWorkItemsForTicket.mockReset()
+    mockedUpdateTicket.mockReset()
+    mockedGetDb.mockReturnValue({
+      selectFrom: () => ({
+        select: () => ({
+          where: () => ({
+            executeTakeFirst: vi.fn().mockResolvedValue(null),
+          }),
+          execute: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+    } as any)
   })
 
   it('splits comma-delimited ticket statuses for search_tickets', async () => {
@@ -593,5 +628,218 @@ describe('work tools', () => {
     expect(mockedTouchAppSessionLastActivity).not.toHaveBeenCalled()
     expect(result.output).toContain('Skipped duplicate ticket run')
     expect(result.output).toContain('work-existing')
+  })
+
+  it('delegates a ticket to another agent and kickstarts their dedicated lane', async () => {
+    mockedFindTicketById.mockResolvedValue({
+      id: 'ticket-2',
+      goal_id: 'goal-1',
+      parent_ticket_id: null,
+      title: 'Scout research pass',
+      body: 'Research the repo and post a ticket answer.',
+      status: 'in_progress',
+      assignee_kind: 'agent',
+      assignee_ref: 'agent-1',
+      created_by_user_id: 'user-1',
+      claimed_by_kind: 'agent',
+      claimed_by_ref: 'agent-1',
+      claimed_at: 10,
+      archived_at: null,
+      created_at: 0,
+      updated_at: 0,
+    } as Database.Ticket)
+    mockedFindAgentById.mockImplementation(async (id) => {
+      if (id === 'agent-1') {
+        return {
+          id: 'agent-1',
+          handle: 'ceo',
+          name: 'CEO',
+          sprite_id: null,
+          config: null,
+          status: 'idle',
+          created_at: 0,
+          updated_at: 0,
+        } as Database.Agent
+      }
+      if (id === 'agent-2') {
+        return {
+          id: 'agent-2',
+          handle: 'scout',
+          name: 'Scout',
+          sprite_id: null,
+          config: null,
+          status: 'idle',
+          created_at: 0,
+          updated_at: 0,
+        } as Database.Agent
+      }
+      return null
+    })
+    mockedUpdateTicket.mockResolvedValue({
+      id: 'ticket-2',
+      goal_id: 'goal-1',
+      parent_ticket_id: null,
+      title: 'Scout research pass',
+      body: 'Research the repo and post a ticket answer.',
+      status: 'ready',
+      assignee_kind: 'agent',
+      assignee_ref: 'agent-2',
+      created_by_user_id: 'user-1',
+      claimed_by_kind: null,
+      claimed_by_ref: null,
+      claimed_at: null,
+      archived_at: null,
+      created_at: 0,
+      updated_at: 1,
+    } as Database.Ticket)
+    mockedAddTicketParticipants.mockResolvedValue([] as any)
+    mockedEnqueueTicketAgentWork.mockResolvedValue({
+      id: 'work-delegate-1',
+    } as Database.WorkItem)
+    mockedCreateWorkUpdate.mockResolvedValue({ id: 'update-assign-1' } as Database.WorkUpdate)
+
+    const result = await executeTool(
+      'assign_ticket',
+      {
+        ticket_id: 'ticket-2',
+        agent_id: 'agent-2',
+      },
+      context
+    )
+
+    expect(result.success).toBe(true)
+    expect(mockedUpdateTicket).toHaveBeenCalledWith(
+      'ticket-2',
+      expect.objectContaining({
+        assignee_kind: 'agent',
+        assignee_ref: 'agent-2',
+        status: 'ready',
+        claimed_by_kind: null,
+      })
+    )
+    expect(mockedAddTicketParticipants).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ticketId: 'ticket-2',
+      })
+    )
+    expect(mockedEnqueueTicketAgentWork).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ticketId: 'ticket-2',
+        agentId: 'agent-2',
+        source: 'ticket_delegate',
+      })
+    )
+    expect(mockedCreateWorkUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ticket_id: 'ticket-2',
+        author_kind: 'agent',
+      })
+    )
+    expect(result.output).toContain('Scout')
+  })
+
+  it('posts a ticket comment, creates attention, and marks the ticket blocked when requested', async () => {
+    mockedFindTicketById.mockResolvedValue({
+      id: 'ticket-3',
+      goal_id: 'goal-2',
+      parent_ticket_id: null,
+      title: 'Need approval on launch copy',
+      body: 'Waiting on approval.',
+      status: 'in_progress',
+      assignee_kind: 'agent',
+      assignee_ref: 'agent-2',
+      created_by_user_id: 'user-1',
+      claimed_by_kind: 'agent',
+      claimed_by_ref: 'agent-2',
+      claimed_at: 10,
+      archived_at: null,
+      created_at: 0,
+      updated_at: 0,
+    } as Database.Ticket)
+    mockedFindAgentById.mockResolvedValue({
+      id: 'agent-1',
+      handle: 'ceo',
+      name: 'CEO',
+      sprite_id: null,
+      config: null,
+      status: 'idle',
+      created_at: 0,
+      updated_at: 0,
+    } as Database.Agent)
+    mockedGetDb.mockReturnValue({
+      selectFrom: (table: string) => ({
+        select: () => ({
+          where: (_field: string, _op: string, value: string | string[]) => ({
+            execute: vi.fn().mockResolvedValue(
+              table === 'users'
+                ? [{ id: Array.isArray(value) ? value[0] : value, name: 'Josh' }]
+                : [{ id: Array.isArray(value) ? value[0] : value, name: 'Scout', handle: 'scout' }]
+            ),
+            executeTakeFirst: vi.fn().mockResolvedValue(null),
+          }),
+        }),
+      }),
+    } as any)
+    mockedCreateTicketComment.mockResolvedValue({
+      id: 'comment-1',
+    } as Database.TicketComment)
+    mockedAddTicketParticipants.mockResolvedValue([] as any)
+    mockedResolveAttentionItemsForTargetOnTicket.mockResolvedValue(0)
+    mockedCreateAttentionItem.mockResolvedValue({ id: 'attention-1' } as Database.AttentionItem)
+    mockedEnqueueTicketAgentWork.mockResolvedValue({ id: 'work-comment-1' } as Database.WorkItem)
+    mockedUpdateTicket.mockResolvedValue({
+      id: 'ticket-3',
+      goal_id: 'goal-2',
+      parent_ticket_id: null,
+      title: 'Need approval on launch copy',
+      body: 'Waiting on approval.',
+      status: 'blocked',
+      assignee_kind: 'agent',
+      assignee_ref: 'agent-2',
+      created_by_user_id: 'user-1',
+      claimed_by_kind: 'agent',
+      claimed_by_ref: 'agent-2',
+      claimed_at: 10,
+      archived_at: null,
+      created_at: 0,
+      updated_at: 1,
+    } as Database.Ticket)
+    mockedCreateWorkUpdate.mockResolvedValue({ id: 'update-comment-1' } as Database.WorkUpdate)
+
+    const result = await executeTool(
+      'post_ticket_comment',
+      {
+        ticket_id: 'ticket-3',
+        body: 'Need a yes/no on this before launch.',
+        kind: 'decision_needed',
+        mention_agent_ids: ['agent-2'],
+        mention_user_ids: ['user-2'],
+        mark_blocked: true,
+      },
+      context
+    )
+
+    expect(result.success).toBe(true)
+    expect(mockedCreateTicketComment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ticket_id: 'ticket-3',
+        author_kind: 'agent',
+        kind: 'decision_needed',
+      })
+    )
+    expect(mockedCreateAttentionItem).toHaveBeenCalled()
+    expect(mockedEnqueueTicketAgentWork).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ticketId: 'ticket-3',
+        source: 'ticket_comment',
+      })
+    )
+    expect(mockedUpdateTicket).toHaveBeenCalledWith(
+      'ticket-3',
+      expect.objectContaining({
+        status: 'blocked',
+      })
+    )
+    expect(result.output).toContain('Queued 1 mentioned agent follow-up')
   })
 })

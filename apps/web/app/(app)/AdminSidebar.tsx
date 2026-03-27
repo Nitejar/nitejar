@@ -36,6 +36,7 @@ import { useSidebar } from './sidebar-context'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { authClient } from '@/lib/auth-client'
+import { trpc } from '@/lib/trpc'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,6 +47,7 @@ interface NavItem {
   href: string
   icon: React.ComponentType<{ className?: string }>
   exact?: boolean
+  badge?: number | null
 }
 
 interface NavGroup {
@@ -62,6 +64,7 @@ const navGroups: NavGroup[] = [
     label: 'Operate',
     items: [
       { label: 'Command Center', href: '/', icon: IconHome, exact: true },
+      { label: 'Inbox', href: '/inbox', icon: IconInbox },
       { label: 'Company', href: '/company', icon: IconHierarchy },
       { label: 'Goals', href: '/goals', icon: IconTarget },
       { label: 'Tickets', href: '/tickets', icon: IconListCheck },
@@ -105,6 +108,8 @@ function SidebarLink({ item, collapsed }: { item: NavItem; collapsed: boolean })
   const pathname = usePathname()
   const isActive = item.exact ? pathname === item.href : pathname.startsWith(item.href)
   const Icon = item.icon
+  const badgeCount = item.badge ?? 0
+  const hasBadge = badgeCount > 0
 
   if (collapsed) {
     return (
@@ -114,7 +119,7 @@ function SidebarLink({ item, collapsed }: { item: NavItem; collapsed: boolean })
             <Link
               href={item.href}
               className={cn(
-                'flex h-9 w-9 items-center justify-center rounded-lg transition-colors',
+                'relative flex h-9 w-9 items-center justify-center rounded-lg transition-colors',
                 isActive
                   ? 'bg-white/10 text-white'
                   : 'text-white/50 hover:bg-white/[0.06] hover:text-white/80'
@@ -123,9 +128,19 @@ function SidebarLink({ item, collapsed }: { item: NavItem; collapsed: boolean })
           }
         >
           <Icon className="h-4 w-4" />
+          {hasBadge ? (
+            <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-amber-400 shadow-[0_0_0_2px_rgba(12,14,18,0.95)]" />
+          ) : null}
         </TooltipTrigger>
         <TooltipContent side="right" sideOffset={8}>
-          {item.label}
+          <div className="flex items-center gap-2">
+            <span>{item.label}</span>
+            {hasBadge ? (
+              <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
+                {badgeCount}
+              </span>
+            ) : null}
+          </div>
         </TooltipContent>
       </Tooltip>
     )
@@ -143,6 +158,11 @@ function SidebarLink({ item, collapsed }: { item: NavItem; collapsed: boolean })
     >
       <Icon className="h-4 w-4 shrink-0" />
       <span className="truncate">{item.label}</span>
+      {hasBadge ? (
+        <span className="ml-auto inline-flex min-w-[1.35rem] items-center justify-center rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-amber-300">
+          {badgeCount > 99 ? '99+' : badgeCount}
+        </span>
+      ) : null}
     </Link>
   )
 }
@@ -155,10 +175,12 @@ function SidebarNav({
   collapsed,
   user,
   onSignOut,
+  navGroups,
 }: {
   collapsed: boolean
   user: { name: string; email: string }
   onSignOut: () => Promise<void>
+  navGroups: NavGroup[]
 }) {
   const pathname = usePathname()
   const [settingsOpen, setSettingsOpen] = useState(() =>
@@ -389,6 +411,10 @@ export function AdminSidebar({ user: userProp }: AdminSidebarProps) {
   const { collapsed, mobileOpen, setMobileOpen } = useSidebar()
   const router = useRouter()
   const { data: session, isPending, refetch } = authClient.useSession()
+  const inboxSummaryQuery = trpc.work.getInboxSummary.useQuery(undefined, {
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+  })
   const [sessionRetried, setSessionRetried] = useState(false)
 
   useEffect(() => {
@@ -414,6 +440,14 @@ export function AdminSidebar({ user: userProp }: AdminSidebarProps) {
     }
   }, [router])
 
+  const unreadInboxCount = inboxSummaryQuery.data?.unreadOpenCount ?? 0
+  const navGroupsWithBadges = navGroups.map((group) => ({
+    ...group,
+    items: group.items.map((item) =>
+      item.href === '/inbox' ? { ...item, badge: unreadInboxCount } : item
+    ),
+  }))
+
   return (
     <>
       {/* Desktop sidebar */}
@@ -423,7 +457,12 @@ export function AdminSidebar({ user: userProp }: AdminSidebarProps) {
           collapsed ? 'md:w-[56px]' : 'md:w-60'
         )}
       >
-        <SidebarNav collapsed={collapsed} user={user} onSignOut={onSignOut} />
+        <SidebarNav
+          collapsed={collapsed}
+          user={user}
+          onSignOut={onSignOut}
+          navGroups={navGroupsWithBadges}
+        />
       </aside>
 
       {/* Mobile header — minimal, only shows nav trigger + logo */}
@@ -451,7 +490,12 @@ export function AdminSidebar({ user: userProp }: AdminSidebarProps) {
       {/* Mobile sheet */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="w-60 p-0" showCloseButton={false}>
-          <SidebarNav collapsed={false} user={user} onSignOut={onSignOut} />
+          <SidebarNav
+            collapsed={false}
+            user={user}
+            onSignOut={onSignOut}
+            navGroups={navGroupsWithBadges}
+          />
         </SheetContent>
       </Sheet>
     </>

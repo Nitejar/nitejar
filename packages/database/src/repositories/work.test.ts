@@ -6,20 +6,29 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { closeDb, getDb } from '../db'
 import {
+  addTicketParticipants,
+  createAttentionItem,
   createGoal,
   createTicket,
+  createTicketComment,
   createWorkUpdate,
   createWorkView,
   deleteWorkView,
+  getAttentionSummary,
   getCompanyOverviewRollup,
   listAgentWorkloadRollups,
+  listAttentionItems,
   listGoalCoverageRollups,
   listGoalHealthSummaries,
   listGoals,
   listTeamPortfolioRollups,
+  listTicketComments,
+  listTicketParticipants,
   listTickets,
   listTicketWorkloadRollups,
   listWorkViews,
+  markAttentionItemsRead,
+  resolveAttentionItemsForTargetOnTicket,
   updateTicket,
   updateWorkView,
 } from './work'
@@ -172,9 +181,69 @@ async function createSchema(database: ReturnType<typeof getDb>): Promise<void> {
     .addColumn('metadata_json', 'text')
     .addColumn('created_at', 'integer', (col) => col.notNull())
     .execute()
+
+  await database.schema
+    .createTable('ticket_comments')
+    .ifNotExists()
+    .addColumn('id', 'text', (col) => col.primaryKey())
+    .addColumn('ticket_id', 'text', (col) => col.notNull())
+    .addColumn('author_kind', 'text', (col) => col.notNull())
+    .addColumn('author_ref', 'text')
+    .addColumn('kind', 'text', (col) => col.notNull())
+    .addColumn('body', 'text', (col) => col.notNull())
+    .addColumn('metadata_json', 'text')
+    .addColumn('created_at', 'integer', (col) => col.notNull())
+    .addColumn('updated_at', 'integer', (col) => col.notNull())
+    .execute()
+
+  await database.schema
+    .createTable('ticket_participants')
+    .ifNotExists()
+    .addColumn('ticket_id', 'text', (col) => col.notNull())
+    .addColumn('participant_kind', 'text', (col) => col.notNull())
+    .addColumn('participant_ref', 'text', (col) => col.notNull())
+    .addColumn('added_by_kind', 'text', (col) => col.notNull())
+    .addColumn('added_by_ref', 'text')
+    .addColumn('created_at', 'integer', (col) => col.notNull())
+    .execute()
+
+  await database.schema
+    .createIndex('ticket_participants_unique_idx')
+    .ifNotExists()
+    .on('ticket_participants')
+    .columns(['ticket_id', 'participant_kind', 'participant_ref'])
+    .unique()
+    .execute()
+
+  await database.schema
+    .createTable('attention_items')
+    .ifNotExists()
+    .addColumn('id', 'text', (col) => col.primaryKey())
+    .addColumn('target_kind', 'text', (col) => col.notNull())
+    .addColumn('target_ref', 'text', (col) => col.notNull())
+    .addColumn('source_kind', 'text', (col) => col.notNull())
+    .addColumn('source_ref', 'text')
+    .addColumn('ticket_id', 'text')
+    .addColumn('goal_id', 'text')
+    .addColumn('status', 'text', (col) => col.notNull())
+    .addColumn('title', 'text', (col) => col.notNull())
+    .addColumn('body', 'text')
+    .addColumn('metadata_json', 'text')
+    .addColumn('read_at', 'integer')
+    .addColumn('read_by_kind', 'text')
+    .addColumn('read_by_ref', 'text')
+    .addColumn('resolved_at', 'integer')
+    .addColumn('resolved_by_kind', 'text')
+    .addColumn('resolved_by_ref', 'text')
+    .addColumn('created_at', 'integer', (col) => col.notNull())
+    .addColumn('updated_at', 'integer', (col) => col.notNull())
+    .execute()
 }
 
 async function clearTables(database: ReturnType<typeof getDb>): Promise<void> {
+  await database.deleteFrom('attention_items').execute()
+  await database.deleteFrom('ticket_participants').execute()
+  await database.deleteFrom('ticket_comments').execute()
   await database.deleteFrom('work_updates').execute()
   await database.deleteFrom('work_views').execute()
   await database.deleteFrom('routines').execute()
@@ -344,6 +413,194 @@ describe('work repository', () => {
     expect(stale).toHaveLength(1)
     expect(stale[0]?.title).toBe('Older blocked ticket')
     expect(stale[0]?.status).toBe('blocked')
+  })
+
+  it('stores ticket comments, participants, and attention items', async () => {
+    const goal = await createGoal({
+      parent_goal_id: null,
+      title: 'Coordinate launch',
+      outcome: 'Comments and attention stay on-ticket.',
+      status: 'active',
+      owner_kind: 'user',
+      owner_ref: 'user-1',
+      created_by_user_id: 'user-1',
+      archived_at: null,
+    })
+
+    const ticket = await createTicket({
+      goal_id: goal.id,
+      parent_ticket_id: null,
+      title: 'Hand off release prep',
+      body: 'Need Scout to verify the launch checklist.',
+      status: 'ready',
+      assignee_kind: 'agent',
+      assignee_ref: 'agent-scout',
+      created_by_user_id: 'user-1',
+      claimed_by_kind: null,
+      claimed_by_ref: null,
+      claimed_at: null,
+      archived_at: null,
+    })
+
+    const comment = await createTicketComment({
+      ticket_id: ticket.id,
+      author_kind: 'user',
+      author_ref: 'user-1',
+      kind: 'question',
+      body: 'Scout, can you verify the final checklist?',
+      metadata_json: JSON.stringify({ mentionAgentIds: ['agent-scout'] }),
+    })
+
+    await addTicketParticipants({
+      ticketId: ticket.id,
+      participants: [
+        { kind: 'user', ref: 'user-1' },
+        { kind: 'agent', ref: 'agent-scout' },
+        { kind: 'agent', ref: 'agent-scout' },
+      ],
+      addedByKind: 'user',
+      addedByRef: 'user-1',
+    })
+
+    await createAttentionItem({
+      target_kind: 'agent',
+      target_ref: 'agent-scout',
+      source_kind: 'ticket_comment',
+      source_ref: comment.id,
+      ticket_id: ticket.id,
+      goal_id: goal.id,
+      status: 'open',
+      title: 'Josh mentioned Scout on Hand off release prep',
+      body: comment.body,
+      metadata_json: null,
+      resolved_at: null,
+      resolved_by_kind: null,
+      resolved_by_ref: null,
+    })
+
+    const comments = await listTicketComments({ ticketId: ticket.id })
+    const participants = await listTicketParticipants(ticket.id)
+    const openAttention = await listAttentionItems({
+      ticketId: ticket.id,
+      targetKind: 'agent',
+      targetRef: 'agent-scout',
+      statuses: ['open'],
+    })
+
+    expect(comments).toHaveLength(1)
+    expect(comments[0]?.kind).toBe('question')
+    expect(participants).toHaveLength(2)
+    expect(openAttention).toHaveLength(1)
+    expect(openAttention[0]?.title).toContain('Scout')
+
+    const resolvedCount = await resolveAttentionItemsForTargetOnTicket({
+      ticketId: ticket.id,
+      targetKind: 'agent',
+      targetRef: 'agent-scout',
+      resolvedByKind: 'user',
+      resolvedByRef: 'user-1',
+    })
+
+    expect(resolvedCount).toBe(1)
+
+    const resolvedAttention = await listAttentionItems({
+      ticketId: ticket.id,
+      targetKind: 'agent',
+      targetRef: 'agent-scout',
+      statuses: ['resolved'],
+    })
+    expect(resolvedAttention).toHaveLength(1)
+    expect(resolvedAttention[0]?.resolved_by_kind).toBe('user')
+  })
+
+  it('marks attention read and reports unread/open summary counts', async () => {
+    await createAttentionItem({
+      target_kind: 'user',
+      target_ref: 'user-1',
+      source_kind: 'ticket_comment',
+      source_ref: 'comment-1',
+      ticket_id: 'ticket-1',
+      goal_id: null,
+      status: 'open',
+      title: 'Needs action',
+      body: null,
+      metadata_json: null,
+      read_at: null,
+      read_by_kind: null,
+      read_by_ref: null,
+      resolved_at: null,
+      resolved_by_kind: null,
+      resolved_by_ref: null,
+    })
+    const second = await createAttentionItem({
+      target_kind: 'user',
+      target_ref: 'user-1',
+      source_kind: 'ticket_comment',
+      source_ref: 'comment-2',
+      ticket_id: 'ticket-2',
+      goal_id: null,
+      status: 'open',
+      title: 'Unread open',
+      body: null,
+      metadata_json: null,
+      read_at: null,
+      read_by_kind: null,
+      read_by_ref: null,
+      resolved_at: null,
+      resolved_by_kind: null,
+      resolved_by_ref: null,
+    })
+    await createAttentionItem({
+      target_kind: 'user',
+      target_ref: 'user-1',
+      source_kind: 'ticket_comment',
+      source_ref: 'comment-3',
+      ticket_id: 'ticket-3',
+      goal_id: null,
+      status: 'resolved',
+      title: 'Handled',
+      body: null,
+      metadata_json: null,
+      read_at: 50,
+      read_by_kind: 'user',
+      read_by_ref: 'user-1',
+      resolved_at: 50,
+      resolved_by_kind: 'user',
+      resolved_by_ref: 'user-1',
+    })
+
+    const before = await getAttentionSummary({
+      targetKind: 'user',
+      targetRef: 'user-1',
+    })
+    expect(before).toEqual({
+      totalCount: 3,
+      openCount: 2,
+      resolvedCount: 1,
+      unreadCount: 2,
+      unreadOpenCount: 2,
+    })
+
+    const readCount = await markAttentionItemsRead({
+      targetKind: 'user',
+      targetRef: 'user-1',
+      ids: [second.id],
+      readByKind: 'user',
+      readByRef: 'user-1',
+    })
+    expect(readCount).toBe(1)
+
+    const after = await getAttentionSummary({
+      targetKind: 'user',
+      targetRef: 'user-1',
+    })
+    expect(after).toEqual({
+      totalCount: 3,
+      openCount: 2,
+      resolvedCount: 1,
+      unreadCount: 1,
+      unreadOpenCount: 1,
+    })
   })
 
   it('builds workload rollups for assignees and agents', async () => {

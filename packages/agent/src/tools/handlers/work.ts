@@ -1,13 +1,17 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import {
+  addTicketParticipants,
   assertAgentGrant,
   claimTicket,
+  createAttentionItem,
   createOneShotRoutineSchedule,
   createGoal,
+  createTicketComment,
   createTicket,
   createTicketLink,
   createWorkItem,
   createWorkUpdate,
+  enqueueTicketAgentWork,
   enqueueToLane,
   findAgentById,
   findGoalById,
@@ -17,9 +21,12 @@ import {
   findTicketByWorkItemId,
   getDb,
   listGoals,
+  listTicketComments,
   listLinkedWorkItemsForTicket,
+  listTicketParticipants,
   listTicketLinksByTicket,
   listTickets,
+  resolveAttentionItemsForTargetOnTicket,
   touchAppSessionLastActivity,
   updateTicket,
 } from '@nitejar/database'
@@ -122,6 +129,23 @@ function buildTicketExecutionMessage(input: {
   }
 
   return `${DEFAULT_TICKET_EXECUTION_MESSAGE}\n\nTicket: ${input.title}\nScope:\n${bodySnippet}`
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return [...new Set(value.filter((entry): entry is string => typeof entry === 'string').map((entry) => entry.trim()).filter(Boolean))]
+}
+
+function parseTicketCommentMetadata(value: string | null): {
+  mentionAgentIds?: string[]
+  mentionUserIds?: string[]
+} {
+  if (!value) return {}
+  try {
+    return (JSON.parse(value) as { mentionAgentIds?: string[]; mentionUserIds?: string[] }) ?? {}
+  } catch {
+    return {}
+  }
 }
 
 export const searchGoalsDefinition: Anthropic.Tool = {
@@ -286,11 +310,13 @@ export const getTicketTool: ToolHandler = async (input, context) => {
     return { success: false, error: `Ticket "${ticketId}" not found.` }
   }
 
-  const [goal, assignee, links, workItems] = await Promise.all([
+  const [goal, assignee, links, workItems, comments, participants] = await Promise.all([
     ticket.goal_id ? findGoalById(ticket.goal_id) : Promise.resolve(null),
     resolveActorLabel(ticket.assignee_kind, ticket.assignee_ref),
     listTicketLinksByTicket(ticket.id),
     listLinkedWorkItemsForTicket(ticket.id),
+    listTicketComments({ ticketId: ticket.id, limit: 20 }),
+    listTicketParticipants(ticket.id),
   ])
 
   const lines = [
@@ -313,6 +339,30 @@ export const getTicketTool: ToolHandler = async (input, context) => {
     lines.push('Recent work items:')
     for (const item of workItems.slice(0, 10)) {
       lines.push(`- ${item.id} [${item.status}] ${item.title} (${item.source})`)
+    }
+  }
+
+  if (participants.length > 0) {
+    lines.push('Participants:')
+    for (const participant of participants.slice(0, 10)) {
+      const label = await resolveActorLabel(participant.participant_kind, participant.participant_ref)
+      lines.push(`- ${label}`)
+    }
+  }
+
+  if (comments.length > 0) {
+    lines.push('Recent comments:')
+    for (const comment of comments.slice(-10)) {
+      const authorLabel = await resolveActorLabel(comment.author_kind, comment.author_ref)
+      const metadata = parseTicketCommentMetadata(comment.metadata_json)
+      const mentions = [
+        ...(metadata.mentionAgentIds ?? []).map(async (id) => resolveActorLabel('agent', id)),
+        ...(metadata.mentionUserIds ?? []).map(async (id) => resolveActorLabel('user', id)),
+      ]
+      const mentionLabels = mentions.length > 0 ? await Promise.all(mentions) : []
+      lines.push(
+        `- [${comment.kind}] ${authorLabel}: ${comment.body}${mentionLabels.length > 0 ? ` | mentions: ${mentionLabels.join(', ')}` : ''}`
+      )
     }
   }
 
@@ -435,6 +485,354 @@ export const updateTicketTool: ToolHandler = async (input, context) => {
   }
 
   return { success: true, output: `Updated ticket ${updated.id}.` }
+}
+
+export const assignTicketDefinition: Anthropic.Tool = {
+  name: 'assign_ticket',
+  description:
+    'Assign a ticket to another agent and optionally kick off their run immediately on a dedicated ticket lane.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      ticket_id: { type: 'string', description: 'The ticket ID to delegate.' },
+      agent_id: { type: 'string', description: 'The target agent ID.' },
+      message: {
+        type: 'string',
+        description:
+          'Optional execution instruction for the assignee. Defaults to the ticket execution brief.',
+      },
+      kickstart_now: {
+        type: 'boolean',
+        description: 'When true (default), queue the assignee immediately.',
+      },
+    },
+    required: ['ticket_id', 'agent_id'],
+  },
+}
+
+export const assignTicketTool: ToolHandler = async (input, context) => {
+  const agentId = requireAgentId(context)
+  const ticketId = typeof input.ticket_id === 'string' ? input.ticket_id.trim() : ''
+  const targetAgentId = typeof input.agent_id === 'string' ? input.agent_id.trim() : ''
+  const customMessage = typeof input.message === 'string' ? input.message.trim() : ''
+  const kickstartNow = input.kickstart_now !== false
+
+  if (!ticketId) return { success: false, error: 'ticket_id is required.' }
+  if (!targetAgentId) return { success: false, error: 'agent_id is required.' }
+
+  await assertAgentGrant({
+    agentId,
+    action: 'work.ticket.write',
+    resourceType: 'ticket',
+    resourceId: ticketId,
+  })
+
+  const [ticket, delegator, assignee] = await Promise.all([
+    findTicketById(ticketId),
+    findAgentById(agentId),
+    findAgentById(targetAgentId),
+  ])
+
+  if (!ticket) return { success: false, error: `Ticket "${ticketId}" not found.` }
+  if (!delegator) return { success: false, error: `Agent "${agentId}" not found.` }
+  if (!assignee) return { success: false, error: `Agent "${targetAgentId}" not found.` }
+
+  const nextStatus =
+    ticket.status === 'done' || ticket.status === 'canceled' ? ticket.status : 'ready'
+  const updated = await updateTicket(ticket.id, {
+    goal_id: ticket.goal_id,
+    parent_ticket_id: ticket.parent_ticket_id,
+    title: ticket.title,
+    body: ticket.body,
+    status: nextStatus,
+    assignee_kind: 'agent',
+    assignee_ref: assignee.id,
+    claimed_by_kind: null,
+    claimed_by_ref: null,
+    claimed_at: null,
+    archived_at: ticket.archived_at,
+  })
+
+  if (!updated) {
+    return { success: false, error: `Ticket "${ticketId}" update failed.` }
+  }
+
+  await addTicketParticipants({
+    ticketId: updated.id,
+    participants: [
+      { kind: 'agent', ref: agentId },
+      { kind: 'agent', ref: assignee.id },
+    ],
+    addedByKind: 'agent',
+    addedByRef: agentId,
+  })
+
+  let queuedWorkItemId: string | null = null
+  if (kickstartNow && ticket.status !== 'done' && ticket.status !== 'canceled') {
+    const workItem = await enqueueTicketAgentWork({
+      ticketId: updated.id,
+      agentId: assignee.id,
+      source: 'ticket_delegate',
+      sourceRef: `ticket:${updated.id}:delegate:${agentId}:${assignee.id}`,
+      title: `Delegated ticket: ${updated.title}`,
+      body:
+        customMessage ||
+        buildTicketExecutionMessage({
+          title: updated.title,
+          body: updated.body,
+        }),
+      senderName: delegator.name,
+      actor: {
+        kind: 'agent',
+        agentId: delegator.id,
+        handle: delegator.handle,
+        displayName: delegator.name,
+        source: 'ticket_delegate',
+      },
+      pluginInstanceId: context.pluginInstanceId ?? null,
+      responseContext: context.responseContext ? JSON.stringify(context.responseContext) : null,
+      createReceiptLink: true,
+      metadata: {
+        delegatedByAgentId: delegator.id,
+      },
+    })
+    queuedWorkItemId = workItem.id
+  }
+
+  await createWorkUpdate({
+    goal_id: updated.goal_id,
+    ticket_id: updated.id,
+    team_id: null,
+    author_kind: 'agent',
+    author_ref: agentId,
+    kind: 'note',
+    body: kickstartNow
+      ? `Delegated to ${assignee.name} (@${assignee.handle}) and queued immediate kickoff${queuedWorkItemId ? ` via work item ${queuedWorkItemId}` : ''}.`
+      : `Delegated to ${assignee.name} (@${assignee.handle}).`,
+    metadata_json: JSON.stringify({
+      delegatedToAgentId: assignee.id,
+      queuedWorkItemId,
+    }),
+  })
+
+  return {
+    success: true,
+    output: kickstartNow
+      ? `Assigned ticket ${updated.id} to ${assignee.name} and queued work item ${queuedWorkItemId ?? '(existing deduped item)'}.`
+      : `Assigned ticket ${updated.id} to ${assignee.name}.`,
+  }
+}
+
+export const postTicketCommentDefinition: Anthropic.Tool = {
+  name: 'post_ticket_comment',
+  description:
+    'Post a coordination comment on a ticket, optionally mention agents or users, and optionally mark the ticket blocked.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      ticket_id: { type: 'string', description: 'The ticket ID.' },
+      body: { type: 'string', description: 'Comment text.' },
+      kind: {
+        type: 'string',
+        enum: ['comment', 'question', 'decision_needed', 'review_requested', 'blocked'],
+        description: 'Comment type (default: comment).',
+      },
+      mention_agent_ids: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Optional agent IDs to mention and notify.',
+      },
+      mention_user_ids: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Optional user IDs to mention for in-app attention.',
+      },
+      mark_blocked: {
+        type: 'boolean',
+        description: 'When true, set the ticket status to blocked after posting.',
+      },
+      kickstart_agent_mentions: {
+        type: 'boolean',
+        description: 'When true (default), mentioned agents are queued immediately on their ticket lane.',
+      },
+    },
+    required: ['ticket_id', 'body'],
+  },
+}
+
+export const postTicketCommentTool: ToolHandler = async (input, context) => {
+  const agentId = requireAgentId(context)
+  const ticketId = typeof input.ticket_id === 'string' ? input.ticket_id.trim() : ''
+  const body = typeof input.body === 'string' ? input.body.trim() : ''
+  const kind =
+    typeof input.kind === 'string' &&
+    ['comment', 'question', 'decision_needed', 'review_requested', 'blocked'].includes(input.kind)
+      ? input.kind
+      : 'comment'
+  const mentionAgentIds = normalizeStringArray(input.mention_agent_ids).filter((id) => id !== agentId)
+  const mentionUserIds = normalizeStringArray(input.mention_user_ids)
+  const markBlocked = input.mark_blocked === true || kind === 'blocked'
+  const kickstartAgentMentions = input.kickstart_agent_mentions !== false
+
+  if (!ticketId) return { success: false, error: 'ticket_id is required.' }
+  if (!body) return { success: false, error: 'body is required.' }
+
+  await assertAgentGrant({
+    agentId,
+    action: 'work.ticket.write',
+    resourceType: 'ticket',
+    resourceId: ticketId,
+  })
+
+  const [ticket, author] = await Promise.all([findTicketById(ticketId), findAgentById(agentId)])
+  if (!ticket) return { success: false, error: `Ticket "${ticketId}" not found.` }
+  if (!author) return { success: false, error: `Agent "${agentId}" not found.` }
+
+  const db = getDb()
+  const [mentionedAgents, mentionedUsers] = await Promise.all([
+    mentionAgentIds.length > 0
+      ? db.selectFrom('agents').select(['id', 'name', 'handle']).where('id', 'in', mentionAgentIds).execute()
+      : Promise.resolve([]),
+    mentionUserIds.length > 0
+      ? db.selectFrom('users').select(['id', 'name']).where('id', 'in', mentionUserIds).execute()
+      : Promise.resolve([]),
+  ])
+
+  const metadataJson = JSON.stringify({
+    mentionAgentIds: mentionedAgents.map((agent) => agent.id),
+    mentionUserIds: mentionedUsers.map((user) => user.id),
+  })
+
+  const comment = await createTicketComment({
+    ticket_id: ticket.id,
+    author_kind: 'agent',
+    author_ref: agentId,
+    kind,
+    body,
+    metadata_json: metadataJson,
+  })
+
+  await addTicketParticipants({
+    ticketId: ticket.id,
+    participants: [
+      { kind: 'agent', ref: agentId },
+      ...mentionedAgents.map((agent) => ({ kind: 'agent' as const, ref: agent.id })),
+      ...mentionedUsers.map((user) => ({ kind: 'user' as const, ref: user.id })),
+    ],
+    addedByKind: 'agent',
+    addedByRef: agentId,
+  })
+
+  await resolveAttentionItemsForTargetOnTicket({
+    ticketId: ticket.id,
+    targetKind: 'agent',
+    targetRef: agentId,
+    resolvedByKind: 'agent',
+    resolvedByRef: agentId,
+  })
+
+  for (const user of mentionedUsers) {
+    await createAttentionItem({
+      target_kind: 'user',
+      target_ref: user.id,
+      source_kind: 'ticket_comment',
+      source_ref: comment.id,
+      ticket_id: ticket.id,
+      goal_id: ticket.goal_id,
+      status: 'open',
+      title: `${author.name} mentioned you on ${ticket.title}`,
+      body,
+      metadata_json: metadataJson,
+      resolved_at: null,
+      resolved_by_kind: null,
+      resolved_by_ref: null,
+    })
+  }
+
+  const queuedAgentWorkItems: string[] = []
+  for (const agent of mentionedAgents) {
+    await createAttentionItem({
+      target_kind: 'agent',
+      target_ref: agent.id,
+      source_kind: 'ticket_comment',
+      source_ref: comment.id,
+      ticket_id: ticket.id,
+      goal_id: ticket.goal_id,
+      status: 'open',
+      title: `${author.name} mentioned @${agent.handle} on ${ticket.title}`,
+      body,
+      metadata_json: metadataJson,
+      resolved_at: null,
+      resolved_by_kind: null,
+      resolved_by_ref: null,
+    })
+
+    if (!kickstartAgentMentions) continue
+
+    const workItem = await enqueueTicketAgentWork({
+      ticketId: ticket.id,
+      agentId: agent.id,
+      source: 'ticket_comment',
+      sourceRef: `ticket:${ticket.id}:comment:${comment.id}:mention:${agent.id}`,
+      title: `Ticket comment: ${ticket.title}`,
+      body: [
+        `${author.name} mentioned you on ticket "${ticket.title}".`,
+        '',
+        `Comment type: ${kind.replace(/_/g, ' ')}`,
+        `Comment: ${body}`,
+        '',
+        'Respond on the ticket thread with a concrete answer, question, or approval state before you stop.',
+      ].join('\n'),
+      senderName: author.name,
+      actor: {
+        kind: 'agent',
+        agentId: author.id,
+        handle: author.handle,
+        displayName: author.name,
+        source: 'ticket_comment',
+      },
+      pluginInstanceId: context.pluginInstanceId ?? null,
+      responseContext: context.responseContext ? JSON.stringify(context.responseContext) : null,
+      createReceiptLink: true,
+      metadata: {
+        ticketCommentId: comment.id,
+        ticketCommentKind: kind,
+      },
+    })
+    queuedAgentWorkItems.push(workItem.id)
+  }
+
+  if (markBlocked && ticket.status !== 'done' && ticket.status !== 'canceled' && ticket.status !== 'blocked') {
+    await updateTicket(ticket.id, {
+      goal_id: ticket.goal_id,
+      parent_ticket_id: ticket.parent_ticket_id,
+      title: ticket.title,
+      body: ticket.body,
+      status: 'blocked',
+      assignee_kind: ticket.assignee_kind,
+      assignee_ref: ticket.assignee_ref,
+      claimed_by_kind: ticket.claimed_by_kind,
+      claimed_by_ref: ticket.claimed_by_ref,
+      claimed_at: ticket.claimed_at,
+      archived_at: ticket.archived_at,
+    })
+
+    await createWorkUpdate({
+      goal_id: ticket.goal_id,
+      ticket_id: ticket.id,
+      team_id: null,
+      author_kind: 'agent',
+      author_ref: agentId,
+      kind: 'status',
+      body: `Status changed from ${ticket.status} to blocked.`,
+      metadata_json: JSON.stringify({ ticketCommentId: comment.id }),
+    })
+  }
+
+  return {
+    success: true,
+    output: `Posted ${kind} comment on ticket ${ticket.id}.${queuedAgentWorkItems.length > 0 ? ` Queued ${queuedAgentWorkItems.length} mentioned agent follow-up${queuedAgentWorkItems.length > 1 ? 's' : ''}.` : ''}`,
+  }
 }
 
 export const postWorkUpdateDefinition: Anthropic.Tool = {

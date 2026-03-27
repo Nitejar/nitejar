@@ -19,16 +19,6 @@ const nextConfig: NextConfig = {
   async redirects() {
     return await Promise.resolve([
       {
-        source: '/inbox',
-        destination: '/work-items',
-        permanent: false,
-      },
-      {
-        source: '/inbox/:id',
-        destination: '/work-items/:id',
-        permanent: false,
-      },
-      {
         source: '/command-center',
         destination: '/',
         permanent: true,

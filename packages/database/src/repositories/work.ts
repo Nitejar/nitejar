@@ -2,21 +2,27 @@ import { sql, type Kysely } from 'kysely'
 import { generateUuidV7 } from '@nitejar/core'
 import { getDb } from '../db'
 import type {
+  AttentionItem,
   AgentTeam,
   Database,
   Goal,
   GoalAgentAllocation,
+  NewAttentionItem,
   GoalUpdate,
   NewGoal,
   NewGoalAgentAllocation,
   NewTeam,
+  NewTicketComment,
   NewTicket,
   NewTicketLink,
+  NewTicketParticipant,
   NewTicketRelation,
   NewWorkView,
   NewWorkUpdate,
   Team,
   TeamUpdate,
+  TicketComment,
+  TicketParticipant,
   Ticket,
   TicketLink,
   TicketRelation,
@@ -26,6 +32,8 @@ import type {
   WorkItem,
   WorkUpdate,
 } from '../types'
+import { createWorkItem } from './work-items'
+import { enqueueToLane } from './queue-messages'
 
 function now(): number {
   return Math.floor(Date.now() / 1000)
@@ -39,11 +47,18 @@ export const WORK_TICKET_STALE_AFTER_SECONDS = 48 * 60 * 60
 export const WORK_GOAL_ACTIVITY_STALE_AFTER_SECONDS = 72 * 60 * 60
 export const WORK_GOAL_HEARTBEAT_STALE_AFTER_SECONDS = 7 * 24 * 60 * 60
 const TERMINAL_TICKET_STATUSES = new Set(['done', 'canceled'])
+const TICKET_DELEGATION_DEDUPE_WINDOW_SEC = 120
+const TICKET_AGENT_DEBOUNCE_MS = 1000
+const TICKET_AGENT_MAX_QUEUED = 10
 const ROUTINE_BOUNDED_FRONTIER_FIELDS = [
   'active_bounded_ticket_id',
   'frontier_name',
   'expected_proof',
 ] as const
+
+export function buildTicketAgentSessionKey(ticketId: string, agentId: string): string {
+  return `work:ticket:${ticketId}:agent:${agentId}`
+}
 
 // ---------------------------------------------------------------------------
 // Teams
@@ -856,6 +871,417 @@ export async function listLinkedWorkItemsForTicket(ticketId: string): Promise<Wo
   }
 
   return workItems.sort((a, b) => b.created_at - a.created_at)
+}
+
+export async function createTicketComment(
+  data: Omit<NewTicketComment, 'id' | 'created_at' | 'updated_at'>,
+  trx?: Kysely<Database>
+): Promise<TicketComment> {
+  const db = trx ?? getDb()
+  const timestamp = now()
+  return db
+    .insertInto('ticket_comments')
+    .values({
+      id: uuid(),
+      ...data,
+      created_at: timestamp,
+      updated_at: timestamp,
+    })
+    .returningAll()
+    .executeTakeFirstOrThrow()
+}
+
+export async function listTicketComments(opts: {
+  ticketId: string
+  limit?: number
+}): Promise<TicketComment[]> {
+  const db = getDb()
+  let query = db
+    .selectFrom('ticket_comments')
+    .selectAll()
+    .where('ticket_id', '=', opts.ticketId)
+    .orderBy('created_at', 'asc')
+    .orderBy('id', 'asc')
+
+  if (opts.limit) {
+    query = query.limit(Math.min(Math.max(opts.limit, 1), 200))
+  }
+
+  return query.execute()
+}
+
+export async function addTicketParticipants(
+  input: {
+    ticketId: string
+    participants: Array<{ kind: 'user' | 'agent'; ref: string }>
+    addedByKind: 'user' | 'agent' | 'system'
+    addedByRef?: string | null
+  },
+  trx?: Kysely<Database>
+): Promise<TicketParticipant[]> {
+  const db = trx ?? getDb()
+  const timestamp = now()
+  const uniqueParticipants = Array.from(
+    new Map(
+      input.participants
+        .filter((participant) => participant.ref.trim().length > 0)
+        .map((participant) => [`${participant.kind}:${participant.ref}`, participant])
+    ).values()
+  )
+
+  if (uniqueParticipants.length === 0) return []
+
+  await db
+    .insertInto('ticket_participants')
+    .values(
+      uniqueParticipants.map((participant) => ({
+        ticket_id: input.ticketId,
+        participant_kind: participant.kind,
+        participant_ref: participant.ref,
+        added_by_kind: input.addedByKind,
+        added_by_ref: input.addedByRef ?? null,
+        created_at: timestamp,
+      }))
+    )
+    .onConflict((oc) => oc.columns(['ticket_id', 'participant_kind', 'participant_ref']).doNothing())
+    .execute()
+
+  return db
+    .selectFrom('ticket_participants')
+    .selectAll()
+    .where('ticket_id', '=', input.ticketId)
+    .where((eb) =>
+      eb.or(
+        uniqueParticipants.map((participant) =>
+          eb.and([
+            eb('participant_kind', '=', participant.kind),
+            eb('participant_ref', '=', participant.ref),
+          ])
+        )
+      )
+    )
+    .orderBy('created_at', 'asc')
+    .execute()
+}
+
+export async function listTicketParticipants(ticketId: string): Promise<TicketParticipant[]> {
+  const db = getDb()
+  return db
+    .selectFrom('ticket_participants')
+    .selectAll()
+    .where('ticket_id', '=', ticketId)
+    .orderBy('created_at', 'asc')
+    .execute()
+}
+
+export async function createAttentionItem(
+  data: Omit<NewAttentionItem, 'id' | 'created_at' | 'updated_at'>,
+  trx?: Kysely<Database>
+): Promise<AttentionItem> {
+  const db = trx ?? getDb()
+  const timestamp = now()
+  return db
+    .insertInto('attention_items')
+    .values({
+      id: uuid(),
+      ...data,
+      created_at: timestamp,
+      updated_at: timestamp,
+      read_at: data.read_at ?? null,
+      read_by_kind: data.read_by_kind ?? null,
+      read_by_ref: data.read_by_ref ?? null,
+    })
+    .returningAll()
+    .executeTakeFirstOrThrow()
+}
+
+export async function listAttentionItems(opts: {
+  targetKind?: 'user' | 'agent'
+  targetRef?: string
+  ticketId?: string
+  statuses?: string[]
+  unreadOnly?: boolean
+  limit?: number
+  offset?: number
+} = {}): Promise<AttentionItem[]> {
+  const db = getDb()
+  let query = db.selectFrom('attention_items').selectAll()
+
+  if (opts.targetKind) {
+    query = query.where('target_kind', '=', opts.targetKind)
+  }
+  if (opts.targetRef) {
+    query = query.where('target_ref', '=', opts.targetRef)
+  }
+  if (opts.ticketId) {
+    query = query.where('ticket_id', '=', opts.ticketId)
+  }
+  if (opts.statuses && opts.statuses.length > 0) {
+    query = query.where('status', 'in', opts.statuses)
+  }
+  if (opts.unreadOnly) {
+    query = query.where('read_at', 'is', null)
+  }
+
+  query = query.orderBy('created_at', 'desc').orderBy('id', 'desc')
+
+  if (opts.limit) {
+    query = query.limit(Math.min(Math.max(opts.limit, 1), 200))
+  }
+  if (opts.offset && opts.offset > 0) {
+    query = query.offset(opts.offset)
+  }
+
+  return query.execute()
+}
+
+export async function markAttentionItemsRead(input: {
+  targetKind: 'user' | 'agent'
+  targetRef: string
+  ids?: string[]
+  ticketId?: string
+  statuses?: string[]
+  unreadOnly?: boolean
+  readByKind: 'user' | 'agent' | 'system'
+  readByRef?: string | null
+}): Promise<number> {
+  const db = getDb()
+  const timestamp = now()
+  let query = db
+    .updateTable('attention_items')
+    .set({
+      read_at: timestamp,
+      read_by_kind: input.readByKind,
+      read_by_ref: input.readByRef ?? null,
+      updated_at: timestamp,
+    })
+    .where('target_kind', '=', input.targetKind)
+    .where('target_ref', '=', input.targetRef)
+    .where('read_at', 'is', null)
+
+  if (input.ids && input.ids.length > 0) {
+    query = query.where('id', 'in', input.ids)
+  }
+  if (input.ticketId) {
+    query = query.where('ticket_id', '=', input.ticketId)
+  }
+  if (input.statuses && input.statuses.length > 0) {
+    query = query.where('status', 'in', input.statuses)
+  }
+  if (input.unreadOnly) {
+    query = query.where('read_at', 'is', null)
+  }
+
+  const result = await query.executeTakeFirst()
+  return Number(result.numUpdatedRows ?? 0)
+}
+
+export async function getAttentionSummary(input: {
+  targetKind: 'user' | 'agent'
+  targetRef: string
+}): Promise<{
+  totalCount: number
+  openCount: number
+  resolvedCount: number
+  unreadCount: number
+  unreadOpenCount: number
+}> {
+  const db = getDb()
+  const row = await db
+    .selectFrom('attention_items')
+    .select((eb) => [
+      eb.fn.countAll<number>().as('total_count'),
+      eb.fn.count<number>(sql`case when status = 'open' then 1 end`).as('open_count'),
+      eb.fn.count<number>(sql`case when status = 'resolved' then 1 end`).as('resolved_count'),
+      eb.fn.count<number>(sql`case when read_at is null then 1 end`).as('unread_count'),
+      eb.fn
+        .count<number>(sql`case when read_at is null and status = 'open' then 1 end`)
+        .as('unread_open_count'),
+    ])
+    .where('target_kind', '=', input.targetKind)
+    .where('target_ref', '=', input.targetRef)
+    .executeTakeFirst()
+
+  return {
+    totalCount: Number(row?.total_count ?? 0),
+    openCount: Number(row?.open_count ?? 0),
+    resolvedCount: Number(row?.resolved_count ?? 0),
+    unreadCount: Number(row?.unread_count ?? 0),
+    unreadOpenCount: Number(row?.unread_open_count ?? 0),
+  }
+}
+
+export async function resolveAttentionItemsForTargetOnTicket(
+  input: {
+    ticketId: string
+    targetKind: 'user' | 'agent'
+    targetRef: string
+    resolvedByKind: 'user' | 'agent' | 'system'
+    resolvedByRef?: string | null
+  },
+  trx?: Kysely<Database>
+): Promise<number> {
+  const db = trx ?? getDb()
+  const timestamp = now()
+  const result = await db
+    .updateTable('attention_items')
+    .set({
+      status: 'resolved',
+      resolved_at: timestamp,
+      resolved_by_kind: input.resolvedByKind,
+      resolved_by_ref: input.resolvedByRef ?? null,
+      updated_at: timestamp,
+    })
+    .where('ticket_id', '=', input.ticketId)
+    .where('target_kind', '=', input.targetKind)
+    .where('target_ref', '=', input.targetRef)
+    .where('status', '=', 'open')
+    .executeTakeFirst()
+
+  return Number(result.numUpdatedRows ?? 0)
+}
+
+export async function enqueueTicketAgentWork(
+  input: {
+    ticketId: string
+    agentId: string
+    source: string
+    sourceRef: string
+    title: string
+    body: string
+    senderName: string
+    senderUserId?: string | null
+    actor:
+      | {
+          kind: 'user'
+          userId: string
+          displayName: string
+          source: string
+        }
+      | {
+          kind: 'agent'
+          agentId: string
+          handle: string
+          displayName: string
+          source: string
+        }
+      | {
+          kind: 'system'
+          displayName: string
+          source: string
+        }
+    pluginInstanceId?: string | null
+    responseContext?: string | null
+    createReceiptLink?: boolean
+    dedupeWindowSec?: number
+    metadata?: Record<string, unknown>
+  },
+  trx?: Kysely<Database>
+): Promise<WorkItem> {
+  const db = trx ?? getDb()
+  const ticket = await findTicketById(input.ticketId)
+  if (!ticket) {
+    throw new Error(`Ticket "${input.ticketId}" not found.`)
+  }
+
+  const goal = ticket.goal_id ? await findGoalById(ticket.goal_id) : null
+  const sessionKey = buildTicketAgentSessionKey(ticket.id, input.agentId)
+  const timestamp = now()
+  const dedupeWindowSec = input.dedupeWindowSec ?? TICKET_DELEGATION_DEDUPE_WINDOW_SEC
+
+  const existingRecent = await db
+    .selectFrom('work_items')
+    .selectAll()
+    .where('session_key', '=', sessionKey)
+    .where('source', '=', input.source)
+    .where('source_ref', '=', input.sourceRef)
+    .where('created_at', '>=', timestamp - dedupeWindowSec)
+    .orderBy('created_at', 'desc')
+    .executeTakeFirst()
+
+  if (existingRecent) {
+    return existingRecent
+  }
+
+  const workItem = await createWorkItem(
+    {
+      plugin_instance_id: input.pluginInstanceId ?? null,
+      session_key: sessionKey,
+      source: input.source,
+      source_ref: input.sourceRef,
+      status: 'NEW',
+      title: input.title,
+      payload: JSON.stringify({
+        body: input.body,
+        senderName: input.senderName,
+        senderUserId: input.senderUserId ?? undefined,
+        sessionKey,
+        targetAgentIds: [input.agentId],
+        ticketId: ticket.id,
+        ticketTitle: ticket.title,
+        ticketStatus: ticket.status,
+        goalId: goal?.id ?? undefined,
+        goalTitle: goal?.title ?? undefined,
+        goalStatus: goal?.status ?? undefined,
+        goalOutcome: goal?.outcome ?? undefined,
+        actor: input.actor,
+        metadata: input.metadata ?? undefined,
+      }),
+    },
+    db
+  )
+
+  const queueKey = `${sessionKey}:${input.agentId}`
+  await enqueueToLane(
+    {
+      queue_key: queueKey,
+      work_item_id: workItem.id,
+      plugin_instance_id: input.pluginInstanceId ?? null,
+      response_context: input.responseContext ?? null,
+      text: input.body,
+      sender_name: input.senderName,
+      arrived_at: timestamp,
+      status: 'pending',
+      dispatch_id: null,
+      drop_reason: null,
+    },
+    {
+      queueKey,
+      sessionKey,
+      agentId: input.agentId,
+      pluginInstanceId: input.pluginInstanceId ?? null,
+      arrivedAt: timestamp,
+      debounceMs: TICKET_AGENT_DEBOUNCE_MS,
+      maxQueued: TICKET_AGENT_MAX_QUEUED,
+      mode: 'steer',
+    },
+    db
+  )
+
+  if (input.createReceiptLink !== false) {
+    await createTicketLink(
+      {
+        ticket_id: ticket.id,
+        kind: 'work_item',
+        ref: workItem.id,
+        label: input.title,
+        metadata_json: JSON.stringify({
+          receiptKind: input.source,
+          sourceRef: input.sourceRef,
+        }),
+        created_by_kind: input.actor.kind,
+        created_by_ref:
+          input.actor.kind === 'user'
+            ? input.actor.userId
+            : input.actor.kind === 'agent'
+              ? input.actor.agentId
+              : null,
+      },
+      db
+    )
+  }
+
+  return workItem
 }
 
 export async function createWorkView(

@@ -73,6 +73,7 @@ import {
   updateAgentSoulTool,
 } from './platform-control'
 import {
+  assignTicketTool,
   claimTicketTool,
   createGoalTool,
   createTicketTool,
@@ -80,6 +81,7 @@ import {
   deleteTicketTool,
   getTicketTool,
   linkTicketReceiptTool,
+  postTicketCommentTool,
   postWorkUpdateTool,
   runTicketNowTool,
   searchGoalsTool,
@@ -170,8 +172,10 @@ export const toolHandlers: Record<string, ToolHandler> = {
   search_goals: searchGoalsTool,
   search_tickets: searchTicketsTool,
   get_ticket: getTicketTool,
+  assign_ticket: assignTicketTool,
   claim_ticket: claimTicketTool,
   update_ticket: updateTicketTool,
+  post_ticket_comment: postTicketCommentTool,
   post_work_update: postWorkUpdateTool,
   link_ticket_receipt: linkTicketReceiptTool,
   run_ticket_now: runTicketNowTool,
