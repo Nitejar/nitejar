@@ -50,7 +50,7 @@ pnpm format
 
 ## Release Notes and Changelogs (Changesets)
 
-We use hangesets](https://github.com/changesets/changesets) to generate consistent package changelogs and version bumps.
+We use [Changesets](https://github.com/changesets/changesets) to generate consistent package changelogs and version bumps.
 
 ### When to add a changeset
 
