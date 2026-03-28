@@ -155,17 +155,20 @@ describe('configure_github_credentials tool', () => {
     expect(mockedWriteFile).toHaveBeenCalledWith(
       'sprite-1',
       '/home/sprite/.nitejar/env',
-      expect.stringContaining('GH_TOKEN=token-123')
+      expect.stringContaining('export GH_TOKEN=token-123'),
+      { session: context.session }
     )
     expect(mockedWriteFile).toHaveBeenCalledWith(
       'sprite-1',
       '/home/sprite/.nitejar/env',
-      expect.not.stringContaining('\\n')
+      expect.stringContaining('export GITHUB_TOKEN=token-123'),
+      { session: context.session }
     )
     expect(mockedWriteFile).toHaveBeenCalledWith(
       'sprite-1',
       '/home/sprite/.nitejar/git-credential-helper',
-      expect.stringContaining('#!/bin/sh\nif [ -z "$GH_TOKEN" ]; then')
+      expect.stringContaining('#!/bin/sh\nif [ -z "$GH_TOKEN" ]; then'),
+      { session: context.session }
     )
 
     const commandCalls = mockedSpriteExec.mock.calls.map((call) => call[1])

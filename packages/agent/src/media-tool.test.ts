@@ -125,7 +125,11 @@ describe('media tools', () => {
 
     expect(result.success).toBe(true)
     expect(mockedWriteFile).toHaveBeenCalledTimes(1)
-    expect(mockedSpriteExec).toHaveBeenCalledWith('sprite-1', expect.stringContaining('base64 -d'))
+    expect(mockedSpriteExec).toHaveBeenCalledWith(
+      'sprite-1',
+      expect.stringContaining('base64 -d <'),
+      { session: undefined }
+    )
     expect(result._meta?.externalApiCost).toMatchObject({
       provider: 'openrouter',
       operation: 'generate_image',

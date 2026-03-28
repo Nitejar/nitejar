@@ -5,6 +5,8 @@ export type RuntimeToolAccess = {
   sandboxEphemeralCreate: boolean
   routineManage: boolean
   fleetAgentRead: boolean
+  fleetRunRead: boolean
+  fleetWorkRead: boolean
   fleetAgentCreate: boolean
   fleetAgentControl: boolean
   fleetAgentDelete: boolean
@@ -26,6 +28,8 @@ export function deriveRuntimeToolAccess(input: {
     sandboxEphemeralCreate: hasGrant(grants, ['sandbox.ephemeral.create']),
     routineManage: hasGrant(grants, ['routine.self.manage', 'routine.manage']),
     fleetAgentRead: hasGrant(grants, ['fleet.agent.read']),
+    fleetRunRead: hasGrant(grants, ['fleet.run.read']),
+    fleetWorkRead: hasGrant(grants, ['fleet.work.read']),
     fleetAgentCreate: hasGrant(grants, ['fleet.agent.create']),
     fleetAgentControl: hasGrant(grants, ['fleet.agent.control']),
     fleetAgentDelete: hasGrant(grants, ['fleet.agent.delete']),

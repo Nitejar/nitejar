@@ -96,7 +96,7 @@ const mockedGetFleetScoreTrend = vi.mocked(getFleetScoreTrend)
 const mockedGetPerAgentEvalStats = vi.mocked(getPerAgentEvalStats)
 
 const caller = evalsRouter.createCaller({
-  session: { user: { id: 'user-1' } } as never,
+  session: { user: { id: 'user-1', role: 'admin' } } as never,
 })
 
 function makeEvaluator(overrides = {}) {
@@ -152,6 +152,14 @@ function makeEvalRun(overrides = {}) {
 describe('evals router', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  it('blocks non-admin users', async () => {
+    const memberCaller = evalsRouter.createCaller({
+      session: { user: { id: 'user-2', role: 'member' } } as never,
+    })
+
+    await expect(memberCaller.listTemplates()).rejects.toMatchObject({ code: 'FORBIDDEN' })
   })
 
   // --------------------------------------------------------------------------

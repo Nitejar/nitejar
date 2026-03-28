@@ -603,6 +603,7 @@ export const pluginsRouter = router({
         description: handler.description,
         icon: handler.icon,
         category: handler.category,
+        managementConfig: handler.managementConfig ?? null,
       }
     }),
 

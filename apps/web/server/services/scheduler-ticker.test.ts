@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ScheduledItem, WorkItem, Agent, QueueMessage } from '@nitejar/database'
 
 // Mock transaction: execute runs the callback with mockTrx, simulating db.transaction().execute()
-const mockExecuteTakeFirst = vi.fn<() => Promise<{ trigger_kind: string } | null>>(async () => null)
+const mockExecuteTakeFirst = vi.fn<() => Promise<{ trigger_kind: string } | null>>(() =>
+  Promise.resolve(null)
+)
 const mockWhere = vi.fn(() => ({ executeTakeFirst: mockExecuteTakeFirst }))
 const mockSelect = vi.fn(() => ({ where: mockWhere }))
 const mockSelectFrom = vi.fn(() => ({ select: mockSelect }))
@@ -109,6 +111,10 @@ const mockedFindTicketById = vi.mocked(findTicketById)
 const mockedParseAppSessionKey = vi.mocked(parseAppSessionKey)
 const mockedCreateRoutineAppSessionFromSeed = vi.mocked(createRoutineAppSessionFromSeed)
 const mockedArchiveRoutine = vi.mocked(archiveRoutine)
+
+type RoutineAppSession = NonNullable<Awaited<ReturnType<typeof createRoutineAppSessionFromSeed>>>
+type RoutineRun = NonNullable<Awaited<ReturnType<typeof findRoutineRunById>>>
+type TicketRecord = NonNullable<Awaited<ReturnType<typeof findTicketById>>>
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -270,7 +276,7 @@ describe('scheduler-ticker', () => {
       created_at: 1,
       updated_at: 1,
       last_activity_at: 1,
-    } as any)
+    } satisfies RoutineAppSession)
     mockedFindRoutineRunById.mockResolvedValue({
       id: 'rr-1',
       routine_id: 'routine-1',
@@ -283,7 +289,7 @@ describe('scheduler-ticker', () => {
       work_item_id: null,
       evaluated_at: 1,
       created_at: 1,
-    } as any)
+    } satisfies RoutineRun)
     mockedFindTicketById.mockResolvedValue({
       id: 'ticket-1',
       goal_id: null,
@@ -301,7 +307,7 @@ describe('scheduler-ticker', () => {
       updated_at: 1,
       archived_at: null,
       sort_order: 1,
-    } as any)
+    } satisfies TicketRecord)
 
     await runTick()
 

@@ -581,6 +581,19 @@ describe('run dispatch worker control flow', () => {
       const options = mockRunAgent.mock.calls[0]?.[2]
       expect(options?.skipTriage).toBe(true)
     })
+
+    it('skips triage for replayed dispatches', async () => {
+      await __dispatchWorkerTest.executeDispatch(
+        makeClaimedDispatch({
+          replay_of_dispatch_id: 'dispatch-parent-1',
+          control_reason: 'resume_seed',
+        }),
+        runtimeControl
+      )
+
+      const options = mockRunAgent.mock.calls[0]?.[2]
+      expect(options?.skipTriage).toBe(true)
+    })
   })
 
   describe('post-run processing', () => {
@@ -696,16 +709,16 @@ describe('run dispatch worker control flow', () => {
 
     it('auto-resumes provider 429 failures up to three resume retries', async () => {
       mockRunAgent.mockRejectedValue(new Error('429 Provider returned error'))
-      mockFindRunDispatchById.mockImplementation(async (id: string) => {
+      mockFindRunDispatchById.mockImplementation((id: string) => {
         if (id === 'dispatch-1') {
-          return {
+          return Promise.resolve({
             ...baseDispatch,
             id: 'dispatch-1',
             control_reason: null,
             replay_of_dispatch_id: null,
-          } as never
+          } as never)
         }
-        return null
+        return Promise.resolve(null)
       })
       mockReplayRunDispatch.mockResolvedValue({
         dispatch: { ...baseDispatch, id: 'dispatch-replay', control_reason: 'resume_seed' },
@@ -726,32 +739,32 @@ describe('run dispatch worker control flow', () => {
 
     it('does not auto-resume provider 429 failures after three resume retries', async () => {
       mockRunAgent.mockRejectedValue(new Error('429 Provider returned error'))
-      mockFindRunDispatchById.mockImplementation(async (id: string) => {
+      mockFindRunDispatchById.mockImplementation((id: string) => {
         if (id === 'dispatch-1') {
-          return {
+          return Promise.resolve({
             ...baseDispatch,
             id: 'dispatch-1',
             control_reason: 'resume_seed',
             replay_of_dispatch_id: 'dispatch-parent-2',
-          } as never
+          } as never)
         }
         if (id === 'dispatch-parent-2') {
-          return {
+          return Promise.resolve({
             ...baseDispatch,
             id: 'dispatch-parent-2',
             control_reason: 'resume_seed',
             replay_of_dispatch_id: 'dispatch-parent-1',
-          } as never
+          } as never)
         }
         if (id === 'dispatch-parent-1') {
-          return {
+          return Promise.resolve({
             ...baseDispatch,
             id: 'dispatch-parent-1',
             control_reason: 'resume_seed',
             replay_of_dispatch_id: null,
-          } as never
+          } as never)
         }
-        return null
+        return Promise.resolve(null)
       })
 
       await __dispatchWorkerTest.executeDispatch(makeClaimedDispatch(), runtimeControl)

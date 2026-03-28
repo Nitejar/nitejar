@@ -119,16 +119,27 @@ function buildTicketExecutionMessage(input: {
   title: string
   body: string | null
   message?: string | null
+  assigneeHandle?: string | null
+  delegatorHandle?: string | null
 }): string {
   const custom = input.message?.trim()
   if (custom) return custom
 
+  const header =
+    input.assigneeHandle && input.assigneeHandle.trim().length > 0
+      ? `This ticket-lane work item is explicitly queued for @${input.assigneeHandle.trim()}${input.delegatorHandle?.trim() ? ` by @${input.delegatorHandle.trim()}` : ''}.`
+      : null
+
   const bodySnippet = input.body?.trim()
   if (!bodySnippet) {
-    return `${DEFAULT_TICKET_EXECUTION_MESSAGE}\n\nTicket: ${input.title}`
+    return [header, DEFAULT_TICKET_EXECUTION_MESSAGE, `Ticket: ${input.title}`]
+      .filter(Boolean)
+      .join('\n\n')
   }
 
-  return `${DEFAULT_TICKET_EXECUTION_MESSAGE}\n\nTicket: ${input.title}\nScope:\n${bodySnippet}`
+  return [header, DEFAULT_TICKET_EXECUTION_MESSAGE, `Ticket: ${input.title}\nScope:\n${bodySnippet}`]
+    .filter(Boolean)
+    .join('\n\n')
 }
 
 function normalizeStringArray(value: unknown): string[] {
@@ -490,7 +501,7 @@ export const updateTicketTool: ToolHandler = async (input, context) => {
 export const assignTicketDefinition: Anthropic.Tool = {
   name: 'assign_ticket',
   description:
-    'Assign a ticket to another agent and optionally kick off their run immediately on a dedicated ticket lane.',
+    'Assign a ticket to another agent and optionally kick off their run immediately on a dedicated ticket lane. Use this for cross-agent delegation.',
   input_schema: {
     type: 'object' as const,
     properties: {
@@ -580,6 +591,8 @@ export const assignTicketTool: ToolHandler = async (input, context) => {
         buildTicketExecutionMessage({
           title: updated.title,
           body: updated.body,
+          assigneeHandle: assignee.handle,
+          delegatorHandle: delegator.handle,
         }),
       senderName: delegator.name,
       actor: {
@@ -589,8 +602,10 @@ export const assignTicketTool: ToolHandler = async (input, context) => {
         displayName: delegator.name,
         source: 'ticket_delegate',
       },
-      pluginInstanceId: context.pluginInstanceId ?? null,
-      responseContext: context.responseContext ? JSON.stringify(context.responseContext) : null,
+      // Ticket delegation should stay ticket-native by default instead of
+      // replying back into the delegator's current channel context.
+      pluginInstanceId: null,
+      responseContext: null,
       createReceiptLink: true,
       metadata: {
         delegatedByAgentId: delegator.id,
@@ -626,7 +641,7 @@ export const assignTicketTool: ToolHandler = async (input, context) => {
 export const postTicketCommentDefinition: Anthropic.Tool = {
   name: 'post_ticket_comment',
   description:
-    'Post a coordination comment on a ticket, optionally mention agents or users, and optionally mark the ticket blocked.',
+    'Post a coordination comment on a ticket, optionally mention agents or users, and optionally mark the ticket blocked. Mentioned agents can be notified and kicked off on the ticket lane.',
   input_schema: {
     type: 'object' as const,
     properties: {
@@ -791,8 +806,10 @@ export const postTicketCommentTool: ToolHandler = async (input, context) => {
         displayName: author.name,
         source: 'ticket_comment',
       },
-      pluginInstanceId: context.pluginInstanceId ?? null,
-      responseContext: context.responseContext ? JSON.stringify(context.responseContext) : null,
+      // Ticket comments are canonical on the ticket; mentioned-agent follow-up
+      // should not inherit the current plugin/channel response target.
+      pluginInstanceId: null,
+      responseContext: null,
       createReceiptLink: true,
       metadata: {
         ticketCommentId: comment.id,
@@ -1024,7 +1041,7 @@ export const linkTicketReceiptTool: ToolHandler = async (input, context) => {
 export const runTicketNowDefinition: Anthropic.Tool = {
   name: 'run_ticket_now',
   description:
-    'Immediately enqueue a ticket execution pass in the current app session so a hot lane can continue without waiting for the next heartbeat.',
+    'Immediately enqueue a ticket execution pass for yourself in the current app session so a hot lane can continue without waiting for the next heartbeat. This does not delegate to another agent; use assign_ticket for cross-agent kickoff.',
   input_schema: {
     type: 'object' as const,
     properties: {
@@ -1057,7 +1074,8 @@ export const runTicketNowTool: ToolHandler = async (input, context) => {
   if (!sessionKey) {
     return {
       success: false,
-      error: 'run_ticket_now requires an active app session context.',
+      error:
+        'run_ticket_now requires an active app session context and only runs the current agent. Use assign_ticket to delegate a ticket to another agent.',
     }
   }
 
@@ -1080,7 +1098,7 @@ export const runTicketNowTool: ToolHandler = async (input, context) => {
   if (!participants.some((participant) => participant.id === agentId)) {
     return {
       success: false,
-      error: `Agent "${agent.handle}" is not a participant in session "${sessionKey}".`,
+      error: `Agent "${agent.handle}" is not a participant in session "${sessionKey}". run_ticket_now only runs the current agent in the current session; use assign_ticket for cross-agent delegation.`,
     }
   }
 
@@ -1482,8 +1500,10 @@ export const workDefinitions: Anthropic.Tool[] = [
   searchGoalsDefinition,
   searchTicketsDefinition,
   getTicketDefinition,
+  assignTicketDefinition,
   claimTicketDefinition,
   updateTicketDefinition,
+  postTicketCommentDefinition,
   postWorkUpdateDefinition,
   linkTicketReceiptDefinition,
   runTicketNowDefinition,

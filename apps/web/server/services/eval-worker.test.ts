@@ -33,6 +33,26 @@ vi.mock('@nitejar/agent/config', () => ({
   parseAgentConfig: vi.fn(() => ({ model: 'test-model', soul: 'friendly' })),
 }))
 
+vi.mock('@nitejar/agent', () => ({
+  normalizeOpenRouterChatCompletionUsage: vi.fn(async (response: Record<string, unknown>) => {
+    const usage = (response.usage ?? {}) as Record<string, unknown>
+    const details = (usage.prompt_tokens_details ?? {}) as Record<string, unknown>
+    return {
+      promptTokens: (usage.prompt_tokens as number | undefined) ?? 0,
+      completionTokens: (usage.completion_tokens as number | undefined) ?? 0,
+      totalTokens:
+        (usage.total_tokens as number | undefined) ??
+        (((usage.prompt_tokens as number | undefined) ?? 0) +
+          ((usage.completion_tokens as number | undefined) ?? 0)),
+      costUsd:
+        (usage.cost as number | undefined) ?? (usage.total_cost as number | undefined) ?? null,
+      cacheReadTokens: (details.cached_tokens as number | undefined) ?? 0,
+      cacheWriteTokens: (details.cache_write_tokens as number | undefined) ?? 0,
+      generationId: (response.id as string | undefined) ?? null,
+    }
+  }),
+}))
+
 import {
   claimPendingEvalRun,
   updateEvalRun,
@@ -46,6 +66,7 @@ import {
   listMessagesByJob,
   listByJob as listInferenceCallsByJob,
   getDb,
+  insertInferenceCall,
 } from '@nitejar/database'
 import { __evalWorkerTest } from './eval-worker'
 
@@ -63,6 +84,7 @@ const mockedFindAgent = vi.mocked(findAgentById)
 const mockedListMessages = vi.mocked(listMessagesByJob)
 const mockedListInference = vi.mocked(listInferenceCallsByJob)
 const mockedGetDb = vi.mocked(getDb)
+const mockedInsertInferenceCall = vi.mocked(insertInferenceCall)
 
 const DEFAULT_SETTINGS = {
   id: 'default',
@@ -126,6 +148,7 @@ function makeAssignment(overrides = {}) {
 
 function makeJudgeResponse(scores: Array<{ id: string; name: string; score: number }>) {
   return {
+    id: 'gen-judge-1',
     choices: [
       {
         message: {
@@ -141,7 +164,16 @@ function makeJudgeResponse(scores: Array<{ id: string; name: string; score: numb
         },
       },
     ],
-    usage: { prompt_tokens: 500, completion_tokens: 100, total_tokens: 600 },
+    usage: {
+      prompt_tokens: 500,
+      completion_tokens: 100,
+      total_tokens: 600,
+      cost: 0.00123,
+      prompt_tokens_details: {
+        cached_tokens: 420,
+        cache_write_tokens: 12,
+      },
+    },
   }
 }
 
@@ -285,6 +317,16 @@ describe('eval-worker processEvalRun', () => {
     const overallScore = (updateCall![1] as Record<string, unknown>).overall_score as number
     expect(overallScore).toBeGreaterThan(0)
     expect(overallScore).toBeLessThanOrEqual(1)
+    expect(mockedInsertInferenceCall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt_tokens: 500,
+        completion_tokens: 100,
+        total_tokens: 600,
+        cache_read_tokens: 420,
+        cache_write_tokens: 12,
+        cost_usd: 0.00123,
+      })
+    )
   })
 
   it('processes a gate evaluator and stops on gate failure', async () => {

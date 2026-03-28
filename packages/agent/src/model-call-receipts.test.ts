@@ -29,6 +29,8 @@ describe('recordInferenceCallReceipt', () => {
       promptTokens: 10,
       completionTokens: 5,
       totalTokens: 15,
+      cacheReadTokens: 12,
+      cacheWriteTokens: 3,
       costUsd: 0.01,
       finishReason: 'stop',
       isFallback: false,
@@ -47,6 +49,8 @@ describe('recordInferenceCallReceipt', () => {
         response_payload_hash: 'resp-hash',
         attempt_kind: 'primary',
         attempt_index: 0,
+        cache_read_tokens: 12,
+        cache_write_tokens: 3,
         payload_state: 'captured',
         model_span_id: 'span-1',
       })

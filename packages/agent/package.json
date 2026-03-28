@@ -52,6 +52,11 @@
       "import": "./dist/prompt-sanitize.js",
       "default": "./dist/prompt-sanitize.js"
     },
+    "./openrouter-usage": {
+      "types": "./dist/openrouter-usage.d.ts",
+      "import": "./dist/openrouter-usage.js",
+      "default": "./dist/openrouter-usage.js"
+    },
     "./mention-parser": {
       "types": "./dist/mention-parser.d.ts",
       "import": "./dist/mention-parser.js",

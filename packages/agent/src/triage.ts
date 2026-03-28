@@ -16,6 +16,8 @@ export interface TriageUsage {
   promptTokens: number
   completionTokens: number
   totalTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
   costUsd: number | null
   durationMs: number
 }
@@ -62,6 +64,52 @@ export interface TriageContext {
   activeWorkSnapshot?: string
   /** Compressed context from other threads in the same Slack channel */
   channelPrelude?: string
+}
+
+function parseWorkItemPayload(workItem: WorkItem): Record<string, unknown> | null {
+  if (!workItem.payload) return null
+  try {
+    const parsed: unknown = JSON.parse(workItem.payload)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null
+  } catch {
+    return null
+  }
+}
+
+function buildTicketLaneIngressHint(agent: Agent, workItem: WorkItem): string | null {
+  if (workItem.source !== 'ticket_delegate' && workItem.source !== 'ticket_comment') {
+    return null
+  }
+
+  const payload = parseWorkItemPayload(workItem)
+  const targetAgentIds = Array.isArray(payload?.targetAgentIds)
+    ? payload.targetAgentIds.filter((value): value is string => typeof value === 'string')
+    : []
+  if (targetAgentIds.length > 0 && !targetAgentIds.includes(agent.id)) {
+    return null
+  }
+
+  const actor =
+    payload?.actor && typeof payload.actor === 'object' && !Array.isArray(payload.actor)
+      ? (payload.actor as Record<string, unknown>)
+      : null
+  const delegatorHandle =
+    typeof actor?.handle === 'string' && actor.handle.trim().length > 0 ? actor.handle.trim() : null
+  const ticketTitle =
+    typeof payload?.ticketTitle === 'string' && payload.ticketTitle.trim().length > 0
+      ? payload.ticketTitle.trim()
+      : null
+  const targetHandle = agent.handle ? `@${agent.handle}` : agent.name
+  const delegatedBy = delegatorHandle ? ` by @${delegatorHandle}` : ''
+  const ticketRef = ticketTitle ? ` for ticket "${ticketTitle}"` : ''
+
+  return [
+    `This is direct ticket-lane work explicitly queued${delegatedBy}${ticketRef} for ${targetHandle}.`,
+    `Treat it as addressed to ${targetHandle} even if the body lacks an @mention.`,
+    `If ${targetHandle} is already busy with related ticket work, do not pass solely because there is no mention; respond and coordinate sequencing on the ticket instead.`,
+  ].join(' ')
 }
 
 function normalizeForDuplicateComparison(value: string): string {
@@ -179,11 +227,12 @@ export async function triageWorkItem(
       ? issuePreamble.content + '\n\n---\n\n'
       : ''
   const contextHint = workItem.session_key ? `\n[session: ${workItem.session_key}]` : ''
-  const ingressContext = buildSlackAppMentionHint(
-    workItem,
-    undefined,
-    effectiveTriageContext?.agentHandle ?? agent.handle
-  )
+  const ingressContext = [
+    buildTicketLaneIngressHint(agent, workItem),
+    buildSlackAppMentionHint(workItem, undefined, effectiveTriageContext?.agentHandle ?? agent.handle),
+  ]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .join('\n\n')
 
   const routing = await runRoutingArbiter({
     mode: 'triage',
@@ -195,16 +244,18 @@ export async function triageWorkItem(
     recentHistory: recentHistoryForArbiter,
     teamContext: effectiveTriageContext?.teamContext,
     activeWorkSnapshot: effectiveTriageContext?.activeWorkSnapshot,
-    ingressContext: ingressContext ?? undefined,
+    ingressContext: ingressContext || undefined,
     channelPrelude: effectiveTriageContext?.channelPrelude,
     rules: [
       'Mentions are intent signals, not hard routing locks.',
       'Distinguish directive mentions ("@you do X") from referential mentions ("@you did X").',
       'Referential mentions alone do not require a response.',
       'If directly addressed by the target agent name/handle with a request, set route="respond".',
+      'When ingress context says this is direct ticket-lane work explicitly queued for the target agent, treat it as addressed to that agent even without an @mention.',
       'If clearly addressed only to a different agent for action, set route="pass".',
       'Ongoing shared exchanges (counting, brainstorming, turn-by-turn collaboration) are relevant even without a fresh @mention.',
       'If the latest message is a direct continuation of the target agent\'s recent turn or baton handoff, set route="respond".',
+      'If direct ticket-lane work arrives while the target agent is already busy with related work, prefer route="respond" and let the agent coordinate ordering or blockers on the ticket rather than passing only due to lack of mention.',
       'If team/dispatch context states a different agent is the exclusive responder for this work item, set route="pass" unless direct user override exists.',
       'When passing due to another agent exclusive responder, make reason explicit that you are waiting for that agent to finish this work item turn.',
       'After that exclusive responder posts, re-evaluate on the next incoming turn; do not treat exclusivity as permanent.',

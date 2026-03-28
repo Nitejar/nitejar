@@ -46,6 +46,25 @@ vi.mock('@nitejar/agent/memory', () => ({
   updateMemoryWithEmbedding: vi.fn().mockResolvedValue(null),
 }))
 
+vi.mock('@nitejar/agent', () => ({
+  normalizeOpenRouterChatCompletionUsage: vi.fn(async (response: Record<string, unknown>) => {
+    const usage = (response.usage ?? {}) as Record<string, unknown>
+    const details = (usage.prompt_tokens_details ?? {}) as Record<string, unknown>
+    return {
+      promptTokens: (usage.prompt_tokens as number | undefined) ?? 0,
+      completionTokens: (usage.completion_tokens as number | undefined) ?? 0,
+      totalTokens:
+        (usage.total_tokens as number | undefined) ??
+        (((usage.prompt_tokens as number | undefined) ?? 0) +
+          ((usage.completion_tokens as number | undefined) ?? 0)),
+      costUsd: (usage.cost as number | undefined) ?? null,
+      cacheReadTokens: (details.cached_tokens as number | undefined) ?? 0,
+      cacheWriteTokens: (details.cache_write_tokens as number | undefined) ?? 0,
+      generationId: (response.id as string | undefined) ?? null,
+    }
+  }),
+}))
+
 vi.mock('@nitejar/agent/prompt-builder', () => ({
   getRequesterIdentity: vi.fn().mockReturnValue(null),
 }))
@@ -80,7 +99,8 @@ vi.mock('./schema-mismatch', () => ({
 }))
 
 const { __passiveMemoryWorkerTest } = await import('./passive-memory-worker')
-const { parseCandidate, parseExtractionResponse, applyCandidates } = __passiveMemoryWorkerTest
+const { parseCandidate, parseExtractionResponse, parseUsageSummary, applyCandidates } =
+  __passiveMemoryWorkerTest
 const Memory = await import('@nitejar/agent/memory')
 const mockedCreateMemory = vi.mocked(Memory.createMemoryWithEmbedding)
 
@@ -228,6 +248,40 @@ describe('applyCandidates digest handling', () => {
     expect(mockedCreateMemory).toHaveBeenCalledWith('agent-1', 'Fix the bug', false, {
       kind: 'task',
       strength: undefined,
+    })
+  })
+})
+
+describe('parseUsageSummary', () => {
+  it('captures cache token details from OpenRouter responses', async () => {
+    const usage = await parseUsageSummary(
+      {
+        id: 'gen-1',
+        model: 'xiaomi/mimo-v2-pro',
+        usage: {
+          prompt_tokens: 100,
+          completion_tokens: 20,
+          total_tokens: 120,
+          cost: 0.01,
+          prompt_tokens_details: {
+            cached_tokens: 88,
+            cache_write_tokens: 0,
+          },
+        },
+      },
+      'fallback-model',
+      123
+    )
+
+    expect(usage).toEqual({
+      model: 'xiaomi/mimo-v2-pro',
+      promptTokens: 100,
+      completionTokens: 20,
+      totalTokens: 120,
+      cacheReadTokens: 88,
+      cacheWriteTokens: 0,
+      costUsd: 0.01,
+      durationMs: 123,
     })
   })
 })

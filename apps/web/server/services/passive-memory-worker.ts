@@ -22,6 +22,7 @@ import {
   findRelatedMemories,
   updateMemoryWithEmbedding,
 } from '@nitejar/agent/memory'
+import { normalizeOpenRouterChatCompletionUsage } from '@nitejar/agent'
 import { getRequesterIdentity, type RequesterIdentity } from '@nitejar/agent/prompt-builder'
 import { getMemorySettings, parseAgentConfig } from '@nitejar/agent/config'
 import { startSpan, endSpan, failSpan, type SpanContext } from '@nitejar/agent/tracing'
@@ -137,6 +138,8 @@ type ModelUsage = {
   promptTokens: number
   completionTokens: number
   totalTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
   costUsd: number | null
   durationMs: number
 }
@@ -347,18 +350,19 @@ function clampProbability(value: number): number {
   return Math.max(0, Math.min(1, value))
 }
 
-function parseUsageSummary(
+async function parseUsageSummary(
   responseJson: Record<string, unknown>,
   modelFallback: string,
-  durationMs: number
-): ModelUsage | null {
+  durationMs: number,
+  options?: { apiKey?: string; baseUrl?: string }
+): Promise<ModelUsage | null> {
   const usage = isRecord(responseJson.usage) ? responseJson.usage : null
   if (!usage) return null
 
-  const promptTokens = typeof usage.prompt_tokens === 'number' ? usage.prompt_tokens : 0
-  const completionTokens = typeof usage.completion_tokens === 'number' ? usage.completion_tokens : 0
-  const costValue = usage.cost
-  const costUsd = typeof costValue === 'number' ? costValue : 0
+  const normalizedUsage = await normalizeOpenRouterChatCompletionUsage(responseJson, {
+    apiKey: options?.apiKey,
+    baseUrl: options?.baseUrl,
+  })
   const responseModel =
     typeof responseJson.model === 'string' && responseJson.model.length > 0
       ? responseJson.model
@@ -366,10 +370,12 @@ function parseUsageSummary(
 
   return {
     model: responseModel,
-    promptTokens,
-    completionTokens,
-    totalTokens: promptTokens + completionTokens,
-    costUsd,
+    promptTokens: normalizedUsage.promptTokens,
+    completionTokens: normalizedUsage.completionTokens,
+    totalTokens: normalizedUsage.totalTokens,
+    cacheReadTokens: normalizedUsage.cacheReadTokens,
+    cacheWriteTokens: normalizedUsage.cacheWriteTokens,
+    costUsd: normalizedUsage.costUsd,
     durationMs,
   }
 }
@@ -384,6 +390,8 @@ function mergeUsages(first: ModelUsage | null, second: ModelUsage | null): Model
     promptTokens: first.promptTokens + second.promptTokens,
     completionTokens: first.completionTokens + second.completionTokens,
     totalTokens: first.totalTokens + second.totalTokens,
+    cacheReadTokens: first.cacheReadTokens + second.cacheReadTokens,
+    cacheWriteTokens: first.cacheWriteTokens + second.cacheWriteTokens,
     costUsd: (first.costUsd ?? 0) + (second.costUsd ?? 0),
     durationMs: first.durationMs + second.durationMs,
   }
@@ -407,6 +415,8 @@ async function insertPassiveInferenceUsage(
     prompt_tokens: usage.promptTokens,
     completion_tokens: usage.completionTokens,
     total_tokens: usage.totalTokens,
+    cache_read_tokens: usage.cacheReadTokens,
+    cache_write_tokens: usage.cacheWriteTokens,
     cost_usd: usage.costUsd,
     tool_call_names: null,
     finish_reason: 'stop',
@@ -596,7 +606,10 @@ async function extractCandidates(
   }
 
   const candidates = parseExtractionResponse(rawContent)
-  const usageSummary = parseUsageSummary(responseJson, model, durationMs)
+  const usageSummary = await parseUsageSummary(responseJson, model, durationMs, {
+    apiKey,
+    baseUrl,
+  })
 
   return {
     candidates,
@@ -765,7 +778,10 @@ async function reconcileCandidates(
     }
   }
 
-  const usage = parseUsageSummary(responseJson, model, durationMs)
+  const usage = await parseUsageSummary(responseJson, model, durationMs, {
+    apiKey,
+    baseUrl,
+  })
   const resolutions = parseReconcileResponse(rawContent)
   const resolutionByCandidate = new Map<number, ReconcileResolution>()
   for (const resolution of resolutions) {
@@ -1136,6 +1152,7 @@ export const __passiveMemoryWorkerTest = {
   processNextPassiveMemoryQueue,
   parseCandidate,
   parseExtractionResponse,
+  parseUsageSummary,
   applyCandidates,
 }
 

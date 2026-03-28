@@ -1225,8 +1225,12 @@ export function RolesView({
 
             <div>
               <span className="text-[0.65rem] uppercase tracking-[0.2em] text-white/35">
-                GitHub repo policy
+                GitHub repo role defaults
               </span>
+              <p className="mt-1 text-[11px] text-white/35">
+                Reusable defaults that flow through role assignment. Direct per-agent repo access now
+                lives on the GitHub plugin instance page.
+              </p>
               <div className="mt-1.5 rounded-lg border border-zinc-800/40">
                 {githubReposByAccount.length === 0 ? (
                   <div className="px-3 py-3 text-xs text-zinc-500">

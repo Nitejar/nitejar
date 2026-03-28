@@ -126,6 +126,19 @@ export interface SetupConfig {
   supportsTestBeforeSave?: boolean
 }
 
+export interface RepoAccessCapabilityDescriptor {
+  id: string
+  label: string
+  hint: string
+}
+
+export interface PluginManagementConfig {
+  repoAccess?: {
+    kind: 'github_repo_capabilities'
+    capabilityDescriptors: RepoAccessCapabilityDescriptor[]
+  }
+}
+
 /**
  * Plugin handler interface
  * Each plugin type (telegram, github, etc.) implements this
@@ -157,6 +170,9 @@ export interface PluginHandler<TConfig = unknown> {
 
   /** Setup configuration for the admin UI setup wizard */
   readonly setupConfig?: SetupConfig
+
+  /** Optional plugin-defined admin/management metadata for richer instance screens */
+  readonly managementConfig?: PluginManagementConfig
 
   /**
    * Validate plugin configuration

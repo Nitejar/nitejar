@@ -13,6 +13,7 @@ import {
   insertInferenceCall,
 } from '@nitejar/database'
 import { logSchemaMismatchOnce } from './schema-mismatch'
+import { normalizeOpenRouterChatCompletionUsage } from '@nitejar/agent'
 import { parseAgentConfig } from '@nitejar/agent/config'
 
 const WORKER_STATE_KEY = '__nitejarEvalWorker'
@@ -295,6 +296,7 @@ async function executeLlmJudge(
   const data = (await response.json()) as {
     choices: Array<{ message: { content: string } }>
     usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
+    id?: string
   }
 
   const content = data.choices?.[0]?.message?.content
@@ -302,11 +304,16 @@ async function executeLlmJudge(
     throw new Error('Judge model returned empty response')
   }
 
-  const inputTokenCount = data.usage?.prompt_tokens ?? 0
-  const outputTokenCount = data.usage?.completion_tokens ?? 0
+  const normalizedUsage = await normalizeOpenRouterChatCompletionUsage(data, {
+    apiKey,
+    baseUrl,
+  })
+  const inputTokenCount = normalizedUsage.promptTokens
+  const outputTokenCount = normalizedUsage.completionTokens
 
   // Estimate cost (rough: $0.15/1M input, $0.60/1M output for gpt-4o-mini)
-  const costUsd = inputTokenCount * 0.00000015 + outputTokenCount * 0.0000006
+  const costUsd =
+    normalizedUsage.costUsd ?? inputTokenCount * 0.00000015 + outputTokenCount * 0.0000006
 
   // Record the judge call in inference_calls so it shows up in cost reporting
   await insertInferenceCall({
@@ -316,7 +323,9 @@ async function executeLlmJudge(
     model: judgeModel,
     prompt_tokens: inputTokenCount,
     completion_tokens: outputTokenCount,
-    total_tokens: inputTokenCount + outputTokenCount,
+    total_tokens: normalizedUsage.totalTokens,
+    cache_read_tokens: normalizedUsage.cacheReadTokens,
+    cache_write_tokens: normalizedUsage.cacheWriteTokens,
     cost_usd: costUsd,
     tool_call_names: null,
     finish_reason: 'stop',

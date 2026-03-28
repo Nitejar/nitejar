@@ -9,6 +9,13 @@ import {
   writeFileTool,
 } from './filesystem'
 import { configureGitHubCredentialsTool } from './github'
+import {
+  listGitHubRepoAssignmentsTool,
+  listGitHubReposTool,
+  listRoleGitHubRepoPoliciesTool,
+  updateAgentGitHubRepoAssignmentTool,
+  updateRoleGitHubRepoPoliciesTool,
+} from './github-policy'
 import { addMemoryTool, removeMemoryTool, updateMemoryTool } from './memory'
 import { refreshNetworkPolicyTool } from './network-policy'
 import { runTodoTool } from './run-todo'
@@ -44,6 +51,16 @@ import {
 import { extractUrlTool, webSearchTool } from './web'
 import { generateImageTool, synthesizeSpeechTool, transcribeAudioTool } from './media'
 import { queryActivityTool } from './activity-log'
+import {
+  getDispatchDecisionsTool,
+  getMessageChunkTool,
+  getRunTraceTool,
+  getWorkItemQueueMessagesTool,
+  getWorkItemTool,
+  getWorkItemTriageReceiptsTool,
+  searchRunsTool,
+  searchWorkItemsTool,
+} from './fleet-observability'
 import { listRunsTool, getRunTool } from './run-history'
 import {
   collectionDescribeTool,
@@ -98,11 +115,31 @@ import {
   unassignRoleTool,
   updateRoleTool,
 } from './policy'
+import {
+  createRubricTool,
+  deleteRubricTool,
+  getEvalRunTool,
+  getEvalSettingsTool,
+  getEvalSummaryTool,
+  getRubricTool,
+  listAgentEvalAssignmentsTool,
+  listEvalRunsTool,
+  listRubricsTool,
+  runEvalForJobTool,
+  updateAgentEvalAssignmentTool,
+  updateEvalSettingsTool,
+  updateRubricTool,
+} from './evals'
 import type { ToolHandler } from '../types'
 
 export const toolHandlers: Record<string, ToolHandler> = {
   refresh_network_policy: refreshNetworkPolicyTool,
   configure_github_credentials: configureGitHubCredentialsTool,
+  list_github_repos: listGitHubReposTool,
+  list_github_repo_assignments: listGitHubRepoAssignmentsTool,
+  update_agent_github_repo_assignment: updateAgentGitHubRepoAssignmentTool,
+  list_role_github_repo_policies: listRoleGitHubRepoPoliciesTool,
+  update_role_github_repo_policies: updateRoleGitHubRepoPoliciesTool,
   add_memory: addMemoryTool,
   remove_memory: removeMemoryTool,
   update_memory: updateMemoryTool,
@@ -169,6 +206,14 @@ export const toolHandlers: Record<string, ToolHandler> = {
   synthesize_speech: synthesizeSpeechTool,
   download_attachment: downloadAttachmentTool,
   query_activity: queryActivityTool,
+  search_runs: searchRunsTool,
+  get_run_trace: getRunTraceTool,
+  search_work_items: searchWorkItemsTool,
+  get_work_item: getWorkItemTool,
+  get_work_item_queue_messages: getWorkItemQueueMessagesTool,
+  get_dispatch_decisions: getDispatchDecisionsTool,
+  get_work_item_triage_receipts: getWorkItemTriageReceiptsTool,
+  get_message_chunk: getMessageChunkTool,
   search_goals: searchGoalsTool,
   search_tickets: searchTicketsTool,
   get_ticket: getTicketTool,
@@ -195,6 +240,19 @@ export const toolHandlers: Record<string, ToolHandler> = {
   delete_role: deleteRoleTool,
   assign_role: assignRoleTool,
   unassign_role: unassignRoleTool,
+  get_eval_summary: getEvalSummaryTool,
+  list_eval_runs: listEvalRunsTool,
+  get_eval_run: getEvalRunTool,
+  list_rubrics: listRubricsTool,
+  get_rubric: getRubricTool,
+  list_agent_eval_assignments: listAgentEvalAssignmentsTool,
+  get_eval_settings: getEvalSettingsTool,
+  create_rubric: createRubricTool,
+  update_rubric: updateRubricTool,
+  delete_rubric: deleteRubricTool,
+  update_agent_eval_assignment: updateAgentEvalAssignmentTool,
+  run_eval_for_job: runEvalForJobTool,
+  update_eval_settings: updateEvalSettingsTool,
   // Intentionally disabled: private agent DMs are off while we stabilize
   // public-channel inter-agent communication and routing receipts.
   list_runs: listRunsTool,

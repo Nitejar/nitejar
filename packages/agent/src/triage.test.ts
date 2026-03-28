@@ -347,6 +347,50 @@ describe('triageWorkItem', () => {
     expect(result.usage!.model).toBe('test-model')
   })
 
+  it('includes direct ticket-lane ingress context for delegated ticket work', async () => {
+    const delegatedWorkItem: WorkItem = {
+      ...workItem,
+      source: 'ticket_delegate',
+      title: 'Delegated ticket: Scout research pass',
+      payload: JSON.stringify({
+        actor: { handle: 'ceo' },
+        ticketTitle: 'Scout research pass',
+        targetAgentIds: ['agent-1'],
+      }),
+    }
+    mockedWithProviderRetry.mockResolvedValue({
+      choices: [
+        {
+          message: {
+            content:
+              '{"readonly": false, "respond": true, "reason": "direct delegation", "resources": [], "exclusive": true}',
+          },
+        },
+      ],
+      usage: { prompt_tokens: 10, completion_tokens: 20 },
+      model: 'test-model',
+    } as never)
+
+    const result = await triageWorkItem(agent, delegatedWorkItem)
+
+    expect(result.isReadOnly).toBe(false)
+    expect(result.shouldRespond).toBe(true)
+    expect(result.exclusiveClaim).toBe(true)
+    expect(result.reason).toBe('direct delegation')
+    expect(result.usage).toBeTruthy()
+    expect(mockedWithProviderRetry).toHaveBeenCalledOnce()
+
+    const request = result.requestPayload as {
+      messages?: Array<{ role: string; content: string }>
+    }
+    expect(request.messages?.[0]?.content).toContain(
+      'This is direct ticket-lane work explicitly queued by @ceo for ticket "Scout research pass" for @testbot.'
+    )
+    expect(request.messages?.[0]?.content).toContain(
+      'Treat it as addressed to @testbot even if the body lacks an @mention.'
+    )
+  })
+
   it('parses triage response with resources', async () => {
     mockedWithProviderRetry.mockResolvedValue({
       choices: [

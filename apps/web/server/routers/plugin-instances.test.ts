@@ -9,6 +9,7 @@ const {
   mockUpdatePluginInstance,
   mockDeletePluginInstance,
   mockPluginHandlerGet,
+  mockPluginHandlerRegister,
   mockListPluginInstancesOp,
   mockGetPluginInstanceOp,
   mockSetPluginInstanceAgentAssignmentOp,
@@ -22,25 +23,31 @@ const {
   mockUpdatePluginInstance: vi.fn(),
   mockDeletePluginInstance: vi.fn(),
   mockPluginHandlerGet: vi.fn(),
+  mockPluginHandlerRegister: vi.fn(),
   mockListPluginInstancesOp: vi.fn(),
   mockGetPluginInstanceOp: vi.fn(),
   mockSetPluginInstanceAgentAssignmentOp: vi.fn(),
   mockSetPluginInstanceEnabledOp: vi.fn(),
 }))
 
-vi.mock('@nitejar/database', () => ({
-  createPluginInstance: mockCreatePluginInstance,
-  encryptConfig: mockEncryptConfig,
-  decryptConfig: mockDecryptConfig,
-  findPluginInstanceById: mockFindPluginInstanceById,
-  findPluginById: mockFindPluginById,
-  updatePluginInstance: mockUpdatePluginInstance,
-  deletePluginInstance: mockDeletePluginInstance,
-}))
+vi.mock('@nitejar/database', async () => {
+  const actual = await vi.importActual<typeof import('@nitejar/database')>('@nitejar/database')
+  return {
+    ...actual,
+    createPluginInstance: mockCreatePluginInstance,
+    encryptConfig: mockEncryptConfig,
+    decryptConfig: mockDecryptConfig,
+    findPluginInstanceById: mockFindPluginInstanceById,
+    findPluginById: mockFindPluginById,
+    updatePluginInstance: mockUpdatePluginInstance,
+    deletePluginInstance: mockDeletePluginInstance,
+  }
+})
 
 vi.mock('@nitejar/plugin-handlers/registry', () => ({
   pluginHandlerRegistry: {
     get: mockPluginHandlerGet,
+    register: mockPluginHandlerRegister,
   },
 }))
 

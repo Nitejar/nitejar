@@ -6,12 +6,11 @@ import { IconArrowRight, IconChecks, IconInbox, IconMessageCircle } from '@table
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { trpc, type RouterOutputs } from '@/lib/trpc'
+import { trpc } from '@/lib/trpc'
 import { RelativeTime } from '@/app/(app)/components/RelativeTime'
 import { cn } from '@/lib/utils'
 
 type InboxState = 'all' | 'open' | 'resolved'
-type InboxItem = RouterOutputs['work']['listInboxAttention']['items'][number]
 
 function stateLabel(state: InboxState) {
   switch (state) {

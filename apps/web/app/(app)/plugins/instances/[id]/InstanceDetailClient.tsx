@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -59,7 +59,28 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   'brand-discord': IconBrandDiscord,
 }
 
-export function InstanceDetailClient({ pluginInstanceId }: { pluginInstanceId: string }) {
+type GitHubRepoCapabilityDescriptor = {
+  id: string
+  label: string
+  hint: string
+}
+
+type GitHubRepoCapability =
+  | 'read_repo'
+  | 'create_branch'
+  | 'push_branch'
+  | 'open_pr'
+  | 'comment'
+  | 'request_review'
+  | 'label_issue_pr'
+  | 'review_pr'
+  | 'merge_pr'
+
+export function InstanceDetailClient({
+  pluginInstanceId,
+}: {
+  pluginInstanceId: string
+}) {
   const instanceQuery = trpc.pluginInstances.get.useQuery({ pluginInstanceId })
   const catalogQuery = trpc.plugins.catalogType.useQuery(
     { type: instanceQuery.data?.pluginInstance.type ?? '' },
@@ -93,6 +114,10 @@ export function InstanceDetailClient({ pluginInstanceId }: { pluginInstanceId: s
 
   const Icon = meta?.icon ? iconMap[meta.icon] : undefined
   const pluginType = instance.type
+  const githubRepoCapabilities =
+    meta?.managementConfig?.repoAccess?.kind === 'github_repo_capabilities'
+      ? meta.managementConfig.repoAccess.capabilityDescriptors
+      : []
 
   return (
     <div className="space-y-6">
@@ -131,7 +156,17 @@ export function InstanceDetailClient({ pluginInstanceId }: { pluginInstanceId: s
       />
 
       {/* Type-specific settings */}
-      {pluginType === 'github' && <GitHubSettingsCard pluginInstanceId={pluginInstanceId} />}
+      {pluginType === 'github' && (
+        <>
+          <GitHubSettingsCard pluginInstanceId={pluginInstanceId} />
+          <GitHubRepoAccessCard
+            pluginInstanceId={pluginInstanceId}
+            githubRepoCapabilities={githubRepoCapabilities}
+            assignedAgentIds={assignedAgentIds}
+            allAgents={allAgents}
+          />
+        </>
+      )}
       {pluginType === 'slack' && <SlackSetupCard pluginInstanceId={pluginInstanceId} />}
 
       {/* Danger zone */}
@@ -760,6 +795,197 @@ function GitHubSettingsCard({ pluginInstanceId }: { pluginInstanceId: string }) 
             </div>
           )}
         </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function GitHubRepoAccessCard({
+  pluginInstanceId,
+  githubRepoCapabilities,
+  assignedAgentIds,
+  allAgents,
+}: {
+  pluginInstanceId: string
+  githubRepoCapabilities: readonly GitHubRepoCapabilityDescriptor[]
+  assignedAgentIds: string[]
+  allAgents: Array<{
+    id: string
+    handle: string | null
+    name: string
+    status: string
+  }>
+}) {
+  const utils = trpc.useUtils()
+  const reposQuery = trpc.capabilities.listRepos.useQuery({ pluginInstanceId })
+  const assignmentsQuery = trpc.capabilities.listAssignments.useQuery({ pluginInstanceId })
+  const updateMutation = trpc.capabilities.upsert.useMutation({
+    onSuccess: async () => {
+      await utils.capabilities.listAssignments.invalidate({ pluginInstanceId })
+      toast.success('Repo access updated')
+    },
+    onError: (error) => toast.error(error.message),
+  })
+
+  const pluginAssignedSet = useMemo(() => new Set(assignedAgentIds), [assignedAgentIds])
+  const sortedAgents = useMemo(
+    () =>
+      [...allAgents].sort((a, b) => {
+        const aAssigned = pluginAssignedSet.has(a.id) ? 0 : 1
+        const bAssigned = pluginAssignedSet.has(b.id) ? 0 : 1
+        if (aAssigned !== bAssigned) return aAssigned - bAssigned
+        return a.name.localeCompare(b.name)
+      }),
+    [allAgents, pluginAssignedSet]
+  )
+
+  const assignmentsByRepo = useMemo(() => {
+    const next = new Map<number, Map<string, Set<GitHubRepoCapability>>>()
+    for (const assignment of assignmentsQuery.data ?? []) {
+      const repoAssignments =
+        next.get(assignment.repoId) ?? new Map<string, Set<GitHubRepoCapability>>()
+      repoAssignments.set(
+        assignment.agentId,
+        new Set(assignment.capabilities as GitHubRepoCapability[])
+      )
+      next.set(assignment.repoId, repoAssignments)
+    }
+    return next
+  }, [assignmentsQuery.data])
+
+  async function toggleCapability(
+    repoId: number,
+    agentId: string,
+    capabilityId: GitHubRepoCapability
+  ) {
+    const current = new Set(assignmentsByRepo.get(repoId)?.get(agentId) ?? [])
+    if (current.has(capabilityId)) current.delete(capabilityId)
+    else current.add(capabilityId)
+    await updateMutation.mutateAsync({
+      repoId,
+      agentId,
+      capabilities: [...current].sort(),
+    })
+  }
+
+  return (
+    <Card className="border-white/10 bg-white/[0.02]">
+      <CardHeader>
+        <CardTitle className="text-base">Repos &amp; Access</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-3 text-xs text-muted-foreground">
+          Direct repo access lives here. Plugin assignment only gives an agent the GitHub connection;
+          the toggles below decide which synced repos and operations it can actually get credentials for.
+          Reusable defaults still live in <span className="text-foreground">Company → Roles</span>.
+        </div>
+
+        {reposQuery.isLoading || assignmentsQuery.isLoading ? (
+          <div className="space-y-2">
+            <div className="h-24 animate-pulse rounded bg-white/5" />
+            <div className="h-24 animate-pulse rounded bg-white/5" />
+          </div>
+        ) : !reposQuery.data || reposQuery.data.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-white/10 bg-white/[0.02] px-3 py-4 text-xs text-muted-foreground">
+            No synced GitHub repos yet. Install the app on GitHub and run
+            <span className="px-1 text-foreground">Sync Installations</span>
+            above before configuring repo access.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {reposQuery.data.map((repo) => {
+              const repoAssignments = assignmentsByRepo.get(repo.id) ?? new Map<string, Set<string>>()
+              return (
+                <div
+                  key={repo.id}
+                  className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-3"
+                >
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium text-foreground">
+                        {repo.full_name}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">
+                        Direct agent access for this repo
+                      </div>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] uppercase tracking-[0.12em]">
+                      {repo.account_login ?? 'unknown'}
+                    </Badge>
+                  </div>
+
+                  <div className="space-y-2">
+                    {sortedAgents.map((agent) => {
+                      const selectedCapabilities = repoAssignments.get(agent.id) ?? new Set<string>()
+                      const pluginAssigned = pluginAssignedSet.has(agent.id)
+                      return (
+                        <div
+                          key={`${repo.id}:${agent.id}`}
+                          className="rounded-md border border-white/8 bg-black/10 px-2.5 py-2"
+                        >
+                          <div className="mb-2 flex flex-wrap items-center gap-2">
+                            <span className="text-xs text-foreground">{agent.name}</span>
+                            {agent.handle ? (
+                              <span className="text-[10px] text-muted-foreground">
+                                @{agent.handle}
+                              </span>
+                            ) : null}
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                'text-[10px]',
+                                pluginAssigned
+                                  ? 'border-emerald-500/30 text-emerald-300'
+                                  : 'border-amber-500/30 text-amber-300'
+                              )}
+                            >
+                              {pluginAssigned ? 'plugin assigned' : 'plugin missing'}
+                            </Badge>
+                            {selectedCapabilities.size > 0 ? (
+                              <Badge variant="outline" className="text-[10px] text-violet-200">
+                                {selectedCapabilities.size} direct ops
+                              </Badge>
+                            ) : null}
+                          </div>
+
+                          <div className="flex flex-wrap gap-1.5">
+                            {githubRepoCapabilities.map((capability) => {
+                              const capabilityId = capability.id as GitHubRepoCapability
+                              const selected = selectedCapabilities.has(capability.id)
+                              const pending =
+                                updateMutation.isPending &&
+                                updateMutation.variables?.repoId === repo.id &&
+                                updateMutation.variables?.agentId === agent.id
+                              return (
+                                <button
+                                  key={capabilityId}
+                                  type="button"
+                                  disabled={pending}
+                                  onClick={() =>
+                                    void toggleCapability(repo.id, agent.id, capabilityId)
+                                  }
+                                  className={cn(
+                                    'rounded-md border px-2 py-0.5 text-[11px] transition',
+                                    selected
+                                      ? 'border-violet-500/25 bg-violet-500/10 text-violet-200'
+                                      : 'border-zinc-800 text-white/25 hover:border-zinc-700 hover:text-white/60'
+                                  )}
+                                  title={capability.hint}
+                                >
+                                  {capability.label}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </CardContent>
     </Card>
   )

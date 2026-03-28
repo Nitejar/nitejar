@@ -88,6 +88,7 @@ import {
   withProviderRetry,
   openRouterTrace,
 } from './model-client'
+import { normalizeOpenRouterChatCompletionUsage } from './openrouter-usage'
 import { buildUserMessageForModel, safeParsePayload } from './telegram-attachments'
 import { sanitize, sanitizeLabel } from './prompt-sanitize'
 import { isTavilyAvailable } from './web-search'
@@ -379,6 +380,8 @@ export async function runAgent(
                 promptTokens: triage.usage.promptTokens,
                 completionTokens: triage.usage.completionTokens,
                 totalTokens: triage.usage.totalTokens,
+                cacheReadTokens: triage.usage.cacheReadTokens,
+                cacheWriteTokens: triage.usage.cacheWriteTokens,
                 costUsd: triage.usage.costUsd,
                 finishReason: 'stop',
                 isFallback: false,
@@ -555,6 +558,8 @@ export async function runAgent(
                   promptTokens: ppResult.usage.promptTokens,
                   completionTokens: ppResult.usage.completionTokens,
                   totalTokens: ppResult.usage.totalTokens,
+                  cacheReadTokens: ppResult.usage.cacheReadTokens,
+                  cacheWriteTokens: ppResult.usage.cacheWriteTokens,
                   costUsd: ppResult.usage.costUsd,
                   finishReason: 'stop',
                   isFallback: false,
@@ -1297,10 +1302,12 @@ async function runInferenceLoop(
     modelSpanId?: string | null
   }) => {
     try {
-      const usage = input.response.usage
-      const promptTokens = usage?.prompt_tokens ?? 0
-      const completionTokens = usage?.completion_tokens ?? 0
-      const totalTokens = promptTokens + completionTokens
+      const normalizedUsage = await normalizeOpenRouterChatCompletionUsage(input.response, {
+        warn: agentWarn,
+      })
+      const promptTokens = normalizedUsage.promptTokens
+      const completionTokens = normalizedUsage.completionTokens
+      const totalTokens = normalizedUsage.totalTokens
       const actualModel = input.response.model || modelConfig.model
       const choice = input.response.choices?.[0]
       const toolCallNames =
@@ -1313,17 +1320,6 @@ async function runInferenceLoop(
           .filter(Boolean) ?? []
       const finishReason = choice?.finish_reason ?? null
 
-      // OpenRouter extends usage with actual cost in USD
-      const usageRecord = usage as Record<string, unknown> | undefined
-      const openRouterCost = usageRecord?.cost
-      const openRouterTotalCost = usageRecord?.total_cost
-      const costUsd =
-        typeof openRouterCost === 'number'
-          ? openRouterCost
-          : typeof openRouterTotalCost === 'number'
-            ? openRouterTotalCost
-            : null
-
       await recordInferenceCallReceipt(
         {
           jobId: job.id,
@@ -1333,7 +1329,9 @@ async function runInferenceLoop(
           promptTokens,
           completionTokens,
           totalTokens,
-          costUsd,
+          cacheReadTokens: normalizedUsage.cacheReadTokens,
+          cacheWriteTokens: normalizedUsage.cacheWriteTokens,
+          costUsd: normalizedUsage.costUsd,
           toolCallNames,
           finishReason,
           isFallback: input.isFallback,
@@ -2254,7 +2252,7 @@ async function runInferenceLoop(
           : ''
       if (lastLookContent) {
         finalResponse = lastLookContent
-        messages.push(lastLookChoice!.message)
+        messages.push(lastLookChoice.message)
         await appendMessage(job.id, 'assistant', { text: lastLookContent })
         onEvent({ type: 'message', role: 'assistant', content: lastLookContent })
       }
@@ -2707,6 +2705,8 @@ async function postProcessFinalResponse(
     promptTokens: number
     completionTokens: number
     totalTokens: number
+    cacheReadTokens: number
+    cacheWriteTokens: number
     costUsd: number | null
   }
 }> {
@@ -2747,28 +2747,21 @@ async function postProcessFinalResponse(
     throw new Error('Post-processing returned empty response')
   }
 
-  const usage = response.usage
-  const usageRecord = usage as Record<string, unknown> | undefined
-  const openRouterCost = usageRecord?.cost
-  const openRouterTotalCost = usageRecord?.total_cost
-  const costUsd =
-    typeof openRouterCost === 'number'
-      ? openRouterCost
-      : typeof openRouterTotalCost === 'number'
-        ? openRouterTotalCost
-        : null
+  const normalizedUsage = await normalizeOpenRouterChatCompletionUsage(response)
 
   return {
     response: text,
     requestPayload,
     responsePayload: response,
-    usage: usage
+    usage: response.usage
       ? {
           model: response.model || modelConfig.model,
-          promptTokens: usage.prompt_tokens ?? 0,
-          completionTokens: usage.completion_tokens ?? 0,
-          totalTokens: (usage.prompt_tokens ?? 0) + (usage.completion_tokens ?? 0),
-          costUsd,
+          promptTokens: normalizedUsage.promptTokens,
+          completionTokens: normalizedUsage.completionTokens,
+          totalTokens: normalizedUsage.totalTokens,
+          cacheReadTokens: normalizedUsage.cacheReadTokens,
+          cacheWriteTokens: normalizedUsage.cacheWriteTokens,
+          costUsd: normalizedUsage.costUsd,
         }
       : undefined,
   }

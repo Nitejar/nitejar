@@ -1,20 +1,24 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@nitejar/database', () => ({
-  acknowledgePluginDisclosures: vi.fn(),
-  createPluginEvent: vi.fn(),
-  ensurePluginDisclosureRows: vi.fn(),
-  findPluginById: vi.fn(),
-  findPluginInstancesByType: vi.fn(),
-  listPluginEvents: vi.fn(),
-  listPluginDisclosureAcks: vi.fn(),
-  listPluginVersions: vi.fn(),
-  listPlugins: vi.fn(),
-  updatePlugin: vi.fn(),
-  setPluginEnabled: vi.fn(),
-  upsertPlugin: vi.fn(),
-  upsertPluginVersion: vi.fn(),
-}))
+vi.mock('@nitejar/database', async () => {
+  const actual = await vi.importActual<typeof import('@nitejar/database')>('@nitejar/database')
+  return {
+    ...actual,
+    acknowledgePluginDisclosures: vi.fn(),
+    createPluginEvent: vi.fn(),
+    ensurePluginDisclosureRows: vi.fn(),
+    findPluginById: vi.fn(),
+    findPluginInstancesByType: vi.fn(),
+    listPluginEvents: vi.fn(),
+    listPluginDisclosureAcks: vi.fn(),
+    listPluginVersions: vi.fn(),
+    listPlugins: vi.fn(),
+    updatePlugin: vi.fn(),
+    setPluginEnabled: vi.fn(),
+    upsertPlugin: vi.fn(),
+    upsertPluginVersion: vi.fn(),
+  }
+})
 
 import {
   acknowledgePluginDisclosures,

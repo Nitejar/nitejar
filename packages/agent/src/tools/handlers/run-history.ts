@@ -1,5 +1,8 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import {
+  assertAgentGrant,
+  countBackgroundTasksByJob,
+  countMessagesByJob,
   listRunHistoryForAgent,
   findJobById,
   findWorkItemById,
@@ -7,7 +10,9 @@ import {
   listSpansByJob,
   getCostByJobs,
   listMessagesByJob,
+  listMessagesByJobPaged,
   findActivityByJobId,
+  listBackgroundTasksByJobPaged,
 } from '@nitejar/database'
 import type { ToolHandler } from '../types'
 
@@ -88,29 +93,68 @@ export const listRunsTool: ToolHandler = async (input, context) => {
 export const getRunDefinition: Anthropic.Tool = {
   name: 'get_run',
   description:
-    'Get details of a specific past run. Use section to choose what to view: response (what you said/did), summary (stats overview), timeline (per-turn breakdown), or messages (full conversation log with pagination).',
+    'Get details of a specific run. Legacy section mode still works for compact response/summary/timeline/messages views. With fleet run read access, you can also inspect any run with structured pagination for messages, background tasks, and control state.',
   input_schema: {
     type: 'object' as const,
     properties: {
       run_id: {
         type: 'string',
-        description: 'The job ID from list_runs (the run:xxx value).',
+        description: 'Legacy alias for the run/job id.',
+      },
+      jobId: {
+        type: 'string',
+        description: 'Run/job id to inspect.',
       },
       section: {
         type: 'string',
         enum: ['response', 'summary', 'timeline', 'messages'],
-        description: 'What to show (default: response).',
+        description: 'Legacy compact view selector. If omitted, the tool returns a structured run record.',
       },
       offset: {
         type: 'integer',
-        description: 'For messages section: skip N messages (default: 0).',
+        description: 'Legacy messages section offset.',
       },
       limit: {
         type: 'integer',
-        description: 'For messages section: max messages to return (default: 20, max: 50).',
+        description: 'Legacy messages section limit (default: 20, max: 50).',
+      },
+      includeMessages: {
+        type: 'boolean',
+        description: 'Structured mode: include paged stored messages.',
+      },
+      includeBackgroundTasks: {
+        type: 'boolean',
+        description: 'Structured mode: include paged background tasks.',
+      },
+      includeControl: {
+        type: 'boolean',
+        description: 'Structured mode: include current run control state when available.',
+      },
+      messageOffset: {
+        type: 'integer',
+        description: 'Structured mode: skip N messages.',
+      },
+      messageLimit: {
+        type: 'integer',
+        description: 'Structured mode: max messages to return (default: 50, max: 500).',
+      },
+      includeFullMessageContent: {
+        type: 'boolean',
+        description: 'Structured mode: include full message content instead of metadata only.',
+      },
+      maxContentBytes: {
+        type: 'integer',
+        description: 'Structured mode: truncate each message body to this many bytes.',
+      },
+      backgroundTaskOffset: {
+        type: 'integer',
+        description: 'Structured mode: skip N background tasks.',
+      },
+      backgroundTaskLimit: {
+        type: 'integer',
+        description: 'Structured mode: max background tasks to return (default: 50, max: 500).',
       },
     },
-    required: ['run_id'],
   },
 }
 
@@ -119,20 +163,52 @@ export const getRunTool: ToolHandler = async (input, context) => {
     return { success: false, error: 'Agent context is required.' }
   }
 
-  const runId = typeof input.run_id === 'string' ? input.run_id.trim() : ''
+  const runId =
+    typeof input.jobId === 'string'
+      ? input.jobId.trim()
+      : typeof input.run_id === 'string'
+        ? input.run_id.trim()
+        : ''
   if (!runId) {
-    return { success: false, error: 'run_id is required.' }
+    return { success: false, error: 'jobId or run_id is required.' }
   }
 
   const section = typeof input.section === 'string' ? input.section : 'response'
 
-  // Fetch job and verify ownership
   const job = await findJobById(runId)
   if (!job) {
     return { success: false, error: `Run "${runId}" not found.` }
   }
-  if (job.agent_id !== context.agentId) {
+
+  let canInspectFleetRuns = false
+  try {
+    await assertAgentGrant({
+      agentId: context.agentId,
+      action: 'fleet.run.read',
+      resourceType: 'run',
+    })
+    canInspectFleetRuns = true
+  } catch {
+    canInspectFleetRuns = false
+  }
+
+  if (!canInspectFleetRuns && job.agent_id !== context.agentId) {
     return { success: false, error: `Run "${runId}" belongs to a different agent.` }
+  }
+
+  const wantsStructuredMode =
+    'includeMessages' in input ||
+    'includeBackgroundTasks' in input ||
+    'includeControl' in input ||
+    'messageOffset' in input ||
+    'messageLimit' in input ||
+    'includeFullMessageContent' in input ||
+    'maxContentBytes' in input ||
+    'backgroundTaskOffset' in input ||
+    'backgroundTaskLimit' in input
+
+  if (wantsStructuredMode) {
+    return buildStructuredRunSection(job, input)
   }
 
   switch (section) {
@@ -343,6 +419,155 @@ async function buildMessagesSection(
   return { success: true, output: lines.join('\n') }
 }
 
+async function buildStructuredRunSection(
+  job: {
+    id: string
+    work_item_id: string
+    status: string
+    started_at: number | null
+    completed_at: number | null
+    error_text: string | null
+    [key: string]: unknown
+  },
+  input: Record<string, unknown>
+): Promise<{ success: boolean; output?: string }> {
+  const messageOffset = Math.max(
+    typeof input.messageOffset === 'number' ? Math.floor(input.messageOffset) : 0,
+    0
+  )
+  const backgroundTaskOffset = Math.max(
+    typeof input.backgroundTaskOffset === 'number' ? Math.floor(input.backgroundTaskOffset) : 0,
+    0
+  )
+
+  const [messageTotal, backgroundTaskTotal, costs, messages, backgroundTasks] = await Promise.all([
+    input.includeMessages ? countMessagesByJob(job.id) : Promise.resolve(0),
+    input.includeBackgroundTasks ? countBackgroundTasksByJob(job.id) : Promise.resolve(0),
+    getCostByJobs([job.id]),
+    input.includeMessages
+      ? listMessagesByJobPaged(job.id, {
+          offset: messageOffset,
+          limit: Math.min(
+            Math.max(typeof input.messageLimit === 'number' ? input.messageLimit : 50, 1),
+            500
+          ),
+        })
+      : Promise.resolve(undefined),
+    input.includeBackgroundTasks
+      ? listBackgroundTasksByJobPaged(job.id, {
+          offset: backgroundTaskOffset,
+          limit: Math.min(
+            Math.max(
+              typeof input.backgroundTaskLimit === 'number' ? input.backgroundTaskLimit : 50,
+              1
+            ),
+            500
+          ),
+        })
+      : Promise.resolve(undefined),
+  ])
+
+  const includeFullMessageContent = input.includeFullMessageContent !== false
+  const maxContentBytes =
+    typeof input.maxContentBytes === 'number' ? Math.floor(input.maxContentBytes) : undefined
+  const normalizedMessages = messages?.map((message: Awaited<
+    ReturnType<typeof listMessagesByJobPaged>
+  >[number]) => {
+    const content = message.content ?? ''
+    const contentBytes = Buffer.byteLength(content, 'utf8')
+
+    if (!includeFullMessageContent) {
+      return {
+        ...message,
+        content: null,
+        contentMeta: {
+          omitted: true,
+          truncated: false,
+          contentBytes,
+          returnedBytes: 0,
+        },
+      }
+    }
+
+    if (typeof maxContentBytes === 'number' && content.length > 0) {
+      const truncated = truncateMessageContent(content, maxContentBytes)
+      return {
+        ...message,
+        content: truncated.text,
+        contentMeta: {
+          omitted: false,
+          truncated: truncated.truncated,
+          contentBytes,
+          returnedBytes: Buffer.byteLength(truncated.text, 'utf8'),
+        },
+      }
+    }
+
+    return {
+      ...message,
+      contentMeta: {
+        omitted: false,
+        truncated: false,
+        contentBytes,
+        returnedBytes: contentBytes,
+      },
+    }
+  })
+
+  const output = {
+    run: job,
+    cost: costs[0] ?? null,
+    ...(normalizedMessages
+      ? {
+          messages: normalizedMessages,
+          messagesPage: {
+            offset: messageOffset,
+            limit: Math.min(
+              Math.max(typeof input.messageLimit === 'number' ? input.messageLimit : 50, 1),
+              500
+            ),
+            returned: normalizedMessages.length,
+            total: messageTotal,
+            hasMore: messageOffset + normalizedMessages.length < messageTotal,
+            nextOffset:
+              messageOffset + normalizedMessages.length < messageTotal
+                ? messageOffset + normalizedMessages.length
+                : null,
+          },
+        }
+      : {}),
+    ...(backgroundTasks
+      ? {
+          backgroundTasks,
+          backgroundTasksPage: {
+            offset: backgroundTaskOffset,
+            limit: Math.min(
+              Math.max(
+                typeof input.backgroundTaskLimit === 'number' ? input.backgroundTaskLimit : 50,
+                1
+              ),
+              500
+            ),
+            returned: backgroundTasks.length,
+            total: backgroundTaskTotal,
+            hasMore: backgroundTaskOffset + backgroundTasks.length < backgroundTaskTotal,
+            nextOffset:
+              backgroundTaskOffset + backgroundTasks.length < backgroundTaskTotal
+                ? backgroundTaskOffset + backgroundTasks.length
+                : null,
+          },
+        }
+      : {}),
+  } as Record<string, unknown>
+
+  if (input.includeControl === true) {
+    const activity = await findActivityByJobId(job.id)
+    output.activity = activity ?? null
+  }
+
+  return { success: true, output: JSON.stringify(output, null, 2) }
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -443,6 +668,25 @@ function formatDuration(startedAt: number | null, completedAt: number | null): s
   const minutes = Math.floor(seconds / 60)
   const secs = seconds % 60
   return `${minutes}m${secs}s`
+}
+
+function truncateMessageContent(input: string, maxBytes: number) {
+  if (Buffer.byteLength(input, 'utf8') <= maxBytes) {
+    return { text: input, truncated: false }
+  }
+
+  let end = input.length
+  let text = input
+  while (end > 0 && Buffer.byteLength(text, 'utf8') > maxBytes) {
+    end = Math.floor(end * 0.75)
+    text = input.slice(0, end)
+  }
+
+  while (end < input.length && Buffer.byteLength(input.slice(0, end + 1), 'utf8') <= maxBytes) {
+    end += 1
+  }
+
+  return { text: input.slice(0, end), truncated: true }
 }
 
 // Convenience exports

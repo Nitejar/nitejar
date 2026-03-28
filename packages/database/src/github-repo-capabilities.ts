@@ -73,8 +73,13 @@ export function parseGitHubRepoCapabilities(value: string | null | undefined): G
     const parsed = JSON.parse(value) as unknown
     if (!Array.isArray(parsed)) return []
     return Array.from(
-      new Set(parsed.filter((item): item is GitHubRepoCapability => typeof item === 'string' && isGitHubRepoCapability(item)))
-    )
+      new Set(
+        parsed.filter(
+          (item): item is GitHubRepoCapability =>
+            typeof item === 'string' && isGitHubRepoCapability(item)
+        )
+      )
+    ).sort()
   } catch {
     return []
   }

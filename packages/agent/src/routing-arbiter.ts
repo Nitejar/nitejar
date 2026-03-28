@@ -3,6 +3,7 @@ import type { Agent } from '@nitejar/database'
 import { parseAgentConfig } from './config'
 import { getModelConfig } from './prompt-builder'
 import { getClient, withProviderRetry, openRouterTrace } from './model-client'
+import { normalizeOpenRouterChatCompletionUsage } from './openrouter-usage'
 import { escapeXmlText, sanitize } from './prompt-sanitize'
 
 export type RoutingMode = 'triage' | 'steer'
@@ -14,6 +15,8 @@ export interface RoutingUsage {
   promptTokens: number
   completionTokens: number
   totalTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
   costUsd: number | null
   durationMs: number
 }
@@ -303,22 +306,6 @@ function parseRoutingResponse(
   }
 }
 
-function normalizeUsage(
-  usage: OpenAI.CompletionUsage | undefined,
-  model: string,
-  durationMs: number
-): RoutingUsage {
-  const openRouterCost = (usage as Record<string, unknown> | undefined)?.cost
-  return {
-    model,
-    promptTokens: usage?.prompt_tokens ?? 0,
-    completionTokens: usage?.completion_tokens ?? 0,
-    totalTokens: (usage?.prompt_tokens ?? 0) + (usage?.completion_tokens ?? 0),
-    costUsd: typeof openRouterCost === 'number' ? openRouterCost : 0,
-    durationMs,
-  }
-}
-
 export async function runRoutingArbiter(
   input: RunRoutingArbiterInput
 ): Promise<RunRoutingArbiterResult> {
@@ -364,7 +351,17 @@ export async function runRoutingArbiter(
     responsePayload = response
     const durationMs = Date.now() - startedAt
     const content = response.choices?.[0]?.message?.content?.trim() ?? ''
-    const usage = normalizeUsage(response.usage, response.model || modelConfig.model, durationMs)
+    const normalizedUsage = await normalizeOpenRouterChatCompletionUsage(response)
+    const usage: RoutingUsage = {
+      model: response.model || modelConfig.model,
+      promptTokens: normalizedUsage.promptTokens,
+      completionTokens: normalizedUsage.completionTokens,
+      totalTokens: normalizedUsage.totalTokens,
+      cacheReadTokens: normalizedUsage.cacheReadTokens,
+      cacheWriteTokens: normalizedUsage.cacheWriteTokens,
+      costUsd: normalizedUsage.costUsd,
+      durationMs,
+    }
 
     if (!content) {
       return {
@@ -426,6 +423,42 @@ export async function runRoutingArbiter(
       requestPayload: request,
       responsePayload: null,
     }
+  }
+}
+
+function normalizeUsage(
+  usage: OpenAI.ChatCompletion['usage'] | undefined,
+  model: string,
+  durationMs: number
+): RoutingUsage {
+  const usageRecord =
+    usage && typeof usage === 'object' ? (usage as unknown as Record<string, unknown>) : undefined
+  const promptTokens = usage?.prompt_tokens ?? 0
+  const completionTokens = usage?.completion_tokens ?? 0
+  const totalTokens = usage?.total_tokens ?? promptTokens + completionTokens
+  const promptTokenDetails =
+    usageRecord?.prompt_tokens_details && typeof usageRecord.prompt_tokens_details === 'object'
+      ? (usageRecord.prompt_tokens_details as Record<string, unknown>)
+      : undefined
+  const cacheReadTokens =
+    promptTokenDetails && typeof promptTokenDetails.cached_tokens === 'number'
+      ? promptTokenDetails.cached_tokens
+      : 0
+  const cacheWriteTokens =
+    promptTokenDetails && typeof promptTokenDetails.cache_write_tokens === 'number'
+      ? promptTokenDetails.cache_write_tokens
+      : 0
+  const costUsd = typeof usageRecord?.cost === 'number' ? usageRecord.cost : 0
+
+  return {
+    model,
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    costUsd,
+    durationMs,
   }
 }
 

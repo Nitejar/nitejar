@@ -16,7 +16,6 @@ import {
   deleteWorkView,
   enqueueTicketAgentWork,
   findAppSessionByKey,
-  findAgentById,
   findGoalById,
   findTicketById,
   findTicketBySessionKey,

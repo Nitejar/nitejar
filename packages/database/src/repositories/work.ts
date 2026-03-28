@@ -15,7 +15,6 @@ import type {
   NewTicketComment,
   NewTicket,
   NewTicketLink,
-  NewTicketParticipant,
   NewTicketRelation,
   NewWorkView,
   NewWorkUpdate,

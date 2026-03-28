@@ -19,8 +19,10 @@ export default async function TicketDetailPage({ params }: Props) {
   const { id } = await params
 
   return (
-    <div className="space-y-4 p-6">
-      <TicketDetailClient ticketId={id} />
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="space-y-4 p-6">
+        <TicketDetailClient ticketId={id} />
+      </div>
     </div>
   )
 }

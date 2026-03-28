@@ -25,6 +25,8 @@ export interface RecordInferenceCallReceiptInput {
   promptTokens: number
   completionTokens: number
   totalTokens: number
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
   costUsd: number | null
   toolCallNames?: string[]
   finishReason?: string | null
@@ -113,6 +115,8 @@ export async function recordInferenceCallReceipt(
     prompt_tokens: input.promptTokens,
     completion_tokens: input.completionTokens,
     total_tokens: input.totalTokens,
+    cache_read_tokens: input.cacheReadTokens ?? 0,
+    cache_write_tokens: input.cacheWriteTokens ?? 0,
     cost_usd: input.costUsd,
     tool_call_names: toToolCallNamesJson(input.toolCallNames),
     finish_reason: input.finishReason ?? null,

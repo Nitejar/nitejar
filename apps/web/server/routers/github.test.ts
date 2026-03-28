@@ -30,7 +30,7 @@ describe('github manifest helpers', () => {
         issues: 'write',
       },
       pluginInstanceId: 'plugin-123',
-    }) as Record<string, unknown>
+    })
 
     expect(manifest.hook_attributes).toBeUndefined()
     expect(manifest.default_events).toContain('issues')

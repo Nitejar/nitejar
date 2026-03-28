@@ -5,7 +5,7 @@ import type { RuntimeToolAccess } from './tool-access'
 import type { EditToolMode } from './types'
 
 const DEFAULT_GATEWAY_ID = 'default'
-const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
+export const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
 
 export async function loadGatewayConfig(): Promise<{
   apiKey: string | null
@@ -217,6 +217,14 @@ const POLICY_GATED_TOOLS: Record<string, string[]> = {
   list_agents: ['fleet.agent.read'],
   get_agent_config: ['fleet.agent.read'],
   get_agent_soul: ['fleet.agent.read'],
+  search_runs: ['fleet.run.read'],
+  get_run_trace: ['fleet.run.read'],
+  get_message_chunk: ['fleet.run.read'],
+  search_work_items: ['fleet.work.read'],
+  get_work_item: ['fleet.work.read'],
+  get_work_item_queue_messages: ['fleet.work.read'],
+  get_dispatch_decisions: ['fleet.work.read'],
+  get_work_item_triage_receipts: ['fleet.work.read'],
   list_plugin_instances: ['plugins.instances.read'],
   get_plugin_instance: ['plugins.instances.read'],
   set_plugin_instance_agent_assignment: ['plugins.instances.write'],
@@ -249,6 +257,24 @@ const POLICY_GATED_TOOLS: Record<string, string[]> = {
   transcribe_audio: ['capability.speech_to_text'],
   synthesize_speech: ['capability.text_to_speech'],
   configure_github_credentials: ['github.repo.read'],
+  list_github_repos: ['github.repo.policy.read'],
+  list_github_repo_assignments: ['github.repo.policy.read'],
+  update_agent_github_repo_assignment: ['github.repo.policy.write'],
+  list_role_github_repo_policies: ['github.repo.policy.read'],
+  update_role_github_repo_policies: ['github.repo.policy.write'],
+  get_eval_summary: ['eval.read'],
+  list_eval_runs: ['eval.read'],
+  get_eval_run: ['eval.read'],
+  list_rubrics: ['eval.read'],
+  get_rubric: ['eval.read'],
+  list_agent_eval_assignments: ['eval.read'],
+  get_eval_settings: ['eval.read'],
+  create_rubric: ['eval.write'],
+  update_rubric: ['eval.write'],
+  delete_rubric: ['eval.write'],
+  update_agent_eval_assignment: ['eval.write'],
+  run_eval_for_job: ['eval.run.execute'],
+  update_eval_settings: ['eval.settings.write'],
 }
 
 function hasPolicyGrant(access: Partial<RuntimeToolAccess>, actions: string[]): boolean {

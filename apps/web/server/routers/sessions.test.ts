@@ -112,6 +112,38 @@ const mockedListAppSessionsByOwnerAndPrefix = vi.mocked(listAppSessionsByOwnerAn
 const mockedListTicketLinksByTicket = vi.mocked(listTicketLinksByTicket)
 const mockedEnqueueAppSessionMessage = vi.mocked(enqueueAppSessionMessage)
 
+type DbHandle = ReturnType<typeof getDb>
+type AppSessionCreateInput = Parameters<typeof createAppSession>[0]
+type AppSessionRecord = Awaited<ReturnType<typeof createAppSession>>
+type AppSessionListItem = Awaited<ReturnType<typeof listAppSessionsByOwnerAndPrefix>>[number]
+type TicketLinkRecord = Awaited<ReturnType<typeof listTicketLinksByTicket>>[number]
+type GoalRecord = NonNullable<Awaited<ReturnType<typeof findGoalById>>>
+
+function createAppSessionRecord(data: AppSessionCreateInput): AppSessionRecord {
+  return {
+    ...data,
+    title: data.title ?? null,
+    forked_from_session_key: data.forked_from_session_key ?? null,
+    created_at: 1,
+    updated_at: 1,
+    last_activity_at: 1,
+  }
+}
+
+function createSessionDbMock(): DbHandle {
+  const query = {
+    select: () => query,
+    where: () => query,
+    orderBy: () => query,
+    limit: () => query,
+    executeTakeFirst: () => Promise.resolve(null),
+  }
+
+  return {
+    selectFrom: () => query,
+  } as unknown as DbHandle
+}
+
 const caller = sessionsRouter.createCaller({
   session: {
     user: {
@@ -195,27 +227,11 @@ describe('sessions router sendMessage', () => {
       archived_at: null,
       sort_order: 1,
     })
-    mockedCreateAppSession.mockImplementation(async (data: any) => ({
-      ...data,
-      created_at: 1,
-      updated_at: 1,
-      last_activity_at: 1,
-    }))
+    mockedCreateAppSession.mockImplementation((data) => Promise.resolve(createAppSessionRecord(data)))
     mockedListAppSessionsByOwnerAndPrefix.mockResolvedValue([])
     mockedListAppSessionsByOwnerAndKeys.mockResolvedValue([])
     mockedListTicketLinksByTicket.mockResolvedValue([])
-    mockedGetDb.mockImplementation(() => {
-      const query = {
-        select: () => query,
-        where: () => query,
-        orderBy: () => query,
-        limit: () => query,
-        executeTakeFirst: async () => null,
-      }
-      return {
-        selectFrom: () => query,
-      } as any
-    })
+    mockedGetDb.mockImplementation(() => createSessionDbMock())
   })
 
   it('routes to primary agent when no mention is present', async () => {
@@ -279,8 +295,8 @@ describe('sessions router listRelated', () => {
         created_at: 10,
         updated_at: 10,
         last_activity_at: 12,
-      },
-    ] as any)
+      } satisfies AppSessionListItem,
+    ])
     mockedListTicketLinksByTicket.mockResolvedValue([
       {
         id: 'link-1',
@@ -292,8 +308,8 @@ describe('sessions router listRelated', () => {
         created_by_kind: 'system',
         created_by_ref: 'scheduler',
         created_at: 11,
-      },
-    ] as any)
+      } satisfies TicketLinkRecord,
+    ])
     mockedListAppSessionsByOwnerAndKeys.mockResolvedValue([
       {
         session_key: 'app:routine:routine-1:deferred',
@@ -304,8 +320,8 @@ describe('sessions router listRelated', () => {
         created_at: 11,
         updated_at: 11,
         last_activity_at: 13,
-      },
-    ] as any)
+      } satisfies AppSessionListItem,
+    ])
 
     const result = await caller.listRelated({ ticketId: 'ticket-1', limit: 6 })
 
@@ -355,14 +371,18 @@ describe('sessions router runTicketNow', () => {
       outcome: 'Lean org, visible receipts',
       created_by_user_id: 'user-1',
       parent_goal_id: null,
-      progress: null,
+      owner_kind: null,
+      owner_ref: null,
+      team_id: null,
+      progress_source: 'ticket_rollup',
+      progress_current: null,
       progress_target: null,
       progress_unit: null,
       sort_order: 1,
       archived_at: null,
       created_at: 1,
       updated_at: 1,
-    } as any)
+    } satisfies GoalRecord)
     mockedFindAppSessionByKeyAndOwner.mockResolvedValue(null)
     mockedListAppSessionParticipantAgents.mockResolvedValue([
       {
@@ -386,29 +406,23 @@ describe('sessions router runTicketNow', () => {
 
   it('creates a fresh typed ticket session and enqueues a real work item', async () => {
     const result = await caller.runTicketNow({ ticketId: 'ticket-1' })
+    const createdSessionInput = mockedCreateAppSession.mock.calls[0]?.[0]
+    const createdSessionLink = mockedCreateTicketLink.mock.calls[0]?.[0]
+    const createdWorkUpdate = mockedCreateWorkUpdate.mock.calls[0]?.[0]
+    const enqueuedMessage = mockedEnqueueAppSessionMessage.mock.calls[0]?.[0]
 
     expect(result.ok).toBe(true)
     expect(result.workItemId).toBe('work-99')
     expect(mockedCreateAppSession).toHaveBeenCalledTimes(1)
-    expect(mockedCreateAppSession).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        session_key: expect.stringMatching(/^app:ticket:ticket-1:/),
-        owner_user_id: 'user-1',
-        primary_agent_id: 'agent-1',
-        forked_from_session_key: null,
-      }),
-      undefined
-    )
-    expect(mockedCreateTicketLink).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        ticket_id: 'ticket-1',
-        kind: 'session',
-        ref: expect.stringMatching(/^app:ticket:ticket-1:/),
-      }),
-      undefined
-    )
+    expect(createdSessionInput?.session_key).toMatch(/^app:ticket:ticket-1:/)
+    expect(createdSessionInput?.owner_user_id).toBe('user-1')
+    expect(createdSessionInput?.primary_agent_id).toBe('agent-1')
+    expect(createdSessionInput?.forked_from_session_key).toBeNull()
+    expect(mockedCreateAppSession.mock.calls[0]?.[1]).toBeUndefined()
+    expect(createdSessionLink?.ticket_id).toBe('ticket-1')
+    expect(createdSessionLink?.kind).toBe('session')
+    expect(createdSessionLink?.ref).toMatch(/^app:ticket:ticket-1:/)
+    expect(mockedCreateTicketLink.mock.calls[0]?.[1]).toBeUndefined()
     expect(mockedClaimTicket).toHaveBeenCalledWith(
       'ticket-1',
       expect.objectContaining({
@@ -416,21 +430,11 @@ describe('sessions router runTicketNow', () => {
         assigneeRef: 'agent-1',
       })
     )
-    expect(mockedCreateWorkUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        ticket_id: 'ticket-1',
-        body: expect.stringContaining('Queued execution in session'),
-      })
-    )
-    expect(mockedEnqueueAppSessionMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        targetAgents: [{ id: 'agent-1', handle: 'scout', name: 'Scout' }],
-        workContext: expect.objectContaining({
-          ticketId: 'ticket-1',
-          goalId: 'goal-1',
-        }),
-      })
-    )
+    expect(createdWorkUpdate?.ticket_id).toBe('ticket-1')
+    expect(createdWorkUpdate?.body).toContain('Queued execution in session')
+    expect(enqueuedMessage?.targetAgents).toEqual([{ id: 'agent-1', handle: 'scout', name: 'Scout' }])
+    expect(enqueuedMessage?.workContext?.ticketId).toBe('ticket-1')
+    expect(enqueuedMessage?.workContext?.goalId).toBe('goal-1')
   })
 
   it('creates a fresh typed ticket session for the chosen agent and targets that agent directly', async () => {
@@ -482,29 +486,24 @@ describe('sessions router runTicketNow', () => {
       agentId: 'agent-2',
       message: 'Pick up this ticket now and leave a receipt.',
     })
+    const createdSessionInput = mockedCreateAppSession.mock.calls[0]?.[0]
+    const enqueuedMessage = mockedEnqueueAppSessionMessage.mock.calls[0]?.[0]
 
     expect(result.ok).toBe(true)
-    expect(mockedCreateAppSession).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        session_key: expect.stringMatching(/^app:ticket:ticket-1:/),
-        primary_agent_id: 'agent-2',
-      }),
-      undefined
-    )
+    expect(createdSessionInput?.session_key).toMatch(/^app:ticket:ticket-1:/)
+    expect(createdSessionInput?.primary_agent_id).toBe('agent-2')
+    expect(mockedCreateAppSession.mock.calls[0]?.[1]).toBeUndefined()
     expect(mockedClaimTicket).toHaveBeenCalledWith(
       'ticket-1',
       expect.objectContaining({
         assigneeRef: 'agent-2',
       })
     )
-    expect(mockedEnqueueAppSessionMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sessionKey: expect.stringMatching(/^app:ticket:ticket-1:/),
-        message: 'Pick up this ticket now and leave a receipt.',
-        targetAgents: [{ id: 'agent-2', handle: 'researcher', name: 'Researcher' }],
-      })
-    )
+    expect(enqueuedMessage?.sessionKey).toMatch(/^app:ticket:ticket-1:/)
+    expect(enqueuedMessage?.message).toBe('Pick up this ticket now and leave a receipt.')
+    expect(enqueuedMessage?.targetAgents).toEqual([
+      { id: 'agent-2', handle: 'researcher', name: 'Researcher' },
+    ])
   })
 })
 
@@ -521,27 +520,18 @@ describe('sessions router session creation', () => {
       created_at: 1,
       updated_at: 1,
     })
-    mockedCreateAppSession.mockImplementation(async (data: any) => ({
-      ...data,
-      created_at: 1,
-      updated_at: 1,
-      last_activity_at: 1,
-    }))
+    mockedCreateAppSession.mockImplementation((data) => Promise.resolve(createAppSessionRecord(data)))
   })
 
   it('creates a fresh typed standalone session instead of resuming a recent one', async () => {
     const result = await caller.startOrResume({ agentId: 'agent-1' })
+    const createdSessionInput = mockedCreateAppSession.mock.calls[0]?.[0]
 
     expect(result.sessionKey).toMatch(/^app:standalone:user-1:/)
-    expect(mockedCreateAppSession).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        session_key: expect.stringMatching(/^app:standalone:user-1:/),
-        primary_agent_id: 'agent-1',
-        forked_from_session_key: null,
-      }),
-      undefined
-    )
+    expect(createdSessionInput?.session_key).toMatch(/^app:standalone:user-1:/)
+    expect(createdSessionInput?.primary_agent_id).toBe('agent-1')
+    expect(createdSessionInput?.forked_from_session_key).toBeNull()
+    expect(mockedCreateAppSession.mock.calls[0]?.[1]).toBeUndefined()
   })
 })
 
@@ -584,26 +574,17 @@ describe('sessions router forkSession', () => {
         added_by_user_id: 'user-1',
       },
     ])
-    mockedCreateAppSession.mockImplementation(async (data: any) => ({
-      ...data,
-      created_at: 1,
-      updated_at: 1,
-      last_activity_at: 1,
-    }))
+    mockedCreateAppSession.mockImplementation((data) => Promise.resolve(createAppSessionRecord(data)))
   })
 
   it('forks into a fresh typed sibling session with lineage', async () => {
     const result = await caller.forkSession({ sessionKey: 'app:ticket:ticket-1:s1' })
+    const createdSessionInput = mockedCreateAppSession.mock.calls[0]?.[0]
 
     expect(result.sessionKey).toMatch(/^app:ticket:ticket-1:/)
-    expect(mockedCreateAppSession).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        session_key: expect.stringMatching(/^app:ticket:ticket-1:/),
-        forked_from_session_key: 'app:ticket:ticket-1:s1',
-      }),
-      undefined
-    )
+    expect(createdSessionInput?.session_key).toMatch(/^app:ticket:ticket-1:/)
+    expect(createdSessionInput?.forked_from_session_key).toBe('app:ticket:ticket-1:s1')
+    expect(mockedCreateAppSession.mock.calls[0]?.[1]).toBeUndefined()
     expect(mockedAddAppSessionParticipants).toHaveBeenCalledWith(
       expect.objectContaining({
         agentIds: ['agent-2'],

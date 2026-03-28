@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { createAppAuth } from '@octokit/auth-app'
 import type { PluginInstanceRecord } from '@nitejar/database'
+import { GITHUB_REPO_CAPABILITY_DESCRIPTORS } from '@nitejar/database'
 import { createGitHubClient, postIssueComment } from '@nitejar/connectors-github'
 import type {
   PluginHandler,
@@ -105,6 +106,16 @@ export const githubHandler: PluginHandler<GitHubConfig> = {
     ],
     usesRedirectFlow: true,
     registrationUrl: 'https://github.com/settings/apps/new',
+  },
+  managementConfig: {
+    repoAccess: {
+      kind: 'github_repo_capabilities',
+      capabilityDescriptors: GITHUB_REPO_CAPABILITY_DESCRIPTORS.map((capability) => ({
+        id: capability.id,
+        label: capability.label,
+        hint: capability.hint,
+      })),
+    },
   },
 
   validateConfig(config: unknown): ConfigValidationResult {

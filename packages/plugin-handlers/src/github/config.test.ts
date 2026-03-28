@@ -9,12 +9,16 @@ import {
 } from '@nitejar/database'
 import { GITHUB_SENSITIVE_FIELDS } from './types'
 
-vi.mock('@nitejar/database', () => ({
-  decryptConfig: vi.fn((config: Record<string, unknown>) => config),
-  encryptConfig: vi.fn((config: Record<string, unknown>) => config),
-  findPluginInstanceById: vi.fn(),
-  updatePluginInstance: vi.fn(),
-}))
+vi.mock('@nitejar/database', async () => {
+  const actual = await vi.importActual<typeof import('@nitejar/database')>('@nitejar/database')
+  return {
+    ...actual,
+    decryptConfig: vi.fn((config: Record<string, unknown>) => config),
+    encryptConfig: vi.fn((config: Record<string, unknown>) => config),
+    findPluginInstanceById: vi.fn(),
+    updatePluginInstance: vi.fn(),
+  }
+})
 
 const decryptConfigMock = vi.mocked(decryptConfig)
 const encryptConfigMock = vi.mocked(encryptConfig)

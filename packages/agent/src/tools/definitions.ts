@@ -3,6 +3,7 @@ import type { EditToolMode } from '../types'
 
 import { bashDefinition } from './handlers/bash'
 import { configureGitHubCredentialsDefinition } from './handlers/github'
+import { githubPolicyDefinitions } from './handlers/github-policy'
 import { refreshNetworkPolicyDefinition } from './handlers/network-policy'
 import { memoryDefinitions } from './handlers/memory'
 import {
@@ -11,10 +12,7 @@ import {
   hashlineEditFileDefinition,
 } from './handlers/filesystem'
 import { serviceDefinitions } from './handlers/services'
-import {
-  getSelfConfigDefinition,
-  getSelfPolicyDefinition,
-} from './handlers/self-config'
+import { getSelfConfigDefinition, getSelfPolicyDefinition } from './handlers/self-config'
 import { scheduleDefinitions } from './handlers/schedule'
 import { runTodoDefinition } from './handlers/run-todo'
 import { backgroundTaskDefinitions } from './handlers/background-tasks'
@@ -27,6 +25,7 @@ import {
 } from './handlers/media'
 import { downloadAttachmentDefinition } from './handlers/attachments'
 import { queryActivityDefinition } from './handlers/activity-log'
+import { fleetObservabilityDefinitions } from './handlers/fleet-observability'
 import { runHistoryDefinitions } from './handlers/run-history'
 import { routineDefinitions } from './handlers/routines'
 import { collectionDefinitions } from './handlers/collections'
@@ -35,10 +34,12 @@ import { platformControlDefinitions } from './handlers/platform-control'
 import { teamDefinitions } from './handlers/teams'
 import { policyToolDefinitions } from './handlers/policy'
 import { workDefinitions } from './handlers/work'
+import { evalDefinitions } from './handlers/evals'
 
 const baseToolDefinitions: Anthropic.Tool[] = [
   bashDefinition,
   configureGitHubCredentialsDefinition,
+  ...githubPolicyDefinitions,
   refreshNetworkPolicyDefinition,
   ...memoryDefinitions,
   ...filesystemDefinitions,
@@ -58,7 +59,9 @@ const baseToolDefinitions: Anthropic.Tool[] = [
   synthesizeSpeechDefinition,
   downloadAttachmentDefinition,
   queryActivityDefinition,
+  ...fleetObservabilityDefinitions,
   ...workDefinitions,
+  ...evalDefinitions,
   ...platformControlDefinitions,
   ...teamDefinitions,
   ...policyToolDefinitions,

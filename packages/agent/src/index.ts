@@ -128,6 +128,10 @@ export {
 
 // Prompt Sanitization
 export { sanitize, sanitizeLabel, escapeXmlText } from './prompt-sanitize'
+export {
+  normalizeOpenRouterChatCompletionUsage,
+  type OpenRouterUsageSummary,
+} from './openrouter-usage'
 
 // Mention Parser
 export { extractMentions } from './mention-parser'

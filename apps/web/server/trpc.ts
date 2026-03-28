@@ -27,3 +27,28 @@ const requireSession = t.middleware(({ ctx, next }) => {
 })
 
 export const protectedProcedure = t.procedure.use(requireSession)
+
+const requireAdmin = t.middleware(({ ctx, next }) => {
+  if (!ctx.session) {
+    throw new TRPCError({ code: 'UNAUTHORIZED' })
+  }
+
+  const roleValue =
+    ctx.session.user && typeof ctx.session.user === 'object' && 'role' in ctx.session.user
+      ? (ctx.session.user as { role?: unknown }).role
+      : null
+  const role = typeof roleValue === 'string' ? roleValue : null
+
+  if (role !== 'admin' && role !== 'superadmin') {
+    throw new TRPCError({ code: 'FORBIDDEN' })
+  }
+
+  return next({
+    ctx: {
+      ...ctx,
+      session: ctx.session,
+    },
+  })
+})
+
+export const adminProcedure = protectedProcedure.use(requireAdmin)

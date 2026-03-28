@@ -233,9 +233,12 @@ async function executeDispatch(
     }, HEARTBEAT_MS)
 
     const workItem = await findWorkItemById(dispatch.work_item_id)
-    // App-chat turns and scheduled routines are already direct, agent-owned work.
-    // Re-triaging them can suppress unattended execution when session history is noisy.
-    const skipTriage = workItem?.source === 'app_chat' || workItem?.source === 'routine'
+    const isReplayDispatch = dispatch.replay_of_dispatch_id != null
+    // App-chat turns, scheduled routines, and replayed dispatches are already
+    // agent-owned work. Re-triaging them can suppress the replay or overwrite
+    // the original routing receipt with a fresh triage annotation.
+    const skipTriage =
+      isReplayDispatch || workItem?.source === 'app_chat' || workItem?.source === 'routine'
 
     const pluginInstance = dispatch.plugin_instance_id
       ? await getPluginInstanceWithConfig(dispatch.plugin_instance_id)

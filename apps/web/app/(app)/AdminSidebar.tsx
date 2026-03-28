@@ -405,9 +405,10 @@ function SidebarNav({
 
 interface AdminSidebarProps {
   user?: { name: string; email: string }
+  canAccessEvals?: boolean
 }
 
-export function AdminSidebar({ user: userProp }: AdminSidebarProps) {
+export function AdminSidebar({ user: userProp, canAccessEvals = true }: AdminSidebarProps) {
   const { collapsed, mobileOpen, setMobileOpen } = useSidebar()
   const router = useRouter()
   const { data: session, isPending, refetch } = authClient.useSession()
@@ -443,9 +444,9 @@ export function AdminSidebar({ user: userProp }: AdminSidebarProps) {
   const unreadInboxCount = inboxSummaryQuery.data?.unreadOpenCount ?? 0
   const navGroupsWithBadges = navGroups.map((group) => ({
     ...group,
-    items: group.items.map((item) =>
-      item.href === '/inbox' ? { ...item, badge: unreadInboxCount } : item
-    ),
+    items: group.items
+      .filter((item) => canAccessEvals || item.href !== '/evals')
+      .map((item) => (item.href === '/inbox' ? { ...item, badge: unreadInboxCount } : item)),
   }))
 
   return (

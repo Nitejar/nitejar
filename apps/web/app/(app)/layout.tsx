@@ -7,6 +7,7 @@ import { SidebarProvider } from './sidebar-context'
 import { AdminProviders } from './Providers'
 import { Toaster } from '@/components/ui/sonner'
 import { getServerSession } from '@/lib/auth-server'
+import { ADMIN_ROLES, hasRequiredRole } from '@/lib/api-auth'
 
 function hasSessionCookie(name: string): boolean {
   return name.includes('session_token')
@@ -39,6 +40,14 @@ export default async function AdminLayout({
     session.user && typeof session.user === 'object' && 'email' in session.user
       ? session.user.email
       : null
+  const userRole =
+    session.user && typeof session.user === 'object' && 'role' in session.user
+      ? session.user.role
+      : null
+  const canAccessEvals = hasRequiredRole(
+    typeof userRole === 'string' ? userRole : null,
+    ADMIN_ROLES
+  )
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
@@ -51,6 +60,7 @@ export default async function AdminLayout({
                   typeof userName === 'string' && userName.trim().length > 0 ? userName : 'Account',
                 email: typeof userEmail === 'string' ? userEmail : '',
               }}
+              canAccessEvals={canAccessEvals}
             />
             <AdminShell>
               {children}

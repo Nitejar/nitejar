@@ -259,6 +259,37 @@ describe('getOpenAITools', () => {
     expect(names).not.toContain('create_routine')
   })
 
+  it('shows fleet run observability tools for fleet.run.read', () => {
+    const names = getOpenAITools({
+      runtimeToolAccess: {
+        grantedActions: ['fleet.run.read'],
+        fleetRunRead: true,
+      },
+    }).map((t) => (t as { function: { name: string } }).function.name)
+
+    expect(names).toContain('search_runs')
+    expect(names).toContain('get_run')
+    expect(names).toContain('get_run_trace')
+    expect(names).toContain('get_message_chunk')
+    expect(names).not.toContain('search_work_items')
+  })
+
+  it('shows fleet work observability tools for fleet.work.read', () => {
+    const names = getOpenAITools({
+      runtimeToolAccess: {
+        grantedActions: ['fleet.work.read'],
+        fleetWorkRead: true,
+      },
+    }).map((t) => (t as { function: { name: string } }).function.name)
+
+    expect(names).toContain('search_work_items')
+    expect(names).toContain('get_work_item')
+    expect(names).toContain('get_work_item_queue_messages')
+    expect(names).toContain('get_dispatch_decisions')
+    expect(names).toContain('get_work_item_triage_receipts')
+    expect(names).not.toContain('get_run_trace')
+  })
+
   it('keeps granted work tools while excluding sandbox tools', () => {
     const tools = getOpenAITools({
       excludeSandboxTools: true,
@@ -290,6 +321,8 @@ describe('getOpenAITools', () => {
     }).map((t) => (t as { function: { name: string } }).function.name)
 
     expect(names).toContain('link_ticket_receipt')
+    expect(names).toContain('assign_ticket')
+    expect(names).toContain('post_ticket_comment')
     expect(names).toContain('run_ticket_now')
   })
 
@@ -298,6 +331,8 @@ describe('getOpenAITools', () => {
       runtimeToolAccess: {
         grantedActions: [
           'github.repo.read',
+          'github.repo.policy.read',
+          'github.repo.policy.write',
           'capability.web_search',
           'capability.image_generation',
           'capability.speech_to_text',
@@ -307,11 +342,63 @@ describe('getOpenAITools', () => {
     }).map((t) => (t as { function: { name: string } }).function.name)
 
     expect(names).toContain('configure_github_credentials')
+    expect(names).toContain('list_github_repos')
+    expect(names).toContain('list_github_repo_assignments')
+    expect(names).toContain('update_agent_github_repo_assignment')
+    expect(names).toContain('list_role_github_repo_policies')
+    expect(names).toContain('update_role_github_repo_policies')
     expect(names).toContain('web_search')
     expect(names).toContain('extract_url')
     expect(names).toContain('generate_image')
     expect(names).toContain('transcribe_audio')
     expect(names).toContain('synthesize_speech')
+  })
+
+  it('shows only eval read tools for eval.read', () => {
+    const names = getOpenAITools({
+      runtimeToolAccess: {
+        grantedActions: ['eval.read'],
+      },
+    }).map((t) => (t as { function: { name: string } }).function.name)
+
+    expect(names).toContain('get_eval_summary')
+    expect(names).toContain('list_eval_runs')
+    expect(names).toContain('get_eval_run')
+    expect(names).toContain('list_rubrics')
+    expect(names).toContain('get_rubric')
+    expect(names).toContain('list_agent_eval_assignments')
+    expect(names).toContain('get_eval_settings')
+    expect(names).not.toContain('create_rubric')
+    expect(names).not.toContain('run_eval_for_job')
+    expect(names).not.toContain('update_eval_settings')
+  })
+
+  it('shows eval mutation tools for eval.write, eval.run.execute, and eval.settings.write', () => {
+    const names = getOpenAITools({
+      runtimeToolAccess: {
+        grantedActions: ['eval.write', 'eval.run.execute', 'eval.settings.write'],
+      },
+    }).map((t) => (t as { function: { name: string } }).function.name)
+
+    expect(names).toContain('create_rubric')
+    expect(names).toContain('update_rubric')
+    expect(names).toContain('delete_rubric')
+    expect(names).toContain('update_agent_eval_assignment')
+    expect(names).toContain('run_eval_for_job')
+    expect(names).toContain('update_eval_settings')
+  })
+
+  it('shows eval tools for wildcard grants', () => {
+    const names = getOpenAITools({
+      runtimeToolAccess: {
+        grantedActions: ['*'],
+      },
+    }).map((t) => (t as { function: { name: string } }).function.name)
+
+    expect(names).toContain('get_eval_summary')
+    expect(names).toContain('create_rubric')
+    expect(names).toContain('run_eval_for_job')
+    expect(names).toContain('update_eval_settings')
   })
 
   it('keeps collection tools hidden by default', () => {

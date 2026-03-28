@@ -9,8 +9,11 @@ import {
   assignDefaultRoleToTeam,
   assignRoleToAgent,
   createRole,
+  listAgentGitHubRepoAssignments,
   listEffectiveGitHubRepoCapabilities,
+  listGitHubRepos,
   listRoleGitHubRepoPolicies,
+  replaceAgentGitHubRepoCapabilities,
   replaceRoleGitHubRepoPolicies,
   resolveEffectiveGitHubRepoCapabilities,
 } from './index'
@@ -272,6 +275,74 @@ describe('github repo policy repository', () => {
         capabilities: ['read_repo', 'review_pr'],
       },
     ])
+  })
+
+  it('lists repos and direct agent github repo assignments', async () => {
+    await db
+      .insertInto('agent_repo_capabilities')
+      .values({
+        agent_id: 'agent-1',
+        github_repo_id: 11,
+        capabilities: JSON.stringify(['read_repo', 'comment']),
+      })
+      .execute()
+
+    await expect(listGitHubRepos({ pluginInstanceId: 'plugin-1' })).resolves.toEqual([
+      {
+        githubRepoId: 11,
+        repoFullName: 'nitejar/core',
+        repoHtmlUrl: 'https://github.com/nitejar/core',
+        installationAccountLogin: 'nitejar',
+        installationId: 101,
+        pluginInstanceId: 'plugin-1',
+      },
+      {
+        githubRepoId: 12,
+        repoFullName: 'nitejar/web',
+        repoHtmlUrl: 'https://github.com/nitejar/web',
+        installationAccountLogin: 'nitejar',
+        installationId: 101,
+        pluginInstanceId: 'plugin-1',
+      },
+    ])
+
+    await expect(listAgentGitHubRepoAssignments({ pluginInstanceId: 'plugin-1' })).resolves.toEqual(
+      [
+        {
+          agentId: 'agent-1',
+          agentHandle: 'agent-one',
+          agentName: 'Agent One',
+          githubRepoId: 11,
+          repoFullName: 'nitejar/core',
+          repoHtmlUrl: 'https://github.com/nitejar/core',
+          installationAccountLogin: 'nitejar',
+          pluginInstanceId: 'plugin-1',
+          capabilities: ['comment', 'read_repo'],
+        },
+      ]
+    )
+  })
+
+  it('upserts and removes direct agent github repo assignments', async () => {
+    await replaceAgentGitHubRepoCapabilities('agent-1', 11, ['read_repo', 'open_pr'])
+
+    await expect(listAgentGitHubRepoAssignments({ agentId: 'agent-1' })).resolves.toEqual([
+      {
+        agentId: 'agent-1',
+        agentHandle: 'agent-one',
+        agentName: 'Agent One',
+        githubRepoId: 11,
+        repoFullName: 'nitejar/core',
+        repoHtmlUrl: 'https://github.com/nitejar/core',
+        installationAccountLogin: 'nitejar',
+        pluginInstanceId: 'plugin-1',
+        capabilities: ['open_pr', 'read_repo'],
+      },
+    ])
+
+    await replaceAgentGitHubRepoCapabilities('agent-1', 11, [])
+
+    await expect(listAgentGitHubRepoAssignments({ agentId: 'agent-1' })).resolves.toEqual([])
   })
 
   it('unions direct, assigned-role, and team-default repo capabilities', async () => {

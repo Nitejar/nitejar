@@ -407,9 +407,9 @@ function JobDetail({
   const jobExternalCost = externalCalls.reduce((sum, c) => sum + (c.cost_usd ?? 0), 0)
   const jobUnpricedExternalCallCount = externalCalls.filter((call) => call.cost_usd == null).length
   const hasSpans = !active && spans.length > 0
-  // Show replay actions for failed/abandoned jobs that haven't already been replayed
-  const canReplay =
-    (job.status === 'FAILED' || job.status === 'ABANDONED') && !replayMeta?.isSuperseded
+  // Keep the newest settled attempt replayable so the affordance doesn't vanish
+  // just because an auto-resume or manual replay eventually completed.
+  const canReplay = !active && replayMeta?.dispatchId != null && !replayMeta.isSuperseded
 
   const statusDotColor = passed
     ? 'bg-yellow-400/60'

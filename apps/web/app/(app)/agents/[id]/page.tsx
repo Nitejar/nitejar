@@ -20,6 +20,8 @@ import {
 import { getMemorySettings, parseAgentConfig } from '@nitejar/agent/config'
 import type { NetworkPolicy } from '@nitejar/agent/types'
 import { createPageMetadata } from '@/app/metadata'
+import { getServerSession } from '@/lib/auth-server'
+import { ADMIN_ROLES, hasRequiredRole } from '@/lib/api-auth'
 import { DeleteButton } from '../../components/DeleteButton'
 import { SoulSection } from './SoulSection'
 import { ModelSection } from './ModelSection'
@@ -104,6 +106,7 @@ const pluginInstanceIcons: Record<string, React.ComponentType<{ className?: stri
 
 export default async function AgentDetailPage({ params }: Props) {
   const { id } = await params
+  const session = await getServerSession()
   const db = getDb()
   const permissionRows = buildPolicyPermissionRows().map((row) => ({
     resource: row.resource,
@@ -165,6 +168,14 @@ export default async function AgentDetailPage({ params }: Props) {
     .execute()
 
   const currentTeamId = teamAssignments[0]?.id ?? null
+  const sessionRole =
+    session?.user && typeof session.user === 'object' && 'role' in session.user
+      ? session.user.role
+      : null
+  const canAccessEvals = hasRequiredRole(
+    typeof sessionRole === 'string' ? sessionRole : null,
+    ADMIN_ROLES
+  )
 
   // Avatar/identity display
   const displayEmoji = config.emoji
@@ -288,7 +299,7 @@ export default async function AgentDetailPage({ params }: Props) {
           <SkillsSection agentId={agent.id} />
 
           {/* Evals Section */}
-          <EvalsSection agentId={agent.id} />
+          {canAccessEvals ? <EvalsSection agentId={agent.id} /> : null}
 
           <NetworkPolicySection agentId={agent.id} roleNetworkDefaults={roleNetworkDefaults} />
 

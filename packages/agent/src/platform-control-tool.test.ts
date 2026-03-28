@@ -205,8 +205,8 @@ describe('platform control tools', () => {
       category: 'code',
       sensitiveFields: ['clientSecret'],
       validateConfig: () => ({ valid: true, errors: [] }),
-      parseWebhook: async () => ({ shouldProcess: false }),
-      postResponse: async () => ({ success: true }),
+      parseWebhook: () => Promise.resolve({ shouldProcess: false }),
+      postResponse: () => Promise.resolve({ success: true }),
     })
 
     const result = await getPluginInstanceTool({ plugin_instance_id: 'plugin-1' }, baseContext)

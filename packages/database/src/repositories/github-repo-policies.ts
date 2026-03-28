@@ -19,6 +19,27 @@ export type RoleGitHubRepoPolicy = {
   capabilities: GitHubRepoCapability[]
 }
 
+export type GitHubRepoRecord = {
+  githubRepoId: number
+  repoFullName: string
+  repoHtmlUrl: string | null
+  installationAccountLogin: string | null
+  installationId: number
+  pluginInstanceId: string
+}
+
+export type AgentGitHubRepoAssignment = {
+  agentId: string
+  agentHandle: string | null
+  agentName: string
+  githubRepoId: number
+  repoFullName: string
+  repoHtmlUrl: string | null
+  installationAccountLogin: string | null
+  pluginInstanceId: string
+  capabilities: GitHubRepoCapability[]
+}
+
 export type EffectiveGitHubRepoCapabilitySource =
   | { sourceType: 'direct_agent_assignment' }
   | { sourceType: 'agent_role'; roleId: string; roleName: string; roleSlug: string }
@@ -58,6 +79,120 @@ function addCapabilities(
     accumulator.capabilities.add(capability)
   }
   accumulator.sources.push(source)
+}
+
+export async function listGitHubRepos(opts?: {
+  pluginInstanceId?: string
+}): Promise<GitHubRepoRecord[]> {
+  const db = getDb()
+  let query = db
+    .selectFrom('github_repos')
+    .innerJoin('github_installations', 'github_installations.id', 'github_repos.installation_id')
+    .select([
+      'github_repos.id as github_repo_id',
+      'github_repos.full_name as repo_full_name',
+      'github_repos.html_url as repo_html_url',
+      'github_installations.account_login as installation_account_login',
+      'github_installations.installation_id as installation_id',
+      'github_installations.plugin_instance_id as plugin_instance_id',
+    ])
+    .orderBy('github_repos.full_name', 'asc')
+
+  if (opts?.pluginInstanceId) {
+    query = query.where('github_installations.plugin_instance_id', '=', opts.pluginInstanceId)
+  }
+
+  const rows = await query.execute()
+  return rows.map((row) => ({
+    githubRepoId: row.github_repo_id,
+    repoFullName: row.repo_full_name,
+    repoHtmlUrl: row.repo_html_url,
+    installationAccountLogin: row.installation_account_login,
+    installationId: row.installation_id,
+    pluginInstanceId: row.plugin_instance_id,
+  }))
+}
+
+export async function listAgentGitHubRepoAssignments(opts?: {
+  pluginInstanceId?: string
+  agentId?: string
+  githubRepoId?: number
+}): Promise<AgentGitHubRepoAssignment[]> {
+  const db = getDb()
+  let query = db
+    .selectFrom('agent_repo_capabilities')
+    .innerJoin('agents', 'agents.id', 'agent_repo_capabilities.agent_id')
+    .innerJoin('github_repos', 'github_repos.id', 'agent_repo_capabilities.github_repo_id')
+    .innerJoin('github_installations', 'github_installations.id', 'github_repos.installation_id')
+    .select([
+      'agent_repo_capabilities.agent_id as agent_id',
+      'agent_repo_capabilities.github_repo_id as github_repo_id',
+      'agent_repo_capabilities.capabilities as capabilities',
+      'agents.handle as agent_handle',
+      'agents.name as agent_name',
+      'github_repos.full_name as repo_full_name',
+      'github_repos.html_url as repo_html_url',
+      'github_installations.account_login as installation_account_login',
+      'github_installations.plugin_instance_id as plugin_instance_id',
+    ])
+    .orderBy('github_repos.full_name', 'asc')
+    .orderBy('agents.name', 'asc')
+
+  if (opts?.pluginInstanceId) {
+    query = query.where('github_installations.plugin_instance_id', '=', opts.pluginInstanceId)
+  }
+  if (opts?.agentId) {
+    query = query.where('agent_repo_capabilities.agent_id', '=', opts.agentId)
+  }
+  if (opts?.githubRepoId) {
+    query = query.where('agent_repo_capabilities.github_repo_id', '=', opts.githubRepoId)
+  }
+
+  const rows = await query.execute()
+  return rows.map((row) => ({
+    agentId: row.agent_id,
+    agentHandle: row.agent_handle,
+    agentName: row.agent_name,
+    githubRepoId: row.github_repo_id,
+    repoFullName: row.repo_full_name,
+    repoHtmlUrl: row.repo_html_url,
+    installationAccountLogin: row.installation_account_login,
+    pluginInstanceId: row.plugin_instance_id,
+    capabilities: parseGitHubRepoCapabilities(row.capabilities),
+  }))
+}
+
+export async function replaceAgentGitHubRepoCapabilities(
+  agentId: string,
+  githubRepoId: number,
+  capabilities: GitHubRepoCapability[]
+): Promise<void> {
+  const db = getDb()
+  const serialized = serializeGitHubRepoCapabilities(capabilities)
+  const normalized = parseGitHubRepoCapabilities(serialized)
+
+  if (normalized.length === 0) {
+    await db
+      .deleteFrom('agent_repo_capabilities')
+      .where('agent_id', '=', agentId)
+      .where('github_repo_id', '=', githubRepoId)
+      .execute()
+    return
+  }
+
+  await db
+    .insertInto('agent_repo_capabilities')
+    .values({
+      agent_id: agentId,
+      github_repo_id: githubRepoId,
+      capabilities: serialized,
+    })
+    .onConflict((oc) =>
+      oc.columns(['agent_id', 'github_repo_id']).doUpdateSet({
+        capabilities: serialized,
+      })
+    )
+    .execute()
 }
 
 export async function listRoleGitHubRepoPolicies(roleId: string): Promise<RoleGitHubRepoPolicy[]> {

@@ -32,7 +32,7 @@ import {
   getPerAgentEvalStats,
 } from '@nitejar/database'
 import { z } from 'zod'
-import { protectedProcedure, router } from '../trpc'
+import { adminProcedure, router } from '../trpc'
 
 // ============================================================================
 // Zod schemas
@@ -319,7 +319,7 @@ export const evalsRouter = router({
   // Evaluator CRUD
   // --------------------------------------------------------------------------
 
-  listEvaluators: protectedProcedure
+  listEvaluators: adminProcedure
     .input(
       z
         .object({
@@ -338,7 +338,7 @@ export const evalsRouter = router({
       return evaluators.filter((e) => assignedIds.has(e.id))
     }),
 
-  getEvaluator: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
+  getEvaluator: adminProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
     const evaluator = await findEvaluatorById(input.id)
     if (!evaluator) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Evaluator not found' })
@@ -346,7 +346,7 @@ export const evalsRouter = router({
     return evaluator
   }),
 
-  createEvaluator: protectedProcedure
+  createEvaluator: adminProcedure
     .input(
       z.object({
         name: z.string().min(1),
@@ -366,7 +366,7 @@ export const evalsRouter = router({
       })
     }),
 
-  updateEvaluator: protectedProcedure
+  updateEvaluator: adminProcedure
     .input(
       z.object({
         id: z.string(),
@@ -389,7 +389,7 @@ export const evalsRouter = router({
       return updated
     }),
 
-  deleteEvaluator: protectedProcedure
+  deleteEvaluator: adminProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ input }) => {
       const deleted = await deleteEvaluator(input.id)
@@ -399,7 +399,7 @@ export const evalsRouter = router({
       return { success: true }
     }),
 
-  assignEvaluatorToAgent: protectedProcedure
+  assignEvaluatorToAgent: adminProcedure
     .input(
       z.object({
         agentId: z.string(),
@@ -438,7 +438,7 @@ export const evalsRouter = router({
       }
     }),
 
-  updateAgentEvaluator: protectedProcedure
+  updateAgentEvaluator: adminProcedure
     .input(
       z.object({
         id: z.string(),
@@ -461,7 +461,7 @@ export const evalsRouter = router({
       return updated
     }),
 
-  removeEvaluatorFromAgent: protectedProcedure
+  removeEvaluatorFromAgent: adminProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ input }) => {
       const deleted = await removeEvaluatorFromAgent(input.id)
@@ -471,7 +471,7 @@ export const evalsRouter = router({
       return { success: true }
     }),
 
-  listAgentEvaluators: protectedProcedure
+  listAgentEvaluators: adminProcedure
     .input(z.object({ agentId: z.string() }))
     .query(async ({ input }) => {
       return listAgentEvaluators(input.agentId)
@@ -481,7 +481,7 @@ export const evalsRouter = router({
   // Rubric CRUD (convenience wrappers)
   // --------------------------------------------------------------------------
 
-  listRubrics: protectedProcedure
+  listRubrics: adminProcedure
     .input(z.object({ agentId: z.string().optional() }).optional())
     .query(async ({ input }) => {
       const rubrics = await listRubrics()
@@ -502,7 +502,7 @@ export const evalsRouter = router({
       return filteredRubrics
     }),
 
-  getRubric: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
+  getRubric: adminProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
     const rubric = await findRubricById(input.id)
     if (!rubric) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Rubric not found' })
@@ -510,7 +510,7 @@ export const evalsRouter = router({
     return rubric
   }),
 
-  createRubric: protectedProcedure
+  createRubric: adminProcedure
     .input(
       z.object({
         name: z.string().min(1),
@@ -540,7 +540,7 @@ export const evalsRouter = router({
       return { rubric, evaluator }
     }),
 
-  updateRubric: protectedProcedure
+  updateRubric: adminProcedure
     .input(
       z.object({
         id: z.string(),
@@ -574,23 +574,21 @@ export const evalsRouter = router({
       return updated
     }),
 
-  deleteRubric: protectedProcedure
-    .input(z.object({ id: z.string() }))
-    .mutation(async ({ input }) => {
-      // Also delete the associated evaluator (which cascades to agent_evaluators)
-      const evaluator = await findEvaluatorByRubricId(input.id)
-      if (evaluator) {
-        await deleteEvaluator(evaluator.id)
-      }
+  deleteRubric: adminProcedure.input(z.object({ id: z.string() })).mutation(async ({ input }) => {
+    // Also delete the associated evaluator (which cascades to agent_evaluators)
+    const evaluator = await findEvaluatorByRubricId(input.id)
+    if (evaluator) {
+      await deleteEvaluator(evaluator.id)
+    }
 
-      const deleted = await deleteRubric(input.id)
-      if (!deleted) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Rubric not found' })
-      }
-      return { success: true }
-    }),
+    const deleted = await deleteRubric(input.id)
+    if (!deleted) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Rubric not found' })
+    }
+    return { success: true }
+  }),
 
-  assignRubricToAgent: protectedProcedure
+  assignRubricToAgent: adminProcedure
     .input(
       z.object({
         agentId: z.string(),
@@ -629,11 +627,11 @@ export const evalsRouter = router({
       })
     }),
 
-  listTemplates: protectedProcedure.query(() => {
+  listTemplates: adminProcedure.query(() => {
     return RUBRIC_TEMPLATES
   }),
 
-  createFromTemplate: protectedProcedure
+  createFromTemplate: adminProcedure
     .input(
       z.object({
         templateId: z.string(),
@@ -684,7 +682,7 @@ export const evalsRouter = router({
   // Eval run operations
   // --------------------------------------------------------------------------
 
-  getEvalRun: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
+  getEvalRun: adminProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
     const evalRun = await findEvalRunById(input.id)
     if (!evalRun) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Eval run not found' })
@@ -694,7 +692,7 @@ export const evalsRouter = router({
     return { ...evalRun, results }
   }),
 
-  listEvalRuns: protectedProcedure
+  listEvalRuns: adminProcedure
     .input(
       z.object({
         agentId: z.string().optional(),
@@ -760,24 +758,22 @@ export const evalsRouter = router({
       return { runs: trimmed, nextCursor }
     }),
 
-  getEvalsForJob: protectedProcedure
-    .input(z.object({ jobId: z.string() }))
-    .query(async ({ input }) => {
-      const runs = await listEvalRunsByJob(input.jobId)
-      const results = await Promise.all(
-        runs.map(async (run) => {
-          const evalResults = await listEvalResultsByRun(run.id)
-          return { ...run, results: evalResults }
-        })
-      )
-      return results
-    }),
+  getEvalsForJob: adminProcedure.input(z.object({ jobId: z.string() })).query(async ({ input }) => {
+    const runs = await listEvalRunsByJob(input.jobId)
+    const results = await Promise.all(
+      runs.map(async (run) => {
+        const evalResults = await listEvalResultsByRun(run.id)
+        return { ...run, results: evalResults }
+      })
+    )
+    return results
+  }),
 
   // --------------------------------------------------------------------------
   // Trend and aggregation queries
   // --------------------------------------------------------------------------
 
-  getScoreTrend: protectedProcedure
+  getScoreTrend: adminProcedure
     .input(
       z.object({
         agentId: z.string().optional(),
@@ -799,7 +795,7 @@ export const evalsRouter = router({
       return getFleetScoreTrend({ days: input.days })
     }),
 
-  getAgentEvalSummary: protectedProcedure
+  getAgentEvalSummary: adminProcedure
     .input(z.object({ agentId: z.string() }))
     .query(async ({ input }) => {
       const summary = await getAgentEvalSummary(input.agentId)
@@ -874,11 +870,11 @@ export const evalsRouter = router({
   // Fleet-wide aggregation
   // --------------------------------------------------------------------------
 
-  getFleetEvalSummary: protectedProcedure.query(async () => {
+  getFleetEvalSummary: adminProcedure.query(async () => {
     return getFleetEvalSummary()
   }),
 
-  getFleetPerAgentStats: protectedProcedure.query(async () => {
+  getFleetPerAgentStats: adminProcedure.query(async () => {
     return getPerAgentEvalStats()
   }),
 
@@ -886,11 +882,11 @@ export const evalsRouter = router({
   // Eval settings
   // --------------------------------------------------------------------------
 
-  getSettings: protectedProcedure.query(async () => {
+  getSettings: adminProcedure.query(async () => {
     return getEvalSettings()
   }),
 
-  updateSettings: protectedProcedure
+  updateSettings: adminProcedure
     .input(
       z.object({
         judgeModel: z.string().nullable().optional(),
