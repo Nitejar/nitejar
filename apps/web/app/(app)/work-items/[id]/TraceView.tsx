@@ -1540,6 +1540,20 @@ function AssistantToolExchange({
   assistantLabel?: string
   toolCallStatusMap?: Map<string, 'pending' | 'ok' | 'error'>
 }) {
+  const { toolCalls } = parseStoredMessagePayload(assistantMessage.content)
+  const toolCallIds = new Set(
+    toolCalls.map((tc) => tc.id).filter((id): id is string => Boolean(id))
+  )
+  const toolResultByCallId = new Map(
+    toolResultMessages
+      .map((message) => [getToolResultCallId(message), message] as const)
+      .filter((entry): entry is readonly [string, Message] => Boolean(entry[0]))
+  )
+  const orphanToolResults = toolResultMessages.filter((message) => {
+    const toolCallId = getToolResultCallId(message)
+    return !toolCallId || !toolCallIds.has(toolCallId)
+  })
+
   return (
     <div className="overflow-hidden rounded-md border border-emerald-500/20 bg-emerald-500/[0.03]">
       <div className="border-b border-emerald-500/10 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-emerald-400">
@@ -1549,13 +1563,43 @@ function AssistantToolExchange({
         <CompactMessage
           message={assistantMessage}
           embedded
+          hideToolCalls
           defaultUserLabel={defaultUserLabel}
           roleLabel={assistantLabel}
           toolCallStatusMap={toolCallStatusMap}
         />
       </div>
       <div className="space-y-1 border-t border-emerald-500/10 px-2 py-1.5">
-        {toolResultMessages.map((msg) => {
+        {toolCalls.map((toolCall, index) => {
+          if (!toolCall.id) return null
+          const resultMessage = toolResultByCallId.get(toolCall.id) ?? null
+          const bgTask = backgroundTaskMap.get(toolCall.id)
+          const toolName = toolCall.function?.name ?? 'unknown'
+
+          return (
+            <div key={toolCall.id ?? `${assistantMessage.id}-tool-${index}`} className="space-y-1">
+              <div
+                className={cn(
+                  resultMessage &&
+                    '-space-y-px rounded-md [&>*:first-child]:rounded-b-none [&>*:last-child]:rounded-t-none'
+                )}
+              >
+                <ToolCallCard message={assistantMessage} toolCallId={toolCall.id} />
+                {resultMessage && (
+                  <ToolResultCard
+                    message={resultMessage}
+                    toolName={toolName}
+                    externalApiCalls={externalApiCalls}
+                    mediaArtifacts={mediaArtifacts}
+                    mediaArtifactsById={mediaArtifactsById}
+                  />
+                )}
+              </div>
+              {bgTask && <BackgroundTaskInline task={bgTask} />}
+            </div>
+          )
+        })}
+        {orphanToolResults.map((msg) => {
           const tcId = getToolResultCallId(msg)
           const toolName =
             tcId && toolCallNameMap ? (toolCallNameMap.get(tcId) ?? undefined) : undefined
@@ -1599,6 +1643,21 @@ function ToolExecDetail({
   const extCost = findExternalCostForSpan(span, externalApiCalls)
   const toolCallId = attrs.tool_call_id as string | undefined
   const bgTask = toolCallId && backgroundTaskMap ? backgroundTaskMap.get(toolCallId) : null
+  const toolIoCards = [
+    callMsg ? (
+      <ToolCallCard key="call" message={callMsg} toolCallId={attrs.tool_call_id as string} />
+    ) : null,
+    resultMsg ? (
+      <ToolResultCard
+        key="result"
+        message={resultMsg}
+        toolName={attrs.tool_name as string}
+        externalApiCalls={externalApiCalls}
+        mediaArtifacts={mediaArtifacts}
+        mediaArtifactsById={mediaArtifactsById}
+      />
+    ) : null,
+  ].filter(Boolean)
   if (!callMsg && !resultMsg && !extCost && !bgTask) return null
 
   return (
@@ -1610,15 +1669,12 @@ function ToolExecDetail({
         {extCost && <ExternalCallCostBadge call={extCost} />}
       </div>
       <div className="space-y-2">
-        {callMsg && <ToolCallCard message={callMsg} toolCallId={attrs.tool_call_id as string} />}
-        {resultMsg && (
-          <ToolResultCard
-            message={resultMsg}
-            toolName={attrs.tool_name as string}
-            externalApiCalls={externalApiCalls}
-            mediaArtifacts={mediaArtifacts}
-            mediaArtifactsById={mediaArtifactsById}
-          />
+        {toolIoCards.length > 1 ? (
+          <div className="-space-y-px rounded-md [&>*:first-child]:rounded-b-none [&>*:last-child]:rounded-t-none">
+            {toolIoCards}
+          </div>
+        ) : (
+          toolIoCards
         )}
         {bgTask && <BackgroundTaskInline task={bgTask} />}
       </div>
@@ -1759,6 +1815,25 @@ function ToolBatchDetail({
           const extCost = findExternalCostForSpan(toolSpan, externalApiCalls)
           const tcId = toolAttrs.tool_call_id as string | undefined
           const bgTask = tcId && backgroundTaskMap ? backgroundTaskMap.get(tcId) : null
+          const toolIoCards = [
+            callMsg ? (
+              <ToolCallCard
+                key="call"
+                message={callMsg}
+                toolCallId={toolAttrs.tool_call_id as string}
+              />
+            ) : null,
+            resultMsg ? (
+              <ToolResultCard
+                key="result"
+                message={resultMsg}
+                toolName={toolAttrs.tool_name as string}
+                externalApiCalls={externalApiCalls}
+                mediaArtifacts={mediaArtifacts}
+                mediaArtifactsById={mediaArtifactsById}
+              />
+            ) : null,
+          ].filter(Boolean)
 
           return (
             <div
@@ -1787,17 +1862,12 @@ function ToolBatchDetail({
                 </span>
               </div>
               <div className="space-y-2 p-2">
-                {callMsg && (
-                  <ToolCallCard message={callMsg} toolCallId={toolAttrs.tool_call_id as string} />
-                )}
-                {resultMsg && (
-                  <ToolResultCard
-                    message={resultMsg}
-                    toolName={toolAttrs.tool_name as string}
-                    externalApiCalls={externalApiCalls}
-                    mediaArtifacts={mediaArtifacts}
-                    mediaArtifactsById={mediaArtifactsById}
-                  />
+                {toolIoCards.length > 1 ? (
+                  <div className="-space-y-px rounded-md [&>*:first-child]:rounded-b-none [&>*:last-child]:rounded-t-none">
+                    {toolIoCards}
+                  </div>
+                ) : (
+                  toolIoCards
                 )}
                 {isErr && typeof toolAttrs.error === 'string' && !resultMsg && (
                   <div className="rounded border border-red-500/20 bg-red-500/[0.05] px-3 py-2 text-[10px] text-red-400">
@@ -2564,6 +2634,8 @@ function AssistantMessageContent({ message }: { message: Message }) {
 interface ToolArgHighlight {
   label: string
   value: string
+  fullValue?: string
+  truncated?: boolean
 }
 
 function countUtf8Bytes(text: string): number {
@@ -2578,18 +2650,55 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>
 }
 
-function stringifyArgValue(value: unknown, max = 80): string {
+function stringifyArgValue(
+  value: unknown,
+  max = 80
+): { value: string; fullValue?: string; truncated?: boolean } {
   if (typeof value === 'string') {
-    return value.length > max ? `${value.slice(0, max)}...` : value
+    if (value.length > max) {
+      return {
+        value: `${value.slice(0, max)}...`,
+        fullValue: value,
+        truncated: true,
+      }
+    }
+    return { value }
   }
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-  if (typeof value === 'bigint') return `${value}n`
-  if (Array.isArray(value)) return value.length === 0 ? '[]' : `${value.length} item(s)`
-  if (value && typeof value === 'object') return '{...}'
+  if (typeof value === 'number' || typeof value === 'boolean') return { value: String(value) }
+  if (typeof value === 'bigint') return { value: `${value}n` }
+  if (Array.isArray(value)) return { value: value.length === 0 ? '[]' : `${value.length} item(s)` }
+  if (value && typeof value === 'object') return { value: '{...}' }
   if (typeof value === 'symbol') {
-    return value.description ? `Symbol(${value.description})` : 'Symbol'
+    return { value: value.description ? `Symbol(${value.description})` : 'Symbol' }
   }
-  return ''
+  return { value: '' }
+}
+
+function renderToolArgHighlightChip(
+  item: ToolArgHighlight,
+  key: string,
+  className: string,
+  labelClassName: string,
+  separatorClassName: string
+): React.ReactNode {
+  const chip = (
+    <span key={key} className={className}>
+      <span className={labelClassName}>{item.label}</span>
+      <span className={cn('mx-0.5', separatorClassName)}>=</span>
+      <span className="font-mono text-foreground/80">{item.value}</span>
+    </span>
+  )
+
+  if (!item.truncated || !item.fullValue) return chip
+
+  return (
+    <Tooltip key={key} delay={300}>
+      <TooltipTrigger asChild>{chip}</TooltipTrigger>
+      <TooltipContent side="top" align="start" className="max-w-xl whitespace-pre-wrap break-words">
+        <span className="font-mono text-[10px]">{item.fullValue}</span>
+      </TooltipContent>
+    </Tooltip>
+  )
 }
 
 function buildToolArgHighlights(toolName: string, args: unknown): ToolArgHighlight[] {
@@ -2614,320 +2723,227 @@ function buildToolArgHighlights(toolName: string, args: unknown): ToolArgHighlig
   }
 
   const highlights: ToolArgHighlight[] = []
+  const pushHighlight = (
+    label: string,
+    value: string | number | { value: string; fullValue?: string; truncated?: boolean }
+  ) => {
+    if (typeof value === 'string' || typeof value === 'number') {
+      highlights.push({ label, value: String(value) })
+      return
+    }
+    highlights.push({
+      label,
+      value: value.value,
+      fullValue: value.fullValue,
+      truncated: value.truncated,
+    })
+  }
   switch (toolName) {
     case 'web_search':
-      if (getString('query'))
-        highlights.push({ label: 'query', value: stringifyArgValue(getString('query')) })
-      if (getNumber('max_results') != null)
-        highlights.push({ label: 'max', value: `${getNumber('max_results')}` })
-      if (getString('topic')) highlights.push({ label: 'topic', value: getString('topic')! })
-      if (getString('time_range'))
-        highlights.push({ label: 'window', value: getString('time_range')! })
+      if (getString('query')) pushHighlight('query', stringifyArgValue(getString('query')))
+      if (getNumber('max_results') != null) pushHighlight('max', `${getNumber('max_results')}`)
+      if (getString('topic')) pushHighlight('topic', getString('topic')!)
+      if (getString('time_range')) pushHighlight('window', getString('time_range')!)
       if (getArrayCount('include_domains') != null)
-        highlights.push({
-          label: 'allow',
-          value: `${getArrayCount('include_domains')} domain(s)`,
-        })
+        pushHighlight('allow', `${getArrayCount('include_domains')} domain(s)`)
       if (getArrayCount('exclude_domains') != null)
-        highlights.push({
-          label: 'deny',
-          value: `${getArrayCount('exclude_domains')} domain(s)`,
-        })
+        pushHighlight('deny', `${getArrayCount('exclude_domains')} domain(s)`)
       break
     case 'extract_url':
-      if (getArrayCount('urls') != null)
-        highlights.push({ label: 'urls', value: `${getArrayCount('urls')} URL(s)` })
-      if (getString('query'))
-        highlights.push({ label: 'query', value: stringifyArgValue(getString('query')) })
+      if (getArrayCount('urls') != null) pushHighlight('urls', `${getArrayCount('urls')} URL(s)`)
+      if (getString('query')) pushHighlight('query', stringifyArgValue(getString('query')))
       if (getNumber('chunks_per_source') != null)
-        highlights.push({ label: 'chunks', value: `${getNumber('chunks_per_source')}` })
+        pushHighlight('chunks', `${getNumber('chunks_per_source')}`)
       break
     case 'read_file':
-      if (getString('path'))
-        highlights.push({ label: 'path', value: stringifyArgValue(getString('path')) })
-      if (getNumber('start_line') != null)
-        highlights.push({ label: 'start', value: `${getNumber('start_line')}` })
-      if (getNumber('max_lines') != null)
-        highlights.push({ label: 'max', value: `${getNumber('max_lines')}` })
+      if (getString('path')) pushHighlight('path', stringifyArgValue(getString('path')))
+      if (getNumber('start_line') != null) pushHighlight('start', `${getNumber('start_line')}`)
+      if (getNumber('max_lines') != null) pushHighlight('max', `${getNumber('max_lines')}`)
       break
     case 'write_file':
-      if (getString('path'))
-        highlights.push({ label: 'path', value: stringifyArgValue(getString('path')) })
+      if (getString('path')) pushHighlight('path', stringifyArgValue(getString('path')))
       if (getString('content')) {
-        highlights.push({ label: 'bytes', value: `${countUtf8Bytes(getString('content')!)}` })
+        pushHighlight('bytes', `${countUtf8Bytes(getString('content')!)}`)
       }
       break
     case 'edit_file':
-      if (getString('path'))
-        highlights.push({ label: 'path', value: stringifyArgValue(getString('path')) })
-      if (getArrayCount('edits') != null)
-        highlights.push({ label: 'edits', value: `${getArrayCount('edits')}` })
+      if (getString('path')) pushHighlight('path', stringifyArgValue(getString('path')))
+      if (getArrayCount('edits') != null) pushHighlight('edits', `${getArrayCount('edits')}`)
       else if (getString('old_string') != null && getString('new_string') != null)
-        highlights.push({ label: 'mode', value: 'replace' })
-      if (getBoolean('replace_all') === true) highlights.push({ label: 'all', value: 'true' })
+        pushHighlight('mode', 'replace')
+      if (getBoolean('replace_all') === true) pushHighlight('all', 'true')
       break
     case 'use_skill':
       if (getString('skill_name'))
-        highlights.push({ label: 'skill', value: stringifyArgValue(getString('skill_name')) })
+        pushHighlight('skill', stringifyArgValue(getString('skill_name')))
       break
     case 'list_directory':
     case 'create_directory':
-      if (getString('path'))
-        highlights.push({ label: 'path', value: stringifyArgValue(getString('path')) })
+      if (getString('path')) pushHighlight('path', stringifyArgValue(getString('path')))
       break
     case 'bash':
       if (getString('command'))
-        highlights.push({ label: 'command', value: stringifyArgValue(getString('command')!, 120) })
-      if (getString('cwd'))
-        highlights.push({ label: 'cwd', value: stringifyArgValue(getString('cwd')) })
-      if (getNumber('timeout') != null)
-        highlights.push({ label: 'timeout', value: `${getNumber('timeout')}s` })
+        pushHighlight('command', stringifyArgValue(getString('command')!, 120))
+      if (getString('cwd')) pushHighlight('cwd', stringifyArgValue(getString('cwd')))
+      if (getNumber('timeout') != null) pushHighlight('timeout', `${getNumber('timeout')}s`)
       break
     case 'refresh_network_policy':
-      if (getString('preset'))
-        highlights.push({ label: 'preset', value: stringifyArgValue(getString('preset')) })
+      if (getString('preset')) pushHighlight('preset', stringifyArgValue(getString('preset')))
       break
     case 'add_memory':
       if (getString('content'))
-        highlights.push({
-          label: 'memory',
-          value: stringifyArgValue(getString('content')!, 110),
-        })
-      if (getBoolean('permanent') != null)
-        highlights.push({ label: 'pinned', value: `${getBoolean('permanent')}` })
+        pushHighlight('memory', stringifyArgValue(getString('content')!, 110))
+      if (getBoolean('permanent') != null) pushHighlight('pinned', `${getBoolean('permanent')}`)
       break
     case 'remove_memory':
-      if (getString('memory_id'))
-        highlights.push({ label: 'id', value: stringifyArgValue(getString('memory_id')) })
+      if (getString('memory_id')) pushHighlight('id', stringifyArgValue(getString('memory_id')))
       if (getString('content'))
-        highlights.push({
-          label: 'match',
-          value: stringifyArgValue(getString('content')!, 100),
-        })
-      if (getString('match_mode'))
-        highlights.push({ label: 'mode', value: stringifyArgValue(getString('match_mode')) })
+        pushHighlight('match', stringifyArgValue(getString('content')!, 100))
+      if (getString('match_mode')) pushHighlight('mode', stringifyArgValue(getString('match_mode')))
       break
     case 'update_memory':
-      if (getString('memory_id'))
-        highlights.push({ label: 'id', value: stringifyArgValue(getString('memory_id')) })
-      if (getString('content'))
-        highlights.push({
-          label: 'from',
-          value: stringifyArgValue(getString('content')!, 90),
-        })
+      if (getString('memory_id')) pushHighlight('id', stringifyArgValue(getString('memory_id')))
+      if (getString('content')) pushHighlight('from', stringifyArgValue(getString('content')!, 90))
       if (getString('new_content'))
-        highlights.push({
-          label: 'to',
-          value: stringifyArgValue(getString('new_content')!, 90),
-        })
-      if (getBoolean('permanent') != null)
-        highlights.push({ label: 'pinned', value: `${getBoolean('permanent')}` })
-      if (getBoolean('delete') === true) highlights.push({ label: 'delete', value: 'true' })
-      if (getNumber('version') != null)
-        highlights.push({ label: 'version', value: `${getNumber('version')}` })
+        pushHighlight('to', stringifyArgValue(getString('new_content')!, 90))
+      if (getBoolean('permanent') != null) pushHighlight('pinned', `${getBoolean('permanent')}`)
+      if (getBoolean('delete') === true) pushHighlight('delete', 'true')
+      if (getNumber('version') != null) pushHighlight('version', `${getNumber('version')}`)
       break
     case 'start_background_task':
       if (getString('command'))
-        highlights.push({
-          label: 'command',
-          value: stringifyArgValue(getString('command')!, 100),
-        })
-      if (getString('label'))
-        highlights.push({ label: 'label', value: stringifyArgValue(getString('label')) })
-      if (getString('cwd'))
-        highlights.push({ label: 'cwd', value: stringifyArgValue(getString('cwd')) })
+        pushHighlight('command', stringifyArgValue(getString('command')!, 100))
+      if (getString('label')) pushHighlight('label', stringifyArgValue(getString('label')))
+      if (getString('cwd')) pushHighlight('cwd', stringifyArgValue(getString('cwd')))
       if (getBoolean('cleanup_on_run_end') != null)
-        highlights.push({
-          label: 'cleanup',
-          value: `${getBoolean('cleanup_on_run_end')}`,
-        })
+        pushHighlight('cleanup', `${getBoolean('cleanup_on_run_end')}`)
       break
     case 'check_background_task':
-      if (getString('task_id'))
-        highlights.push({ label: 'task', value: stringifyArgValue(getString('task_id')) })
-      if (getBoolean('block') != null)
-        highlights.push({ label: 'block', value: `${getBoolean('block')}` })
+      if (getString('task_id')) pushHighlight('task', stringifyArgValue(getString('task_id')))
+      if (getBoolean('block') != null) pushHighlight('block', `${getBoolean('block')}`)
       if (getNumber('timeout_seconds') != null)
-        highlights.push({ label: 'wait', value: `${getNumber('timeout_seconds')}s` })
-      if (getNumber('output_chars') != null)
-        highlights.push({ label: 'tail', value: `${getNumber('output_chars')}` })
+        pushHighlight('wait', `${getNumber('timeout_seconds')}s`)
+      if (getNumber('output_chars') != null) pushHighlight('tail', `${getNumber('output_chars')}`)
       break
     case 'list_background_tasks':
-      if (getString('status'))
-        highlights.push({ label: 'status', value: stringifyArgValue(getString('status')) })
+      if (getString('status')) pushHighlight('status', stringifyArgValue(getString('status')))
       if (getBoolean('include_output') != null)
-        highlights.push({ label: 'output', value: `${getBoolean('include_output')}` })
-      if (getNumber('output_chars') != null)
-        highlights.push({ label: 'tail', value: `${getNumber('output_chars')}` })
+        pushHighlight('output', `${getBoolean('include_output')}`)
+      if (getNumber('output_chars') != null) pushHighlight('tail', `${getNumber('output_chars')}`)
       break
     case 'stop_background_task':
-      if (getString('task_id'))
-        highlights.push({ label: 'task', value: stringifyArgValue(getString('task_id')) })
-      if (getBoolean('force') != null)
-        highlights.push({ label: 'force', value: `${getBoolean('force')}` })
+      if (getString('task_id')) pushHighlight('task', stringifyArgValue(getString('task_id')))
+      if (getBoolean('force') != null) pushHighlight('force', `${getBoolean('force')}`)
       if (getNumber('grace_seconds') != null)
-        highlights.push({ label: 'grace', value: `${getNumber('grace_seconds')}s` })
+        pushHighlight('grace', `${getNumber('grace_seconds')}s`)
       break
     case 'schedule_check':
       if (getNumber('delay_minutes') != null)
-        highlights.push({ label: 'delay', value: `${getNumber('delay_minutes')}m` })
-      if (getString('reference'))
-        highlights.push({ label: 'ref', value: stringifyArgValue(getString('reference')) })
-      if (getString('instructions'))
-        highlights.push({ label: 'chars', value: `${getString('instructions')!.length}` })
+        pushHighlight('delay', `${getNumber('delay_minutes')}m`)
+      if (getString('reference')) pushHighlight('ref', stringifyArgValue(getString('reference')))
+      if (getString('instructions')) pushHighlight('chars', `${getString('instructions')!.length}`)
       break
     case 'list_schedule':
       if (getBoolean('session_only') != null)
-        highlights.push({ label: 'session', value: `${getBoolean('session_only')}` })
+        pushHighlight('session', `${getBoolean('session_only')}`)
       break
     case 'cancel_scheduled':
       if (getString('scheduled_id'))
-        highlights.push({ label: 'id', value: stringifyArgValue(getString('scheduled_id')) })
+        pushHighlight('id', stringifyArgValue(getString('scheduled_id')))
       break
     case 'create_service':
-      if (getString('name'))
-        highlights.push({ label: 'service', value: stringifyArgValue(getString('name')) })
-      if (getString('cmd'))
-        highlights.push({ label: 'cmd', value: stringifyArgValue(getString('cmd')) })
-      if (getArrayCount('args') != null)
-        highlights.push({ label: 'args', value: `${getArrayCount('args')}` })
-      if (getNumber('http_port') != null)
-        highlights.push({ label: 'port', value: `${getNumber('http_port')}` })
-      if (getBoolean('make_public') != null)
-        highlights.push({ label: 'public', value: `${getBoolean('make_public')}` })
+      if (getString('name')) pushHighlight('service', stringifyArgValue(getString('name')))
+      if (getString('cmd')) pushHighlight('cmd', stringifyArgValue(getString('cmd')))
+      if (getArrayCount('args') != null) pushHighlight('args', `${getArrayCount('args')}`)
+      if (getNumber('http_port') != null) pushHighlight('port', `${getNumber('http_port')}`)
+      if (getBoolean('make_public') != null) pushHighlight('public', `${getBoolean('make_public')}`)
       break
     case 'list_services':
       break
     case 'manage_service':
-      if (getString('name'))
-        highlights.push({ label: 'service', value: stringifyArgValue(getString('name')) })
-      if (getString('action'))
-        highlights.push({ label: 'action', value: stringifyArgValue(getString('action')) })
+      if (getString('name')) pushHighlight('service', stringifyArgValue(getString('name')))
+      if (getString('action')) pushHighlight('action', stringifyArgValue(getString('action')))
       break
     case 'get_sprite_url':
-      if (getBoolean('make_public') != null)
-        highlights.push({ label: 'public', value: `${getBoolean('make_public')}` })
+      if (getBoolean('make_public') != null) pushHighlight('public', `${getBoolean('make_public')}`)
       break
     case 'list_sandboxes':
       break
     case 'switch_sandbox':
     case 'delete_sandbox':
       if (getString('sandbox_name'))
-        highlights.push({
-          label: 'sandbox',
-          value: stringifyArgValue(getString('sandbox_name')),
-        })
+        pushHighlight('sandbox', stringifyArgValue(getString('sandbox_name')))
       break
     case 'create_ephemeral_sandbox':
-      if (getString('name'))
-        highlights.push({ label: 'name', value: stringifyArgValue(getString('name')) })
+      if (getString('name')) pushHighlight('name', stringifyArgValue(getString('name')))
       if (getString('description'))
-        highlights.push({
-          label: 'desc',
-          value: stringifyArgValue(getString('description')),
-        })
-      if (getBoolean('switch_to') != null)
-        highlights.push({ label: 'switch', value: `${getBoolean('switch_to')}` })
+        pushHighlight('desc', stringifyArgValue(getString('description')))
+      if (getBoolean('switch_to') != null) pushHighlight('switch', `${getBoolean('switch_to')}`)
       break
     case 'configure_github_credentials':
-      if (getString('repo_name'))
-        highlights.push({ label: 'repo', value: stringifyArgValue(getString('repo_name')) })
-      if (getNumber('duration') != null)
-        highlights.push({ label: 'ttl', value: `${getNumber('duration')}s` })
+      if (getString('repo_name')) pushHighlight('repo', stringifyArgValue(getString('repo_name')))
+      if (getNumber('duration') != null) pushHighlight('ttl', `${getNumber('duration')}s`)
       break
     case 'get_self_config':
       break
     case 'send_agent_message':
-      if (getString('to_handle'))
-        highlights.push({ label: 'to', value: `@${getString('to_handle')}` })
-      if (getString('message'))
-        highlights.push({
-          label: 'chars',
-          value: `${getString('message')!.length}`,
-        })
+      if (getString('to_handle')) pushHighlight('to', `@${getString('to_handle')}`)
+      if (getString('message')) pushHighlight('chars', `${getString('message')!.length}`)
       break
     case 'download_attachment':
-      if (getNumber('index') != null)
-        highlights.push({ label: 'index', value: `${getNumber('index')}` })
-      if (getString('save_path'))
-        highlights.push({ label: 'save', value: stringifyArgValue(getString('save_path')) })
+      if (getNumber('index') != null) pushHighlight('index', `${getNumber('index')}`)
+      if (getString('save_path')) pushHighlight('save', stringifyArgValue(getString('save_path')))
       break
     case 'send_telegram_message':
-      if (getString('message'))
-        highlights.push({ label: 'chars', value: `${getString('message')!.length}` })
-      if (getNumber('chat_id') != null)
-        highlights.push({ label: 'chat', value: `${getNumber('chat_id')}` })
-      if (getNumber('thread_id') != null)
-        highlights.push({ label: 'thread', value: `${getNumber('thread_id')}` })
+      if (getString('message')) pushHighlight('chars', `${getString('message')!.length}`)
+      if (getNumber('chat_id') != null) pushHighlight('chat', `${getNumber('chat_id')}`)
+      if (getNumber('thread_id') != null) pushHighlight('thread', `${getNumber('thread_id')}`)
       break
     case 'list_telegram_threads':
-      if (getNumber('limit') != null)
-        highlights.push({ label: 'limit', value: `${getNumber('limit')}` })
+      if (getNumber('limit') != null) pushHighlight('limit', `${getNumber('limit')}`)
       break
     case 'read_telegram_thread':
       if (getString('session_key'))
-        highlights.push({ label: 'session', value: stringifyArgValue(getString('session_key')) })
-      if (getNumber('limit') != null)
-        highlights.push({ label: 'limit', value: `${getNumber('limit')}` })
+        pushHighlight('session', stringifyArgValue(getString('session_key')))
+      if (getNumber('limit') != null) pushHighlight('limit', `${getNumber('limit')}`)
       break
     case 'send_file':
-      if (getString('file_path'))
-        highlights.push({ label: 'path', value: stringifyArgValue(getString('file_path')) })
-      if (getString('send_as'))
-        highlights.push({ label: 'as', value: stringifyArgValue(getString('send_as')) })
-      if (getString('caption'))
-        highlights.push({ label: 'caption', value: `${getString('caption')!.length} chars` })
-      if (getNumber('chat_id') != null)
-        highlights.push({ label: 'chat', value: `${getNumber('chat_id')}` })
-      if (getNumber('thread_id') != null)
-        highlights.push({ label: 'thread', value: `${getNumber('thread_id')}` })
+      if (getString('file_path')) pushHighlight('path', stringifyArgValue(getString('file_path')))
+      if (getString('send_as')) pushHighlight('as', stringifyArgValue(getString('send_as')))
+      if (getString('caption')) pushHighlight('caption', `${getString('caption')!.length} chars`)
+      if (getNumber('chat_id') != null) pushHighlight('chat', `${getNumber('chat_id')}`)
+      if (getNumber('thread_id') != null) pushHighlight('thread', `${getNumber('thread_id')}`)
       break
     case 'query_activity':
-      if (getString('query'))
-        highlights.push({ label: 'query', value: stringifyArgValue(getString('query')) })
-      if (getString('agent_handle'))
-        highlights.push({ label: 'agent', value: `@${getString('agent_handle')}` })
-      if (getString('status'))
-        highlights.push({ label: 'status', value: stringifyArgValue(getString('status')) })
+      if (getString('query')) pushHighlight('query', stringifyArgValue(getString('query')))
+      if (getString('agent_handle')) pushHighlight('agent', `@${getString('agent_handle')}`)
+      if (getString('status')) pushHighlight('status', stringifyArgValue(getString('status')))
       if (getNumber('max_age_minutes') != null)
-        highlights.push({ label: 'age', value: `${getNumber('max_age_minutes')}m` })
-      if (getNumber('limit') != null)
-        highlights.push({ label: 'limit', value: `${getNumber('limit')}` })
+        pushHighlight('age', `${getNumber('max_age_minutes')}m`)
+      if (getNumber('limit') != null) pushHighlight('limit', `${getNumber('limit')}`)
       break
     case 'list_runs':
-      if (getString('status')) highlights.push({ label: 'status', value: getString('status')! })
-      if (getString('source'))
-        highlights.push({ label: 'source', value: stringifyArgValue(getString('source')) })
-      if (getNumber('max_age_days') != null)
-        highlights.push({ label: 'age', value: `${getNumber('max_age_days')}d` })
-      if (getNumber('limit') != null)
-        highlights.push({ label: 'limit', value: `${getNumber('limit')}` })
+      if (getString('status')) pushHighlight('status', getString('status')!)
+      if (getString('source')) pushHighlight('source', stringifyArgValue(getString('source')))
+      if (getNumber('max_age_days') != null) pushHighlight('age', `${getNumber('max_age_days')}d`)
+      if (getNumber('limit') != null) pushHighlight('limit', `${getNumber('limit')}`)
       break
     case 'get_run':
-      if (getString('run_id'))
-        highlights.push({ label: 'run', value: stringifyArgValue(getString('run_id')) })
-      if (getString('section'))
-        highlights.push({ label: 'section', value: stringifyArgValue(getString('section')) })
-      if (getNumber('offset') != null)
-        highlights.push({ label: 'offset', value: `${getNumber('offset')}` })
-      if (getNumber('limit') != null)
-        highlights.push({ label: 'limit', value: `${getNumber('limit')}` })
+      if (getString('run_id')) pushHighlight('run', stringifyArgValue(getString('run_id')))
+      if (getString('section')) pushHighlight('section', stringifyArgValue(getString('section')))
+      if (getNumber('offset') != null) pushHighlight('offset', `${getNumber('offset')}`)
+      if (getNumber('limit') != null) pushHighlight('limit', `${getNumber('limit')}`)
       break
     case 'run_todo':
-      if (getString('action'))
-        highlights.push({ label: 'action', value: stringifyArgValue(getString('action')) })
-      if (getString('text'))
-        highlights.push({ label: 'chars', value: `${getString('text')!.length}` })
-      if (getString('item_id'))
-        highlights.push({ label: 'item', value: stringifyArgValue(getString('item_id')) })
-      if (getString('run_id'))
-        highlights.push({ label: 'run', value: stringifyArgValue(getString('run_id')) })
-      if (getBoolean('include_done') != null)
-        highlights.push({ label: 'done', value: `${getBoolean('include_done')}` })
+      if (getString('action')) pushHighlight('action', stringifyArgValue(getString('action')))
+      if (getString('text')) pushHighlight('chars', `${getString('text')!.length}`)
+      if (getString('item_id')) pushHighlight('item', stringifyArgValue(getString('item_id')))
+      if (getString('run_id')) pushHighlight('run', stringifyArgValue(getString('run_id')))
+      if (getBoolean('include_done') != null) pushHighlight('done', `${getBoolean('include_done')}`)
       break
     default: {
       for (const [key, value] of Object.entries(obj).slice(0, 4)) {
-        highlights.push({ label: key, value: stringifyArgValue(value) })
+        pushHighlight(key, stringifyArgValue(value))
       }
       break
     }
@@ -2937,6 +2953,8 @@ function buildToolArgHighlights(toolName: string, args: unknown): ToolArgHighlig
 }
 
 function ToolCallCard({ message, toolCallId }: { message: Message; toolCallId: string }) {
+  const [showRawInput, setShowRawInput] = useState(false)
+
   try {
     const parsed = JSON.parse(message.content!) as { tool_calls?: ParsedToolCall[] }
     const tc = parsed.tool_calls?.find((t) => t.id === toolCallId)
@@ -2996,26 +3014,51 @@ function ToolCallCard({ message, toolCallId }: { message: Message; toolCallId: s
           <span className="text-amber-400/40">call</span>
         </div>
         {highlights.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 px-3 py-2 text-[10px]">
-            {highlights.map((item) => (
-              <span
-                key={item.label}
-                className="rounded border border-amber-500/15 bg-amber-500/[0.06] px-1.5 py-0.5"
-              >
-                <span className="text-amber-300/70">{item.label}</span>
-                <span className="mx-1 text-amber-400/30">=</span>
-                <span className="font-mono text-foreground/80">{item.value}</span>
-              </span>
-            ))}
+          <div className="space-y-1 px-3 py-2 text-[10px]">
+            <div className="flex items-start gap-2">
+              <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+                {highlights.map((item) =>
+                  renderToolArgHighlightChip(
+                    item,
+                    item.label,
+                    'rounded border border-amber-500/15 bg-amber-500/[0.06] px-1.5 py-0.5',
+                    'text-amber-300/70',
+                    'text-amber-400/30'
+                  )
+                )}
+              </div>
+              {shouldShowRaw && (
+                <button
+                  type="button"
+                  onClick={() => setShowRawInput((value) => !value)}
+                  className="shrink-0 text-right text-[10px] text-amber-300/70"
+                >
+                  {showRawInput ? 'Hide raw input' : 'Raw input'}
+                </button>
+              )}
+            </div>
+            {shouldShowRaw && showRawInput && (
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-[10px] text-foreground/80">
+                {rawArgs}
+              </pre>
+            )}
           </div>
         )}
-        {shouldShowRaw && (
-          <details className="border-t border-amber-500/10 px-3 py-1.5">
-            <summary className="cursor-pointer text-[10px] text-amber-300/70">Raw input</summary>
-            <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap text-[10px] text-foreground/80">
-              {rawArgs}
-            </pre>
-          </details>
+        {shouldShowRaw && highlights.length === 0 && (
+          <div className="space-y-1 px-3 py-2 text-right">
+            <button
+              type="button"
+              onClick={() => setShowRawInput((value) => !value)}
+              className="text-[10px] text-amber-300/70"
+            >
+              {showRawInput ? 'Hide raw input' : 'Raw input'}
+            </button>
+            {showRawInput && (
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-left text-[10px] text-foreground/80">
+                {rawArgs}
+              </pre>
+            )}
+          </div>
         )}
       </div>
     )
@@ -3105,6 +3148,77 @@ function splitDisplayLines(display: string): string[] {
     .filter(Boolean)
 }
 
+function summarizeStructuredResultValue(value: unknown): string {
+  if (typeof value === 'string') {
+    const compact = value.replace(/\s+/g, ' ').trim()
+    if (!compact) return '""'
+    return compact.length > 120 ? `${compact.slice(0, 117)}...` : compact
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (value == null) return 'null'
+  if (Array.isArray(value)) {
+    return value.length === 0
+      ? 'empty list'
+      : `${value.length} item${value.length === 1 ? '' : 's'}`
+  }
+  if (typeof value === 'object') {
+    const fieldCount = Object.keys(value as Record<string, unknown>).length
+    return fieldCount === 0 ? 'empty object' : `${fieldCount} field${fieldCount === 1 ? '' : 's'}`
+  }
+  if (typeof value === 'bigint') return value.toString()
+  return typeof value
+}
+
+function getStructuredToolResultPreview(display: string): {
+  summary: string | null
+  rows: Array<{ label: string; value: string }>
+} | null {
+  const trimmed = display.trim()
+  if (!trimmed || (trimmed[0] !== '{' && trimmed[0] !== '[')) return null
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown
+
+    if (Array.isArray(parsed)) {
+      return {
+        summary:
+          parsed.length === 0
+            ? 'No items returned'
+            : `${parsed.length} item${parsed.length === 1 ? '' : 's'}`,
+        rows: parsed.slice(0, 3).map((item, index) => ({
+          label: `[${index}]`,
+          value: summarizeStructuredResultValue(item),
+        })),
+      }
+    }
+
+    if (!parsed || typeof parsed !== 'object') {
+      return {
+        summary: summarizeStructuredResultValue(parsed),
+        rows: [],
+      }
+    }
+
+    const entries = Object.entries(parsed)
+    if (entries.length === 0) {
+      return {
+        summary: 'No additional output',
+        rows: [],
+      }
+    }
+
+    return {
+      summary: null,
+      rows: entries.slice(0, 4).map(([label, value]) => ({
+        label,
+        value: summarizeStructuredResultValue(value),
+      })),
+    }
+  } catch {
+    return null
+  }
+}
+
 function ToolResultCard({
   message,
   toolName,
@@ -3118,7 +3232,9 @@ function ToolResultCard({
   mediaArtifacts?: TraceMediaArtifactInfo[]
   mediaArtifactsById?: Map<string, TraceMediaArtifactInfo>
 }) {
+  const [showFullOutput, setShowFullOutput] = useState(false)
   const display = trimOutputContent(parseToolResultDisplay(message))
+  const structuredPreview = getStructuredToolResultPreview(display)
   const extCall = findExternalCallForToolResultMessage({
     message,
     toolName,
@@ -3616,25 +3732,70 @@ function ToolResultCard({
     )
   }
 
+  if (structuredPreview) {
+    const shouldShowFullOutput = display.length > 220 || structuredPreview.rows.length > 0
+    return (
+      <div className="rounded-md border border-white/10 bg-white/[0.02]">
+        <div className="space-y-1 px-3 py-2 text-[10px]">
+          <div className="flex items-start gap-2">
+            <div className="min-w-0 flex-1 space-y-1">
+              {structuredPreview.summary && (
+                <div className="text-foreground/80">{structuredPreview.summary}</div>
+              )}
+              {structuredPreview.rows.map((row) => (
+                <div key={row.label} className="flex items-start gap-2">
+                  <span className="w-24 shrink-0 text-white/45">{row.label}</span>
+                  <span className="min-w-0 break-words font-mono text-foreground/80">
+                    {row.value}
+                  </span>
+                </div>
+              ))}
+            </div>
+            {shouldShowFullOutput && (
+              <button
+                type="button"
+                onClick={() => setShowFullOutput((value) => !value)}
+                className="shrink-0 text-right text-[10px] text-white/50"
+              >
+                {showFullOutput ? 'Hide full output' : 'Show full output'}
+              </button>
+            )}
+          </div>
+          {shouldShowFullOutput && showFullOutput && (
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-[10px] text-foreground/80">
+              {display}
+            </pre>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   const lines = display.split('\n')
   const firstLine = lines.find((line) => line.trim().length > 0) ?? '(empty)'
   const hasMore = lines.length > 1 || display.length > 320
 
   return (
     <div className="rounded-md border border-white/10 bg-white/[0.02]">
-      <div className="flex items-center gap-2 border-b border-white/5 px-3 py-1.5 text-[10px] font-medium text-muted-foreground">
-        <IconPointFilled className="h-3 w-3" />
-        {toolName ? `${toolName} result` : 'result'}
-      </div>
-      <div className="px-3 py-2 text-[10px] text-foreground/80">{firstLine}</div>
-      {hasMore && (
-        <details className="border-t border-white/5 px-3 py-1.5">
-          <summary className="cursor-pointer text-[10px] text-white/50">Show full output</summary>
+      <div className="px-3 py-2 text-[10px] text-foreground/80">
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">{firstLine}</div>
+          {hasMore && (
+            <button
+              type="button"
+              onClick={() => setShowFullOutput((value) => !value)}
+              className="shrink-0 text-right text-[10px] text-white/50"
+            >
+              {showFullOutput ? 'Hide full output' : 'Show full output'}
+            </button>
+          )}
+        </div>
+        {hasMore && showFullOutput && (
           <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap text-[10px] text-foreground/80">
             {display}
           </pre>
-        </details>
-      )}
+        )}
+      </div>
     </div>
   )
 }
@@ -3673,6 +3834,7 @@ function CompactMessage({
   roleLabel,
   styleOverride,
   embedded = false,
+  hideToolCalls = false,
   defaultUserLabel,
   toolCallStatusMap,
 }: {
@@ -3681,6 +3843,7 @@ function CompactMessage({
   roleLabel?: string
   styleOverride?: string
   embedded?: boolean
+  hideToolCalls?: boolean
   defaultUserLabel?: string
   toolCallStatusMap?: Map<string, 'pending' | 'ok' | 'error'>
 }) {
@@ -3789,7 +3952,7 @@ function CompactMessage({
           )}
         </>
       )}
-      {toolCalls.length > 0 && (
+      {!hideToolCalls && toolCalls.length > 0 && (
         <div className="space-y-1">
           {toolCalls.map((tc) => {
             let args: unknown
@@ -3838,26 +4001,43 @@ function CompactMessage({
                   )}
                 </div>
                 {highlights.length > 0 && (
-                  <div className="flex flex-wrap gap-1 px-2 pb-1 text-[10px]">
-                    {highlights.slice(0, 3).map((item) => (
-                      <span
-                        key={item.label}
-                        className="rounded border border-white/10 bg-white/[0.04] px-1 py-0.5"
-                      >
-                        <span className="text-white/45">{item.label}</span>
-                        <span className="mx-0.5 text-white/30">=</span>
-                        <span className="font-mono text-foreground/80">{item.value}</span>
-                      </span>
-                    ))}
+                  <div className="flex items-start gap-2 px-2 pb-1 text-[10px]">
+                    <div className="flex min-w-0 flex-1 flex-wrap gap-1">
+                      {highlights
+                        .slice(0, 3)
+                        .map((item) =>
+                          renderToolArgHighlightChip(
+                            item,
+                            item.label,
+                            'rounded border border-white/10 bg-white/[0.04] px-1 py-0.5',
+                            'text-white/45',
+                            'text-white/30'
+                          )
+                        )}
+                    </div>
+                    {showRawInput && (
+                      <details className="shrink-0">
+                        <summary className="cursor-pointer list-none text-right text-[10px] text-white/45">
+                          input
+                        </summary>
+                        <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap text-[10px] text-foreground/75">
+                          {rawArgs}
+                        </pre>
+                      </details>
+                    )}
                   </div>
                 )}
-                {showRawInput && (
-                  <details className="border-t border-white/10 px-2 py-1">
-                    <summary className="cursor-pointer text-[10px] text-white/45">input</summary>
-                    <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap text-[10px] text-foreground/75">
-                      {rawArgs}
-                    </pre>
-                  </details>
+                {showRawInput && highlights.length === 0 && (
+                  <div className="px-2 pb-1 text-right">
+                    <details className="inline-block text-left">
+                      <summary className="cursor-pointer list-none text-[10px] text-white/45">
+                        input
+                      </summary>
+                      <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap text-[10px] text-foreground/75">
+                        {rawArgs}
+                      </pre>
+                    </details>
+                  </div>
                 )}
               </div>
             )
