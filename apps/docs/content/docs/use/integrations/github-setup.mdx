@@ -1,9 +1,9 @@
 ---
 title: GitHub Setup
-description: Connect GitHub to Nitejar — issues, PRs, and CI checks.
+description: Connect GitHub to Nitejar — issues, PRs, CI checks, and repo-aware policy.
 ---
 
-The GitHub plugin lets Nitejar respond to issue comments, triage new issues, and monitor CI check results. It posts once after a run completes (final response mode), so you get a single comment per event rather than streaming output.
+The GitHub plugin lets Nitejar respond to issue comments, triage new issues, and monitor CI check results. It posts once after a run completes, so you get a single visible reply per event instead of streaming output.
 
 **Plugin type:** `github` | **Category:** code | **Response mode:** final
 
@@ -15,18 +15,16 @@ A separate **OAuth flow** (`clientId` + `clientSecret`) is available for manifes
 
 ## GitHub App setup
 
-A GitHub App gives you per-installation tokens, granular permissions, and webhook delivery managed by GitHub. This is the right choice for anything beyond local testing.
-
 ### 1. Create a GitHub App
 
 Go to **GitHub > Settings > Developer settings > GitHub Apps > New GitHub App**.
 
 Fill in:
 
-- **App name** — anything you like (e.g., `nitejar-prod`)
-- **Homepage URL** — your Nitejar instance URL
-- **Webhook URL** — leave blank for now; you will set this after creating the plugin instance
-- **Webhook secret** — generate a strong random string and save it somewhere safe:
+- **App name** -- anything you like (for example, `nitejar-prod`)
+- **Homepage URL** -- your Nitejar instance URL
+- **Webhook URL** -- leave blank for now; you will set this after creating the plugin instance
+- **Webhook secret** -- generate a strong random string and save it somewhere safe
 
 ```bash
 openssl rand -hex 32
@@ -44,13 +42,13 @@ Under **Permissions & events**, grant:
 
 ### 3. Subscribe to events
 
-Under the same page, check these webhook event subscriptions:
+Subscribe to:
 
 - `issue_comment`
 - `issues`
 - `check_run`
 
-The plugin also handles `installation` and `installation_repositories` events automatically for lifecycle management, but GitHub delivers those by default when the app is installed.
+The plugin also handles `installation` and `installation_repositories` events automatically for lifecycle management.
 
 ### 4. Download the private key
 
@@ -66,9 +64,9 @@ Set `appId` and `privateKey` directly in the plugin instance config. Both fields
 2. Go to **Plugins** in the sidebar.
 3. Find the **GitHub** plugin and click **New Instance**.
 4. Fill in the configuration:
-   - **Auth fields** — `appId` + `privateKey` for the GitHub App.
-   - **Webhook secret** — the secret you generated in step 1 of the GitHub App path. Required for verifying inbound webhooks.
-   - **Allowed repos** (`allowedRepos`) — optional. If set, only events from these repos are processed. Leave empty to allow all repos the app is installed on.
+   - **Auth fields** -- `appId` + `privateKey`
+   - **Webhook secret** -- the secret you generated earlier
+   - **Allowed repos** (`allowedRepos`) -- optional; if set, only those repos create inbound work
 5. Assign an agent to the instance.
 6. Save.
 
@@ -76,21 +74,30 @@ Note the **Instance ID** shown after saving. You need it for the webhook URL.
 
 ## Configure webhooks
 
-Point GitHub at your Nitejar instance so it can deliver events.
-
 The webhook URL pattern is:
 
-```
+```text
 https://YOUR_NITEJAR_URL/api/webhooks/plugins/github/INSTANCE_ID
 ```
 
 Replace `YOUR_NITEJAR_URL` with your public base URL and `INSTANCE_ID` with the ID from the previous step.
 
-Go back to your GitHub App settings, set the **Webhook URL** to the URL above, and paste the webhook secret you generated earlier.
+Go back to your GitHub App settings, set the **Webhook URL**, and paste the webhook secret you generated earlier.
 
 <Callout type="info" title="Where to verify">
-Open **Plugins > [your GitHub instance]** to see inbound webhook events and their delivery status. Each event shows the GitHub event type, delivery ID, processing result, and any errors.
+  Open **Plugins > [your GitHub instance]** to see inbound webhook events and their delivery
+  status. Each event shows the GitHub event type, delivery ID, processing result, and any errors.
 </Callout>
+
+## Understand GitHub access layers
+
+On this branch, GitHub access is intentionally layered:
+
+1. **Plugin assignment** connects an agent to the GitHub channel so it can receive inbound work from that instance.
+2. **Comment policy and allowed repos** decide which inbound events create work.
+3. **Role defaults and policy posture** decide what outbound GitHub operations an agent should be allowed to perform once it is working.
+
+This separation matters. An agent being assigned to the GitHub plugin does not automatically mean it should be able to act broadly across every repository workflow.
 
 ## Configure comment policy
 
@@ -101,7 +108,26 @@ The `commentPolicy` setting controls which issue comments trigger the agent:
 | `'all'`      | Every new comment on an issue triggers a run.                                     |
 | `'mentions'` | Only comments that include the mention handle (default `@nitejar`) trigger a run. |
 
-Set this in the plugin instance config. The default mention handle is `@nitejar`. Change it with the `mentionHandle` field if your bot uses a different GitHub username.
+Set this in the plugin instance config. The default mention handle is `@nitejar`.
+
+## Configure role-based GitHub repo defaults
+
+GitHub repo capabilities are modeled as reusable defaults through **Company > Roles**. Use roles when multiple agents should share the same outbound GitHub posture.
+
+Typical capabilities include:
+
+- read repository contents
+- create or push branches
+- open PRs
+- comment on issues and PRs
+- request review, review PRs, apply labels, or merge
+
+Use role defaults when you want consistency across a team of agents. Use per-agent configuration when one agent should diverge from the role's usual posture.
+
+<Callout type="info" title="Where to verify">
+  Open **Company > Roles** to inspect reusable GitHub repo defaults, then open **Agents > [agent]**
+  to confirm which roles and plugin assignments a specific agent carries.
+</Callout>
 
 ## What events does the plugin handle?
 
@@ -115,15 +141,17 @@ Set this in the plugin instance config. The default mention handle is `@nitejar`
 
 Two additional config flags control event processing:
 
-- **`trackIssueOpen`** (default: `true`) — set to `false` to ignore new/reopened issues.
-- **`trackCheckRun`** (default: `true`) — set to `false` to ignore CI check completions.
+- **`trackIssueOpen`** (default: `true`) -- set to `false` to ignore new or reopened issues
+- **`trackCheckRun`** (default: `true`) -- set to `false` to ignore CI check completions
+
+Inbound handling creates work. Outbound GitHub actions during a run still depend on the agent's granted posture and repo capabilities.
 
 ## Test it
 
 1. Go to a repo where the app is installed.
 2. Create a new issue with a title like "Test Nitejar" and mention the bot in the body: `@nitejar what can you do?`
 3. Wait for the agent to process the work item and post a response comment.
-4. Open **Activity** in Nitejar. You should see the work item with a full receipt trail: webhook received, work item created, run dispatched, inference calls, response delivered.
+4. Open **Command Center** first to see whether the event created an attention item, then open **Activity**. You should see the work item with a full receipt trail.
 
 If using the `mentions` comment policy, make sure the mention handle matches the bot's GitHub username.
 
@@ -131,8 +159,8 @@ If using the `mentions` comment policy, make sure the mention handle matches the
 
 ### Webhook not delivering
 
-- Verify the webhook URL is correct and publicly reachable. For local dev, use a tunnel like [ngrok](https://ngrok.com) or [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/).
-- Check the **Recent Deliveries** tab in your GitHub webhook settings. GitHub shows the request, response code, and body for each delivery attempt.
+- Verify the webhook URL is correct and publicly reachable.
+- Check the **Recent Deliveries** tab in your GitHub webhook settings.
 - Make sure the content type is set to `application/json`.
 
 ### 401 or signature mismatch
@@ -142,33 +170,28 @@ If using the `mentions` comment policy, make sure the mention handle matches the
 
 ### Bot not responding to comments
 
-- Check the `commentPolicy` setting. If set to `'mentions'`, the comment must include the `mentionHandle` (default `@nitejar`).
-- Confirm the repo is in `allowedRepos` (if that field is set).
+- Check the `commentPolicy` setting.
+- Confirm the repo is in `allowedRepos` if that field is set.
 - Verify the plugin instance has an agent assigned.
+- If the agent needs to take outbound repo actions, confirm the agent's role defaults and policy posture are broad enough for the required GitHub capability.
 
 ### Wrong permissions
 
-- The GitHub App must have **Issues: read & write** to post comments. Read-only access means the agent can process events but cannot respond.
+- The GitHub App must have **Issues: read & write** to post comments.
 - For check run monitoring, **Checks: read** is sufficient.
 
-### Bot responds to its own issues
-
-- The plugin ignores issues created by bots. If this is not working, confirm that the GitHub App's user type is recognized as a bot account by GitHub.
-
 ## Configuration reference
-
-All fields available in the plugin instance config:
 
 | Field            | Type                    | Description                                                              |
 | ---------------- | ----------------------- | ------------------------------------------------------------------------ |
 | `appId`          | `string`                | GitHub App ID.                                                           |
-| `appSlug`        | `string`                | GitHub App slug (URL-friendly name).                                     |
+| `appSlug`        | `string`                | GitHub App slug.                                                         |
 | `privateKey`     | `string`                | GitHub App private key (PEM format). Encrypted at rest.                  |
 | `clientId`       | `string`                | OAuth client ID.                                                         |
 | `clientSecret`   | `string`                | OAuth client secret. Encrypted at rest.                                  |
 | `webhookSecret`  | `string`                | Secret for verifying GitHub webhook signatures. Encrypted at rest.       |
-| `allowedRepos`   | `string[]`              | Optional repo allowlist (e.g., `["owner/repo"]`). Empty means all repos. |
+| `allowedRepos`   | `string[]`              | Optional repo allowlist. Empty means all repos.                          |
 | `commentPolicy`  | `'all'` \| `'mentions'` | Which comments trigger the agent.                                        |
 | `mentionHandle`  | `string`                | GitHub @mention that triggers the bot. Default: `@nitejar`.              |
-| `trackIssueOpen` | `boolean`               | Process new/reopened issues. Default: `true`.                            |
+| `trackIssueOpen` | `boolean`               | Process new or reopened issues. Default: `true`.                         |
 | `trackCheckRun`  | `boolean`               | Process CI check completions. Default: `true`.                           |

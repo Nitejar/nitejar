@@ -308,7 +308,7 @@ Each goal row should show:
 
 Each agent column or row should show:
 
-- primary team
+- team assignment
 - current goal count
 - open ticket count
 - overloaded flag
@@ -335,7 +335,7 @@ This is the company-level allocation view across individual agents.
 
 It should show:
 
-- primary team
+- team assignment
 - supported goals
 - owned tickets
 - capacity posture
@@ -413,7 +413,7 @@ Every team should surface:
 
 Every agent should surface:
 
-- primary team
+- team assignment
 - current goals
 - open tickets
 - blocked tickets
@@ -472,7 +472,7 @@ For each team:
 
 For each agent:
 
-- primary team
+- team assignment
 - goal ids
 - open tickets
 - blocked tickets

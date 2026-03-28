@@ -1,0 +1,76 @@
+---
+title: Work
+description: Manage goals, tickets, heartbeats, and queue movement without turning receipts into the main UI.
+---
+
+Work is the execution surface. It answers: *what is moving, what is blocked, and what needs to change in the queue?*
+
+The core model is:
+
+- **Goals** -- outcomes the team is trying to achieve
+- **Tickets** -- execution units attached to those outcomes
+- **Heartbeats** -- concise progress and risk updates that keep goals inspectable over time
+
+## Goals
+
+Goals are the durable management object. They carry ownership, status, progress, and health over time. Goals are where operators look for portfolio movement, stale work, and missing momentum.
+
+Use goals for:
+
+- multi-step outcomes
+- cross-ticket progress tracking
+- owner and health visibility
+- heartbeat summaries that explain trajectory, not just task churn
+
+## Tickets
+
+Tickets are the queue object. They are what gets assigned, claimed, updated, commented on, and pushed through status transitions.
+
+Use tickets for:
+
+- the concrete unit of execution
+- queue movement and prioritization
+- operator comments and follow-ups
+- triggering work to run now when the queue should not wait
+
+## Heartbeats
+
+Heartbeats are how Work stays legible at a glance. They summarize progress and risk without forcing you to read every raw receipt.
+
+A good heartbeat tells you:
+
+- what moved
+- what is blocked
+- what is likely next
+
+If you need the exact evidence behind that summary, jump to **Activity**.
+
+## Work vs Activity
+
+This distinction is important:
+
+- **Work** is the human operating surface for goals and tickets.
+- **Activity** is the backend receipt surface for work items, runs, tool calls, and deliveries.
+
+Operators should spend most of their time in Work. They should use Activity when something needs proof, debugging, or audit detail.
+
+## About work items
+
+Nitejar still uses **work items** internally as the receipt primitive created from incoming events. They are real and important, but they are not the main user-facing execution model anymore.
+
+In practice:
+
+- manage goals and tickets in **Work**
+- inspect work-item timelines in **Activity**
+
+## Typical operator loop
+
+1. Spot a problem in **Command Center**.
+2. Open **Work** to inspect the goal or ticket.
+3. Move status, assign work, post an update, or trigger a run.
+4. Open **Activity** only if you need the exact run or delivery receipts.
+
+<Callout type="info" title="Where to verify">
+  Open **Work** for goals, tickets, and heartbeat-driven execution state. Open **Activity** when you
+  need the underlying work-item and run receipts behind that state.
+</Callout>

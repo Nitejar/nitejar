@@ -93,7 +93,7 @@ cp apps/web/.env.example apps/web/.env   # set ENCRYPTION_KEY
 pnpm db:migrate && pnpm dev
 ```
 
-Same URL. Same dashboard.
+Same URL. Same app.
 
 ### Environment (source installs)
 
@@ -120,6 +120,7 @@ Everything below works today. Not a roadmap — click through and check.
 - Command Center for live attention: fleet metrics, hot queues, blocked work, and intervention posture
 - Company for structural portfolio management: board summary, saved views, staffing matrix, and team load
 - Work for goals, tickets, heartbeats, and queue movement without collapsing everything into sessions
+- Inbox for follow-up and human attention that should not get buried in raw activity noise
 - Per-agent, per-model cost ledger with budget limits — follow the money in Costs
 - Routines for scheduled and event-driven runs (cron, webhook triggers, on-event)
 - Full execution traces: spans, tool calls, inference calls, messages, errors — follow the breadcrumbs in Activity
@@ -144,10 +145,10 @@ Everything below works today. Not a roadmap — click through and check.
 
 ```
                   ┌────────────────────────────────────────────┐
-                  │                 Dashboard                   │
+                  │                    App                      │
                   │  Command Center · Company · Work · Agents   │
-                  │   Evals · Skills · Plugins · Costs          │
-                  │        Routines · Collections               │
+                  │   Inbox · Evals · Skills · Plugins          │
+                  │      Costs · Routines · Collections         │
                   └─────────────────────┬──────────────────────┘
                                         │
       ┌──────────────────┬──────────────────┬──────────────────┐
@@ -325,6 +326,17 @@ v1 ships LLM judge evaluators: you define rubrics with weighted criteria and 5-l
 The pipeline schema already supports `programmatic`, `statistical`, `safety`, and `custom` evaluator types. The execution logic ships as contributors build them.
 
 Scores, trends, and suggestions live in Evals and on each agent's detail page.
+
+## Product map
+
+The app is intentionally split into a few clear surfaces:
+
+- **Command Center** -- what needs attention now
+- **Company** -- structure, staffing, and role defaults
+- **Work** -- goals, tickets, and heartbeats
+- **Inbox** -- human follow-up queue
+- **Activity** -- receipts, traces, and delivery evidence
+- **Costs** -- spend and budget posture
 
 ## Development
 

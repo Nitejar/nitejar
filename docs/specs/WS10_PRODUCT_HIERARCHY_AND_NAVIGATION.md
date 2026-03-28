@@ -1,5 +1,7 @@
 # WS10: Product Hierarchy and Navigation
 
+> Historical planning note: this draft explored an `initiative` layer above goals. The current branch removed initiatives and keeps **goals** as the top stable execution layer. Read any remaining initiative references below as superseded exploration, not the current product model.
+
 ## Summary
 
 Nitejar now has enough primitives to feel dense.
@@ -70,7 +72,6 @@ Today, Nitejar has:
 
 What is missing from the product model:
 
-- initiatives above goals
 - visible goal trees
 - a first-class issue or sub-issue hierarchy
 - a clear distinction between planning objects and execution objects
@@ -250,7 +251,7 @@ The product should support:
 - org unit -> team
 - team lead
 - people managers when needed
-- agent primary team
+- agent team assignment
 - agent dotted-line team membership when needed
 
 The product should not start with:
@@ -263,27 +264,7 @@ The initial goal is legibility, not HR completeness.
 
 ## Work Hierarchy
 
-The work model needs one new stable layer above goals.
-
-### Missing Concept: Initiative
-
-An initiative is the container for coordinated company effort.
-
-An initiative should answer:
-
-- what major thing is this part of the company trying to accomplish?
-- what goals roll up into it?
-- which teams participate?
-- what is its health?
-
-Examples:
-
-- `Fix onboarding leakage`
-- `Shared inbox launch`
-- `Cost stability`
-- `Board operating cadence`
-
-Goals then become concrete outcomes inside initiatives.
+Historical note: this draft explored an initiative layer above goals. The current branch moved the other direction and removed initiatives, keeping **goals** as the top stable execution layer so the product stays simpler and more legible.
 
 ### Goal
 
@@ -292,8 +273,7 @@ A goal is an operational outcome.
 A goal should:
 
 - have a single clear owner
-- have a primary team
-- belong to an initiative
+- have an owning team or clear staffing context
 - roll down into tickets
 - optionally have child goals in rare cases
 
@@ -497,10 +477,10 @@ Purpose:
 
 Contains:
 
-- initiative -> goal hierarchy
+- goal hierarchy
 - health
 - owner
-- primary team
+- owning team
 - staffing state
 - progress and blocked load
 

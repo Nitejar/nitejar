@@ -1,17 +1,30 @@
 ---
-title: Receipts and Debugging
+title: Activity & Receipts
 description: Trace what happened, why it happened, and what it cost.
 ---
+
+Activity is the boring layer under the rest of the app. Command Center, Company, Work, and Inbox help you decide what matters. Activity proves what actually happened.
 
 When behavior surprises you, inspect artifacts in this order.
 
 ## Debug path
 
-1. **Activity timeline**: Did the webhook parse and dispatch correctly?
-2. **Run trace**: Which model calls and tool calls happened?
-3. **Delivery outcome**: Was the response delivered to the channel?
-4. **Cost breakdown**: Which step drove spend?
-5. **Plugin event logs**: Did the integration reject or retry?
+1. **Activity timeline** -- Did the webhook parse and dispatch correctly?
+2. **Run trace** -- Which model calls and tool calls happened?
+3. **Delivery outcome** -- Was the response delivered to the channel?
+4. **Cost breakdown** -- Which step drove spend?
+5. **Plugin event logs** -- Did the integration reject or retry?
+
+## What Activity is for
+
+Use Activity when you need:
+
+- the receipt trail behind a specific goal or ticket state change
+- the exact webhook payload that created a work item
+- run-level model calls, tool calls, and delivery outcomes
+- timestamps and costs that explain why the higher-level surfaces are saying something is stale, blocked, or expensive
+
+Use **Work** when you want to manage the goal or ticket itself. Use **Activity** when you need the proof.
 
 ## Fast triage checklist
 

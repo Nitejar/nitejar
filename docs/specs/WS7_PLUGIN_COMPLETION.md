@@ -4,6 +4,8 @@ Status: Design spec (no implementation)
 Audience: Core engineering
 Last updated: 2026-02-20
 
+> Historical implementation note: this spec predates the app-route cutover. References below to `admin UI`, `/admin/*`, and older component paths are legacy route names, not the current information architecture.
+
 ## 1. Current State Inventory
 
 ### 1.1 What is built and working
@@ -33,16 +35,16 @@ Last updated: 2026-02-20
 | Runtime posture service | `apps/web/server/services/plugins/runtime-posture.ts` | Complete. `resolvePluginTrustMode()`, `getPluginRuntimePosture()` with trust mode, execution mode, limitations, badge label. |
 | Manifest service | `apps/web/server/services/plugins/manifest.ts` | Complete. `parsePluginManifest()`, `buildDeclaredCapabilities()`, `capabilityKey()`, `hostEnforcedControls()`. |
 | tRPC plugins router | `apps/web/server/routers/plugins.ts` | Complete. `catalog`, `resolveSource`, `listPlugins`, `getPlugin`, `listPluginEvents`, `installPlugin`, `installFromUpload`, `enablePlugin`, `disablePlugin`, `deletePlugin`. Includes builtin manifest registration, source resolution (npm/github/local), hot-load on install/enable, unload on disable/delete. |
-| Admin UI: Plugin catalog page | `apps/web/app/admin/plugins/PluginCatalogClient.tsx` | Complete. Grid of installed plugin types + coming soon cards, links to type detail page. |
-| Admin UI: Custom plugins section | `apps/web/app/admin/plugins/CustomPluginsSection.tsx` | Complete. Lists non-builtin plugins with source kind, version, disclosure counts. |
-| Admin UI: Plugin type detail | `apps/web/app/admin/plugins/[type]/PluginTypeClient.tsx` | Complete. Shows handler metadata, links to instances, setup form. |
-| Admin UI: Plugin setup form | `apps/web/app/admin/plugins/[type]/PluginSetupForm.tsx` | Complete. Dynamic field rendering from `setupConfig`. |
-| Admin UI: Instance detail | `apps/web/app/admin/plugins/instances/[id]/InstanceDetailClient.tsx` | Complete. Instance config view, enable/disable, assigned agents. |
-| Admin UI: Custom plugin detail | `apps/web/app/admin/plugins/custom/[pluginId]/CustomPluginDetailClient.tsx` | Complete. Plugin metadata, permissions, versions, events timeline, enable/disable/delete. |
-| Admin UI: Install wizard | `apps/web/app/admin/plugins/install/PluginInstallWizard.tsx` | Complete. Source input (npm/github/local/upload), drag-and-drop tgz, preview with permissions, configure step, update confirmation. |
-| Admin UI: Permissions list | `apps/web/app/admin/plugins/components/PermissionsList.tsx` | Complete. Renders network/secrets/fs/spawn permissions with icons. |
-| Admin UI: Update confirmation | `apps/web/app/admin/plugins/components/UpdateConfirmationPanel.tsx` | Complete. Side-by-side comparison for updates. |
-| Admin UI: Dynamic fields | `apps/web/app/admin/plugins/components/DynamicFields.tsx` | Complete. Renders setup fields from schema. |
+| App UI: Plugin catalog page | `apps/web/app/admin/plugins/PluginCatalogClient.tsx` | Complete. Grid of installed plugin types + coming soon cards, links to type detail page. |
+| App UI: Custom plugins section | `apps/web/app/admin/plugins/CustomPluginsSection.tsx` | Complete. Lists non-builtin plugins with source kind, version, disclosure counts. |
+| App UI: Plugin type detail | `apps/web/app/admin/plugins/[type]/PluginTypeClient.tsx` | Complete. Shows handler metadata, links to instances, setup form. |
+| App UI: Plugin setup form | `apps/web/app/admin/plugins/[type]/PluginSetupForm.tsx` | Complete. Dynamic field rendering from `setupConfig`. |
+| App UI: Instance detail | `apps/web/app/admin/plugins/instances/[id]/InstanceDetailClient.tsx` | Complete. Instance config view, enable/disable, assigned agents. |
+| App UI: Custom plugin detail | `apps/web/app/admin/plugins/custom/[pluginId]/CustomPluginDetailClient.tsx` | Complete. Plugin metadata, permissions, versions, events timeline, enable/disable/delete. |
+| App UI: Install wizard | `apps/web/app/admin/plugins/install/PluginInstallWizard.tsx` | Complete. Source input (npm/github/local/upload), drag-and-drop tgz, preview with permissions, configure step, update confirmation. |
+| App UI: Permissions list | `apps/web/app/admin/plugins/components/PermissionsList.tsx` | Complete. Renders network/secrets/fs/spawn permissions with icons. |
+| App UI: Update confirmation | `apps/web/app/admin/plugins/components/UpdateConfirmationPanel.tsx` | Complete. Side-by-side comparison for updates. |
+| App UI: Dynamic fields | `apps/web/app/admin/plugins/components/DynamicFields.tsx` | Complete. Renders setup fields from schema. |
 | Upload endpoint | `apps/web/app/api/admin/plugins/upload/` | Complete. Tgz upload to in-memory cache, returns preview token. |
 | `create-nitejar-plugin` scaffolding | `packages/create-nitejar-plugin/src/index.ts` | Complete. Generates package.json, tsconfig, nitejar-plugin.json manifest, handler skeleton, gitignore. |
 | Example plugin | `plugins/nitejar-plugin-webhook/` | Complete. Working webhook handler with tests. |
@@ -330,7 +332,7 @@ interface PluginExport {
 
 ### 3.1 npm install path (working)
 
-User clicks "Install Plugin" in admin UI (`/admin/plugins/install`).
+User clicks "Install Plugin" in the app (`/admin/plugins/install`).
 
 1. User pastes npm package name or URL into source input.
 2. UI calls `trpc.plugins.resolveSource` which hits npm registry for metadata (version, description, nitejar config).
@@ -506,7 +508,7 @@ interface CrashGuard {
 2. Prune entries older than window.
 3. If count >= threshold: call `setPluginEnabled(pluginId, false)` and create a `plugin_events` row with `kind: 'auto_disable'`, `status: 'error'`, detail explaining the crash loop.
 4. On success: clear the ring buffer for that plugin.
-5. Re-enable: operator manually re-enables via admin UI. The ring buffer resets on enable.
+5. Re-enable: operator manually re-enables via the app. The ring buffer resets on enable.
 
 ### 6.3 Where to instrument
 
@@ -520,7 +522,7 @@ interface CrashGuard {
 
 ### 7.1 What exists
 
-The admin UI has a complete install/configure/enable/disable/delete flow for both builtin and custom plugins:
+The app UI has a complete install/configure/enable/disable/delete flow for both builtin and custom plugins:
 
 - `/admin/plugins` - Catalog grid with builtin types (Telegram, GitHub) and custom plugins section.
 - `/admin/plugins/install` - Full install wizard with npm/github/local/upload source resolution.
@@ -640,7 +642,7 @@ __fixtures__/
 
 5. **Engine compatibility check.** DEFERRED for v1. The manifest has `engine.nitejar` semver range and `engine.node` range. Neither is checked during install. Enforcement is future work. When implemented, a `SLOPBOT_VERSION` constant in `packages/plugin-runtime/src/version.ts` (synced from the root `package.json`) would provide the comparison target.
 
-6. **Upgrade notification.** RESOLVED for v1. Manual upgrades only — operator re-installs via the admin UI. "Check for updates" button (calling `npm view <package> version` for npm-sourced plugins) is future work.
+6. **Upgrade notification.** RESOLVED for v1. Manual upgrades only — operator re-installs via the app. "Check for updates" button (calling `npm view <package> version` for npm-sourced plugins) is future work.
 
 7. **Hook handler hot-reload.** DEFERRED. Must be addressed before the upgrade flow ships, but not blocking initial hook implementation. When a plugin is upgraded, `PluginLoader.unloadPlugin()` must call `hookRegistry.unregister(pluginId)` and the new version's hooks must be re-registered during `loadPlugin()`.
 

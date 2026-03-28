@@ -1,7 +1,7 @@
-# tRPC (Admin UI)
+# tRPC (App UI)
 
-We use tRPC for admin UI data flows. Prefer adding procedures here instead of
-creating new ad-hoc API routes for admin pages.
+We use tRPC for app UI data flows. Prefer adding procedures here instead of
+creating new ad-hoc API routes for app pages.
 
 ## Locations
 
@@ -10,7 +10,7 @@ creating new ad-hoc API routes for admin pages.
 - App router: `apps/web/server/routers/_app.ts`
 - API route: `apps/web/app/api/trpc/[trpc]/route.ts`
 - Client setup: `apps/web/lib/trpc.ts`
-- Provider: `apps/web/app/admin/Providers.tsx`
+- Provider: `apps/web/app/(app)/Providers.tsx`
 
 ## Add a new procedure
 
@@ -20,5 +20,5 @@ creating new ad-hoc API routes for admin pages.
 
 ## Notes
 
-- Admin UI uses React Query via tRPC.
+- The app uses React Query via tRPC.
 - Keep input validation in the router (zod).

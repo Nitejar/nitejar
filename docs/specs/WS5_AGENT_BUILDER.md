@@ -4,13 +4,15 @@ Status: Draft
 Audience: Core engineering, product, community
 Last updated: 2026-02-20
 
+> Historical implementation note: this draft was written before the current top-level app route structure. References below to `admin UI` and `/admin/*` routes are legacy path names for what is now the app-level `Agents` surface.
+
 ---
 
 ## 1. Overview
 
 ### What the Agent Builder is
 
-Nitejar has full agent CRUD in the admin UI today: identity (name, handle, emoji, avatar), soul/personality (markdown editor), model configuration, memory settings, session tuning, network policy, cost limits, sandbox catalog, and plugin instance assignments. All of this lives across separate section-based forms on the agent detail page (`/admin/agents/[id]`). The create flow (`/admin/agents/new`) only captures identity and team assignment, then redirects to the detail page where operators manually configure each section one at a time.
+Nitejar has full agent CRUD in the app today: identity (name, handle, emoji, avatar), soul/personality (markdown editor), model configuration, memory settings, session tuning, network policy, cost limits, sandbox catalog, and plugin instance assignments. All of this lives across separate section-based forms on the agent detail page. The quick-create flow only captures identity and team assignment, then redirects to the detail page where operators manually configure each section one at a time.
 
 The Agent Builder is a guided wizard that replaces the "create then configure" pattern with a single, step-by-step flow. An operator starts the wizard, walks through each configuration facet in order, optionally tests the agent in a live conversation, and saves a fully configured agent in one pass.
 

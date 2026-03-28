@@ -1,9 +1,9 @@
 ---
 title: Agents and Fleet
-description: Soul prompts, models, memory, sessions, tools, and network policy.
+description: Soul prompts, models, roles, memory, tools, and ownership.
 ---
 
-An agent is a configured AI entity: a model paired with a personality, a set of tools, and permissions. Each agent runs independently inside its own sandbox. You create agents in the app, give them a soul prompt that shapes their behavior, assign tools and skills, and point them at channels. From there, they handle work autonomously.
+An agent is a configured AI entity: a model paired with a personality, a set of tools, and permissions. Each agent runs independently inside its own sandbox. You create agents in the app, give them a soul prompt that shapes their behavior, assign roles, tools, and skills, and point them at channels. From there, they handle work autonomously.
 
 ## Soul prompts
 
@@ -20,6 +20,25 @@ Each agent uses a single model for inference. The default is `arcee-ai/trinity-l
 - Configurable per-agent in the app.
 - Any OpenRouter-compatible model works. Set the model identifier and the agent uses it on the next run.
 - Paid models (GPT-4o, Claude, etc.) work but can cause rate limit errors and unexpected costs during development. Stick with the free default unless you have a reason to switch.
+
+## Roles and ownership
+
+Roles are the reusable operating defaults for agents. They let you apply the same posture across multiple agents without rebuilding each configuration by hand.
+
+A role can shape:
+
+- queue mode and work posture
+- tool posture and access expectations
+- network defaults
+- reusable GitHub repo capability defaults
+
+This matters because the app now separates structure from execution:
+
+- **Company** is where you think about teams, staffing, and reusable role defaults.
+- **Agents** is where you inspect one specific agent's soul, model, memory, tools, and overrides.
+- **Work** is where you inspect the goals and tickets that agent is helping move.
+
+Use roles when you want consistency. Use per-agent settings when one operator needs to diverge.
 
 ## Memory
 
@@ -41,33 +60,34 @@ Same session key means same conversation. The agent sees the full thread history
 
 ## Tools
 
-Agents have access to 46+ built-in tools across these categories:
+Agents have access to built-in tools across these categories:
 
 - **Execution** -- Run shell commands, scripts, and code in the sandbox.
-- **Filesystem** -- Read, write, list, and search files.
-- **Memory** -- Add, update, and remove memories.
-- **Collections** -- Store and retrieve structured data.
-- **Web** -- HTTP requests, web scraping, search.
-- **Scheduling** -- Create and manage scheduled tasks.
-- **Sandboxes** -- Manage the agent's execution environment.
-- **Activity** -- Query work item history and run logs.
+- **Filesystem** -- Read, write, list, and edit files.
+- **Memory & collections** -- Store durable knowledge and structured data.
+- **Web & media** -- Search, extract pages, and use enabled media capabilities.
+- **Work** -- Search goals and tickets, post updates, assign ownership, and move queue state.
+- **Teams & policy** -- Inspect teams, roles, and policy posture.
+- **Activity & receipts** -- Query activity history and inspect prior runs.
 - **Credentials** -- Access stored secrets needed for external services.
 
 Tools run inside the agent's sandbox. Plugins can contribute additional tools that extend the built-in set.
 
-See the [Tools Reference](/use/tools) for the full list with parameters and examples.
+See the [Tools Reference](/use/tools) for the full list with parameters and scope notes.
 
 ## Queue modes
 
 Queue modes control how an agent handles messages that arrive while it is already running.
 
-- **steer** (default) -- New messages are injected into the running agent's context. The agent can change course mid-execution based on the new input. Best for interactive conversations where responsiveness matters.
-- **collect** -- Messages accumulate in a buffer. When the current run finishes, the agent processes the batch together. Good for high-volume channels where you want consolidated responses.
-- **followup** -- Messages are queued strictly. The agent processes one message at a time, in order. Use this when ordering matters or when each message needs a dedicated run.
+- **steer** (default) -- New messages are injected into the running agent's context. The agent can change course mid-execution based on the new input.
+- **collect** -- Messages accumulate in a buffer. When the current run finishes, the agent processes the batch together.
+- **followup** -- Messages are queued strictly. The agent processes one message at a time, in order.
+
+Queue mode is often best managed through a role when several agents should share the same operating posture.
 
 ## Multi-agent collaboration
 
-Multiple agents can share the same channel. They triage messages independently, claim exclusive turns, and silently pass when a message isn't relevant — no routing rules required. See [Agent Collaboration](/use/agent-collaboration) for the full guide on how agents work together.
+Multiple agents can share the same channel. They triage messages independently, claim exclusive turns, and silently pass when a message is not relevant. See [Agent Collaboration](/use/agent-collaboration) for the full guide on how agents work together.
 
 ## Network policy
 
@@ -88,7 +108,7 @@ Every agent can have a cost budget configured in the app. Costs are tracked per-
 See [Costs & Budgets](/use/costs-and-budgets) for configuration details and cost tracking.
 
 <Callout type="info" title="Where to verify">
-  Open **Agents** to see all configured agents. Click into any agent to inspect its soul prompt,
-  model, memory, tools, skills, queue mode, network policy, and budget. The agent detail page is the
-  single source of truth for an agent's full configuration.
+  Open **Agents** to inspect one agent's soul, model, memory, tools, queue mode, network policy,
+  role assignments, and budget. Open **Company** when the question is about structure, staffing, or
+  reusable role defaults instead of a single agent.
 </Callout>

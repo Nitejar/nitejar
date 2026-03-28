@@ -5,6 +5,11 @@ description: Connect channels that feed work into your fleet.
 
 Integrations are how Nitejar receives events and sends responses.
 
+There are two distinct layers to keep straight:
+
+- **Plugin assignment** decides which agents are connected to the channel.
+- **Agent policy and role defaults** decide what those agents are allowed to do once they receive work.
+
 ## Available setup guides
 
 - **[Telegram Setup](/use/integrations/telegram-setup)**
@@ -12,7 +17,7 @@ Integrations are how Nitejar receives events and sends responses.
 - **[Slack Setup](/use/integrations/slack-setup)**
 - **[Webhook Setup](/use/integrations/webhook-setup)**
 
-Choose a channel, assign agents, and verify delivery in Activity.
+Choose a channel, assign agents, configure the relevant policy, and verify delivery in Activity.
 
 <Callout type="info" title="Where to verify">
   Open **Plugins** for instance configuration and webhook health. Open **Activity** for run

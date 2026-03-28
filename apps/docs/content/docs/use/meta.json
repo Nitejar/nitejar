@@ -2,6 +2,10 @@
   "title": "Use Nitejar",
   "pages": [
     "index",
+    "command-center",
+    "company",
+    "work",
+    "inbox",
     "how-nitejar-works",
     "agents-and-fleet",
     "agent-collaboration",

@@ -23,7 +23,7 @@ Date: 2026-02-21
 | Read/search | `notion_search(query, filter=page|data_source)`; `notion_get_page(page_id)`; `notion_get_block_children(block_id)` | `slack_get_thread(channel, thread_ts)` via `conversations.replies`; optional `slack_get_channel_history(channel, cursor)` |
 | Write | `notion_create_page(parent,data)`; `notion_update_page(page_id,properties)`; `notion_append_blocks(block_id,children)` | `slack_post_message(channel,text,thread_ts?)`; optional `slack_update_message(channel,ts,text)` |
 | Structured data | `notion_query_data_source(data_source_id,filter,sort,cursor)` | Optional for MVP |
-| Inbound events | Optional in MVP; parse Notion webhook events into work items | Required in MVP; parse Slack events/mentions/messages into work items |
+| Inbound events | Optional in MVP; parse Notion webhook events into work-item receipts | Required in MVP; parse Slack events/mentions/messages into work-item receipts |
 | Agent response mode | `final` (Notion is document-first, not chat-first) | `streaming` default for chat UX; allow `final` toggle per instance |
 
 ## 4) Webhook/event options
@@ -59,8 +59,8 @@ Date: 2026-02-21
 - Add integration providers in `~/Projects/nitejar/nitejar/packages/agent/src/integrations/notion.ts` and `~/Projects/nitejar/nitejar/packages/agent/src/integrations/slack.ts` to contribute tool definitions/handlers and source-specific prompt sections.
 - Import/self-register new providers in `~/Projects/nitejar/nitejar/packages/agent/src/runner.ts` (same pattern used for GitHub/Telegram).
 - Add typed config parsers + encrypted secret handling (pattern from GitHub config helpers) for tokens, signing secrets, app-level tokens, OAuth client creds, and webhook secret(s).
-- Use setup wizard metadata (`setupConfig`) in handler definitions so Admin UI can render instance forms without custom UI work.
-- For OAuth callback UX, mirror GitHub callback flow with provider-specific callback page(s) under `~/Projects/nitejar/nitejar/apps/web/app/admin/plugins/<provider>/callback/` and tRPC exchange endpoints.
+- Use setup wizard metadata (`setupConfig`) in handler definitions so the app can render instance forms without custom UI work.
+- For OAuth callback UX, mirror GitHub callback flow with provider-specific callback page(s) under `~/Projects/nitejar/nitejar/apps/web/app/(app)/plugins/<provider>/callback/` and tRPC exchange endpoints.
 - Normalize inbound actor/session mapping in `parseWebhook`: Slack should key sessions by channel+thread; Notion should key by page/data-source context + actor.
 - Set default response modes by channel ergonomics: Slack `streaming`, Notion `final`.
 

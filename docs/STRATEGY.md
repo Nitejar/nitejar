@@ -17,7 +17,7 @@ Nitejar is an open-core platform for running these agents. The bet is:
 1. **Durable > ephemeral.** An agent that remembers what it did yesterday, knows the codebase, and has opinions about how to work is dramatically more useful than one that starts fresh every invocation.
 2. **Company metaphor > swarm metaphor.** Agents organized like a small company (roles, coordination, shared context, individual identity) will outperform undifferentiated swarms. Humans already know how to manage teams. Agents should fit that mental model.
 3. **Autonomy requires trust infrastructure.** Before agents can operate independently, there must be systems for scheduling, outcome tracking, audit trails, and human override. Autonomy without accountability is a liability.
-4. **Agent-native by default.** Every capability built into the platform should be accessible to agents, not just humans. If a human can configure an agent through the admin UI, the agent should be able to inspect and adjust that same config through its own tools. If a human tests an integration manually, there should be an agent-accessible way to do the same thing. This is a design constraint, not a nice-to-have: an agent that can't observe, test, or configure its own platform will always depend on a human bottleneck, and "autonomous" becomes a lie. The corollary: humans and agents should be able to collaborate on agent configuration through the same channels they already communicate on (Telegram, GitHub), not just through separate admin interfaces.
+4. **Agent-native by default.** Every capability built into the platform should be accessible to agents, not just humans. If a human can configure an agent through the app, the agent should be able to inspect and adjust that same config through its own tools. If a human tests an integration manually, there should be an agent-accessible way to do the same thing. This is a design constraint, not a nice-to-have: an agent that can't observe, test, or configure its own platform will always depend on a human bottleneck, and "autonomous" becomes a lie. The corollary: humans and agents should be able to collaborate on agent configuration through the same channels they already communicate on (Telegram, GitHub), not just through separate interfaces.
 5. **Open-core wins the developer layer.** The platform for running agents should be open, self-hostable, and extensible. The hosted multi-tenant version is a business built on top of a community.
 
 ---
@@ -95,7 +95,7 @@ Related to agent topology: external platforms (GitHub, Telegram, Slack) aren't d
 
 ### Open-core boundary
 
-**Open:** Core platform, agent runtime, tool framework, integrations, admin UI, single-tenant deployment.
+**Open:** Core platform, agent runtime, tool framework, integrations, app UI, single-tenant deployment.
 
 **Closed (SaaS):** Multi-tenant RBAC, billing, managed sprite infrastructure, advanced audit/compliance, SSO, SLAs.
 
@@ -212,9 +212,9 @@ How the system's capabilities build on each other. Lower layers enable higher on
 - Feedback loop is partial — agent gets CI notifications but doesn't yet track outcomes structurally
 - Memory is basic — no structured learning from outcomes
 - Heartbeats/cron scheduling — the `recurrence` column exists but isn't processed yet
-- No MCP server — admin UI is the only way to inspect/configure agents; no IDE or programmatic access
+- No MCP server — the app is still the main way to inspect or configure agents; no IDE or programmatic access
 - Platform testing requires human interaction (e.g., Telegram can only be tested by a person chatting)
-- Human and agent operate through separate interfaces (admin UI vs tools) with limited overlap
+- Human and agent operate through separate interfaces (app vs tools) with limited overlap
 - 1:1 agent:sprite assumption — can't run a team agent with parallel workspaces
 - Agent state partially lives in sprite filesystem — not fully portable to new sprites
 - Integration identity is shared (one GitHub App, one Telegram bot) — no per-agent external identity
@@ -267,13 +267,13 @@ Start lightweight. The full system can be layered on later once we understand wh
 
 **Includes:** Usage logging (tokens in/out per model call), cost estimation, per-agent cost dashboards, prompt caching, model selection per task type, budget caps/alerts.
 
-**Done so far:** `inference_calls` table with per-call logging (job, agent, turn, model, tokens in/out, estimated cost, tool calls, finish reason, duration, fallback flag). Model pricing map for cost estimation. Per-agent and global cost aggregation queries. tRPC router with summary, trend, per-agent, per-source, and top-expensive-jobs endpoints. Global costs dashboard page (`/admin/costs`) with stat cards, daily trend chart, spend-by-agent and spend-by-source bar charts, top expensive jobs table, and all-agents budget limits view. Per-agent cost section on agent detail page with source breakdown, daily trend, and cost limit management (add/delete limits). Cost limit enforcement in the inference loop — checks before each model call, warns the agent at 100% of budget, hard-stops at 150%.
+**Done so far:** `inference_calls` table with per-call logging (job, agent, turn, model, tokens in/out, estimated cost, tool calls, finish reason, duration, fallback flag). Model pricing map for cost estimation. Per-agent and global cost aggregation queries. tRPC router with summary, trend, per-agent, per-source, and top-expensive-jobs endpoints. Global costs surface with stat cards, daily trend chart, spend-by-agent and spend-by-source bar charts, top expensive jobs table, and all-agents budget limits view. Per-agent cost section on agent detail page with source breakdown, daily trend, and cost limit management (add/delete limits). Cost limit enforcement in the inference loop — checks before each model call, warns the agent at 100% of budget, hard-stops at 150%.
 
 **Smallest next step:** Prompt caching. Add `anthropic-beta: prompt-caching-2024-07-31` header and cache control breakpoints to the system prompt in the inference loop. Immediate cost savings for Anthropic models.
 
 **After that:**
 - Per-agent model configuration (cheap model for heartbeats, capable model for complex coding).
-- Cost attribution by task type (scheduled check vs. human request vs. CI reaction) — the data is there (`source` field on work items), just needs a dashboard view.
+- Cost attribution by task type (scheduled check vs. human request vs. CI reaction) — the data is there (`source` field on work items), just needs a clearer ledger view.
 - OpenRouter cost pass-through — use `x-openrouter-cost` header from responses for exact pricing instead of estimated pricing map.
 
 ### Theme 4: Security & trust (Layer 4)
@@ -282,7 +282,7 @@ Start lightweight. The full system can be layered on later once we understand wh
 
 **Includes:** Prompt injection defense, output filtering, exfiltration prevention, tool permission profiles, sandboxing, admin auth.
 
-**Smallest next step:** Add basic auth to the admin UI. Even just a shared secret/password. Prevents anyone with the URL from controlling your agents.
+**Smallest next step:** Add basic auth to the app. Even just a shared secret/password. Prevents anyone with the URL from controlling your agents.
 
 **After that:** Tool permission profiles (read-only vs full access) — this also enables safer heartbeats (Theme 1).
 
@@ -298,25 +298,25 @@ Start lightweight. The full system can be layered on later once we understand wh
 
 **Why:** If the agent can't inspect, test, or configure its own platform, a human is always the bottleneck. Every feature we build with only a human interface is a feature the agent can't use autonomously. This isn't a separate layer — it's a design discipline that applies to every other theme.
 
-**Includes:** Agent self-configuration tools (read/update own config, model, heartbeat settings), platform introspection (health, status, integration state), test harnesses agents can trigger (simulated webhooks, test messages), collaborative config editing through existing channels (Telegram/GitHub), agent-accessible equivalents of admin UI actions.
+**Includes:** Agent self-configuration tools (read/update own config, model, heartbeat settings), platform introspection (health, status, integration state), test harnesses agents can trigger (simulated webhooks, test messages), collaborative config editing through existing channels (Telegram/GitHub), agent-accessible equivalents of app actions.
 
 **How it applies to other themes:**
 - **Theme 1 (close the loop):** Agent needs tools to read its own schedule, but also to inspect its own heartbeat config and adjust it based on what it learns.
 - **Theme 2 (deploy):** Agent should eventually be able to trigger its own deployment or at least inspect deployment status.
 - **Theme 4 (security):** Tool permission profiles need to account for self-configuration (agent can change its own settings but not other agents').
-- **Theme 5 (integrations):** Every new integration should have both a human setup path (admin UI) and an agent-accessible surface (tools or API).
+- **Theme 5 (integrations):** Every new integration should have both a human setup path (app UI) and an agent-accessible surface (tools or API).
 
 **Done so far:** `get_self_config` tool — agent can read its own handle, model, integration count, memory count, sprite, and status. Establishes the pattern that the agent can see its own platform state.
 
 **The MCP server idea:** Instead of building agent-native tools one at a time, expose nitejar's core APIs as an MCP server. This would let any MCP client (Claude Code, other agents, custom tools) interact with live agent config, memories, schedules, and jobs:
 
 - `get_agent_config` / `update_agent_config` — edit agent soul, model, session settings live from your IDE
-- `list_memories` / `add_memory` / `search_memories` — manage agent knowledge without opening admin UI
+- `list_memories` / `add_memory` / `search_memories` — manage agent knowledge without opening the app
 - `list_jobs` / `get_job_log` — inspect what the agent did and how
 - `list_scheduled_items` / `create_scheduled_item` — manage the agent's schedule
 - `get_sprite_status` — check sandbox health
 
-This bridges the admin UI / developer workflow gap. Instead of switching to a browser to tweak agent config, you do it from your editor. It also dogfoods the "agent-native" principle — the same MCP tools that a human uses from Claude Code could eventually be consumed by other agents.
+This bridges the app / developer workflow gap. Instead of switching to a browser to tweak agent config, you do it from your editor. It also dogfoods the "agent-native" principle — the same MCP tools that a human uses from Claude Code could eventually be consumed by other agents.
 
 **Smallest next step:** Build a minimal MCP server exposing read-only endpoints first (`get_agent_config`, `list_memories`, `list_jobs`). This is useful immediately for development and establishes the pattern. Write access comes after, gated by the trust/security story from Theme 4.
 
@@ -381,8 +381,8 @@ The high-leverage work falls into two buckets: making the agent smarter/more cap
 **Recently completed:**
 
 - **Cost tracking (Theme 3).** Full implementation: `inference_calls` table, model pricing, per-turn logging, cost aggregation, global costs dashboard, per-agent cost section with charts, budget limits with enforcement in the inference loop. The agent now has cost visibility — next step is giving the agent access to its own cost data via tools.
-- **Execution tracing.** `spans` table with hierarchical trace capture (job → turn → model_call → tool_exec). TraceView component for post-hoc debugging of agent runs in the admin UI. Moves "session visualization" from the parking lot to shipped.
-- **Admin UI refresh.** Activity feed homepage, nav restructured (Activity/Agents/Costs/Settings), work items → Event Log, collapsible details, cost/token metrics throughout.
+- **Execution tracing.** `spans` table with hierarchical trace capture (job → turn → model_call → tool_exec). TraceView component for post-hoc debugging of agent runs in the app.
+- **App refresh.** Surface hierarchy reworked around Command Center, Company, Work, Activity, and Costs, with richer receipts and cost visibility throughout.
 
 **Design discipline: Theme 6 (agent-native surfaces).** Still the lens to apply to everything. When building the web search tool, can the agent configure which search provider to use? Cost tracking is now built — can the agent see its own costs via a tool? Every feature gets asked: "can the agent use this too?"
 

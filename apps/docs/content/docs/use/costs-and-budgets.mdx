@@ -5,26 +5,31 @@ description: Cost tracking, budget limits, and the ledger.
 
 Nitejar tracks the cost of every inference call across every agent. Token counts, model pricing, and estimated spend are recorded automatically. You do not need an external billing system -- the app gives you a complete ledger.
 
+In the broader app model:
+
+- **Command Center** shows cost pressure as an attention signal.
+- **Costs** is the ledger and source of truth.
+
 ## How cost tracking works
 
 Every time an agent makes an inference call, Nitejar records:
 
-- **Prompt tokens** and **completion tokens** for the call.
-- **Estimated cost**, computed from the model's per-token pricing in the model catalog.
-- **Which agent** made the call and **which model** was used.
+- **Prompt tokens** and **completion tokens** for the call
+- **Estimated cost**, computed from the model's per-token pricing in the model catalog
+- **Which agent** made the call and **which model** was used
 
 Costs are computed at call time, not after the fact. The model catalog stores pricing per model, and the runtime multiplies token counts by those rates. If the catalog does not have pricing for a model, cost is recorded as zero.
 
-The ledger is the source of truth. Every dollar is traceable to a specific run, a specific inference call, and a specific agent. There is no aggregation without a receipt behind it.
+The ledger is the source of truth. Every dollar is traceable to a specific run, a specific inference call, and a specific agent.
 
 ## The cost ledger
 
 The cost ledger lives at **Costs**. It shows:
 
-- **Total spend** across all agents and models.
-- **Per-agent breakdown** -- how much each agent has spent, with trend charts.
-- **Per-model breakdown** -- which models are driving cost, ranked by total spend.
-- **Daily cost trend** -- a 30-day line chart of aggregate spend.
+- **Total spend** across all agents and models
+- **Per-agent breakdown** with trend charts
+- **Per-model breakdown**
+- **Daily cost trend**
 
 Each entry in the ledger links back to the work item and run that incurred the cost. You can drill from the top-level summary down to individual inference calls.
 
@@ -37,17 +42,18 @@ Each entry in the ledger links back to the work item and run that incurred the c
 
 Budget limits prevent runaway spend. You configure them per-agent from the agent's settings page.
 
-- **Period** -- Set the budget window: hourly, daily, or monthly.
-- **Limit (USD)** -- The maximum dollar amount the agent can spend per period.
-- **Soft threshold** -- A percentage of the limit that triggers a warning (visible in the Command Center dashboard). Default: 100%.
-- **Hard threshold** -- A percentage of the limit at which new runs are blocked. Default: 150%.
+- **Period** -- hourly, daily, or monthly
+- **Limit (USD)** -- the maximum dollar amount the agent can spend per period
+- **Soft threshold** -- a percentage of the limit that triggers a warning
+- **Hard threshold** -- a percentage of the limit at which new runs are blocked
 
 When an agent hits its hard budget threshold, new runs are refused until the period resets or you raise the limit. The agent is not killed mid-run -- it finishes its current work, but will not start new work until the budget clears.
 
 Budget limits can also be set at the org level from **Costs**, applying a global ceiling across all agents.
 
 <Callout type="info" title="Where to verify">
-Open **Agents > [agent]** and scroll to the **Inference Costs** section. Budget limits are displayed alongside current spend for the active period. You can add, edit, or remove limits directly from this panel.
+  Open **Agents > [agent]** and scroll to the **Inference Costs** section. Budget limits are
+  displayed alongside current spend for the active period.
 </Callout>
 
 ## Model cost comparison
@@ -60,31 +66,28 @@ Different models have wildly different price points. Choosing the right model pe
 | Mid-tier models (Llama, Mistral)      | $0.10 -- $0.50 / 1M tokens | Reasonable for higher-quality output without breaking the bank. |
 | Frontier models (GPT-4o, Claude)      | $2 -- $15 / 1M tokens      | Best quality, but costs add up fast with high-volume agents.    |
 
-The model catalog in **Settings > Gateway** shows per-token pricing for every model available to your instance. Check it before switching an agent to a paid model.
-
-For most agent use cases -- triage, routing, simple Q&A -- the free default works fine. Reserve paid models for agents where output quality directly matters (code review, customer-facing responses, complex reasoning).
+The model catalog in **Settings > Gateway** shows per-token pricing for every model available to your instance.
 
 ## Model call receipts
 
 Every inference call is recorded as a receipt. Each receipt includes:
 
-- **Model used** -- the exact model identifier.
-- **Prompt tokens** -- how many tokens went in.
-- **Completion tokens** -- how many tokens came back.
-- **Estimated cost** -- computed from the model catalog pricing.
-- **Latency** -- wall-clock time for the call.
-- **Tool call flag** -- whether the model invoked a tool as part of this call.
+- **Model used**
+- **Prompt tokens**
+- **Completion tokens**
+- **Estimated cost**
+- **Latency**
+- **Tool call flag**
 
-Receipts are visible in two places: the work item timeline (showing calls in context of the run) and the cost ledger (showing calls aggregated by agent and model).
+Receipts are visible in two places: the work item timeline and the cost ledger.
 
 <Callout type="info" title="Where to verify">
-Open **Activity > [work item]** to see the timeline of inference calls for a specific run. Each call shows token counts, cost, latency, and the model used. The same data rolls up into **Costs** at the aggregate level.
+  Open **Activity > [work item]** to see the timeline of inference calls for a specific run. The
+  same data rolls up into **Costs** at the aggregate level.
 </Callout>
 
 ## Cost at the run level
 
 Each work item tracks its own total cost. When you open a work item's detail page, the cost is shown alongside the run timeline, token counts, and tool calls.
 
-The **Command Center** dashboard aggregates cost data across all agents, giving you a single view of total spend, top-spending agents, and recent cost trends. This is the place to check when you want a quick health check on overall inference costs.
-
-No separate billing system is needed. All cost data lives in the app, computed from the receipts stored alongside every run.
+The **Command Center** surface summarizes cost pressure across the fleet, giving you a quick signal when spend is part of the current attention picture. Use it for posture. Use **Costs** for the actual ledger.

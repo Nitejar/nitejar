@@ -3,7 +3,15 @@ title: Quickstart
 description: Start Nitejar in one command, then inspect receipts and logs.
 ---
 
-Nitejar is a self-hosted AI agent runtime. It receives messages from channels (Telegram, GitHub, Slack, Discord, generic webhooks), routes them to configured agents, runs inference with tool access inside sandboxed environments, and delivers responses back to the source. Every action — inference calls, tool executions, response deliveries — is logged as an inspectable receipt.
+Nitejar is a self-hosted AI agent runtime. It receives messages from channels (Telegram, GitHub, Slack, Discord, generic webhooks), routes them to configured agents, runs inference with tool access inside sandboxed environments, and delivers responses back to the source.
+
+The app is organized around a few clear surfaces:
+
+- **Command Center** for urgent attention
+- **Company** for structure, staffing, and reusable role defaults
+- **Work** for goals, tickets, and heartbeats
+- **Activity** for receipts and run traces
+- **Costs** for the spend ledger
 
 ## One command
 
@@ -21,10 +29,10 @@ This does three things:
 
 By default, local state is stored at `~/.nitejar`:
 
-- `~/.nitejar/data/nitejar.db` — SQLite database
-- `~/.nitejar/config/env` — persisted runtime config
-- `~/.nitejar/logs/server.log` — server logs
-- `~/.nitejar/receipts/migrations/*.json` — migration receipts
+- `~/.nitejar/data/nitejar.db` -- SQLite database
+- `~/.nitejar/config/env` -- persisted runtime config
+- `~/.nitejar/logs/server.log` -- server logs
+- `~/.nitejar/receipts/migrations/*.json` -- migration receipts
 
 Open [localhost:3000](http://localhost:3000). You're running.
 
@@ -162,6 +170,16 @@ curl -X POST http://localhost:3000/api/webhooks/plugins/webhook/YOUR_INSTANCE_ID
 
 5. Check **Activity** to see the agent process your message and produce a response.
 
+## Learn the operating surfaces
+
+After your first message lands, walk the app in this order:
+
+1. **Command Center** -- confirm whether the system thinks anything needs attention.
+2. **Company** -- see how teams, roles, and ownership are modeled.
+3. **Work** -- inspect goals, tickets, and heartbeat-driven execution state.
+4. **Activity** -- inspect the exact receipts behind a single incoming event.
+5. **Costs** -- confirm spend and budget posture.
+
 ### Follow the receipts
 
 Every work item has a detail page showing:
@@ -181,10 +199,13 @@ This is the receipt trail. It is the source of truth for what the agent did and 
 
 ## Next steps
 
-- **[Configuration](/start-here/configuration)** — Full environment variable reference, model config, database options.
-- **[Your First Agent](/start-here/first-agent)** — Step-by-step guided walkthrough with receipts.
-- **[How Messages Flow](/use/how-nitejar-works)** — Understand the 7-step journey from webhook to response.
-- **[Agents](/use/agents-and-fleet)** — Soul prompts, models, tools, memory, and network policy.
+- **[Configuration](/start-here/configuration)** -- Full environment variable reference, model config, database options.
+- **[Your First Agent](/start-here/first-agent)** -- Step-by-step guided walkthrough with receipts.
+- **[Command Center](/use/command-center)** -- Learn the live attention surface.
+- **[Company](/use/company)** -- Learn the structure and staffing surface.
+- **[Work](/use/work)** -- Learn the goals, tickets, and heartbeat model.
+- **[How Messages Flow](/use/how-nitejar-works)** -- Understand the journey from webhook to receipts.
+- **[Agents](/use/agents-and-fleet)** -- Soul prompts, models, tools, memory, roles, and network policy.
 
 ## Verify Media Capabilities (In-App, No Telegram Required)
 

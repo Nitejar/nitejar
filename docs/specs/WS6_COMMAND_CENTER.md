@@ -1,5 +1,7 @@
 # WS6: Command Center Dashboard
 
+> Historical implementation note: this spec was written during the `/admin` route era. The surface role remains current, but route strings below are legacy. In the current app model, Command Center is the landing surface, Activity is the receipt surface, and the app uses top-level routes like `/`, `/activity`, `/agents`, `/costs`, and `/work-items`.
+
 ## Overview
 
 The Command Center is a fleet-level operational dashboard that shows the health, activity, and cost posture of the entire Nitejar agent fleet at a glance. It is the single page an operator opens to answer: "Is my fleet healthy right now, and do I need to intervene anywhere?"

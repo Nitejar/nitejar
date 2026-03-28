@@ -32,12 +32,14 @@ Either way, confirm you can reach [http://localhost:3000](http://localhost:3000)
 
 Navigate to [http://localhost:3000](http://localhost:3000).
 
-The sidebar is your home base. Here is what you will find:
+The sidebar is your home base. Here is the fast mental model:
 
-- **Agents** -- the AI agents you create and configure
+- **Command Center** -- urgent attention and intervention
+- **Company** -- structure, staffing, and role defaults
+- **Work** -- goals, tickets, and heartbeats
+- **Agents** -- individual agent configuration
 - **Plugins** -- channel integrations (Telegram, GitHub, webhooks)
-- **Skills** -- reusable workflows you can teach agents
-- **Activity** -- work items and run history
+- **Activity** -- receipt trails and run history
 - **Costs** -- token usage and spend tracking
 - **Settings** -- gateway config, encryption, and system options
 
@@ -92,7 +94,9 @@ You should get a JSON response back. Behind the scenes, Nitejar received your we
 
 ## 6. Watch it work
 
-Go to **Activity** in the sidebar. You should see a new work item at the top of the list.
+Start in **Command Center**. If the run produced something that needs operator attention, this is where you should notice it first.
+
+Then go to **Activity** in the sidebar. You should see a new work item at the top of the list.
 
 Click into it. The detail page shows you everything that happened:
 
@@ -112,21 +116,26 @@ Click into it. The detail page shows you everything that happened:
 The work item detail page is the receipt trail for a single interaction. Here is what each section shows:
 
 - **Timeline:** Every step in order, with timestamps. Webhook received, work item created, run dispatched, inference started, response generated, response delivered. You can see exactly when each step happened and how long it took.
-
-- **Inference calls:** Each call to the model is logged separately. You can see the model identifier, input token count, output token count, and the estimated cost. If the agent made multiple inference calls (for example, to use tools), each one appears as its own entry.
-
-- **Tool calls:** If the agent invoked any tools during its run, they are listed here with their inputs and outputs. This is how you verify the agent did what you expected, not just what it said.
-
-- **Response delivery:** The final response content and its delivery status. Did the response make it back to the channel? If delivery failed, the error is logged here.
+- **Inference calls:** Each call to the model is logged separately. You can see the model identifier, input token count, output token count, and the estimated cost.
+- **Tool calls:** If the agent invoked any tools during its run, they are listed here with their inputs and outputs.
+- **Response delivery:** The final response content and its delivery status.
 
 This is the core design principle: the UI can be playful, but the receipts are boring and deterministic. Every claim the agent makes about what it did is backed by an inspectable artifact.
 
-## 8. Next steps
+In day-to-day use, you usually move through the app like this:
 
-You have a working agent. Here is where to go from here:
+1. **Command Center** for attention
+2. **Work** for goals and tickets
+3. **Activity** for proof
+4. **Costs** for spend
+
+## 8. Next steps
 
 - **[Telegram Setup](/use/integrations/telegram-setup)** -- Connect a Telegram bot for real-time chat with your agent.
 - **[GitHub Setup](/use/integrations/github-setup)** -- Let your agent respond to issues and pull requests.
+- **[Command Center](/use/command-center)** -- Learn the live attention surface.
+- **[Company](/use/company)** -- Learn the structure and staffing surface.
+- **[Work](/use/work)** -- Learn the goals, tickets, and heartbeat model.
 - **[Skills](/use/skills)** -- Teach your agent reusable workflows that extend what it can do.
 - **[Tools Reference](/use/tools)** -- See the full set of tools available to agents during runs.
 - **[Costs & Budgets](/use/costs-and-budgets)** -- Track token usage and set spending limits so nothing surprises you.

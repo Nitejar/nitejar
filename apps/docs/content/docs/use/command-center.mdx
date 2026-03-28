@@ -1,0 +1,46 @@
+---
+title: Command Center
+description: The live attention view for urgent intervention across your fleet.
+---
+
+Command Center is the app's "what needs attention right now?" surface. It is not the place to manage every object in the system. It is the place to notice risk, confirm what's moving, and decide where to intervene next.
+
+## What belongs here
+
+- **Needs attention** -- blocked or stale work, budget pressure, and other signals that deserve operator eyes now.
+- **Active execution** -- which agents and queues are hot, what is currently running, and what is piling up.
+- **Recent posture** -- quick summaries of heartbeats, failures, cost pressure, and activity spikes.
+
+Command Center should help you answer three questions fast:
+
+1. What is on fire?
+2. What is moving normally?
+3. Which surface should I open next?
+
+## What does not belong here
+
+Command Center is intentionally not the source of truth for structure or detailed work management.
+
+- Use **[Company](/use/company)** for staffing, org structure, and role defaults.
+- Use **[Work](/use/work)** for goals, tickets, and heartbeats.
+- Use **[Activity & Receipts](/use/receipts-and-debugging)** when you need the boring evidence behind a single event.
+- Use **[Costs & Budgets](/use/costs-and-budgets)** when you need the full spend ledger instead of a warning signal.
+
+## Typical operator loop
+
+1. Open **Command Center** first.
+2. Spot the urgent item or weak signal.
+3. Jump to **Work** if you need to move a goal or ticket.
+4. Jump to **Company** if the problem is ownership, staffing, or role shape.
+5. Jump to **Activity** if you need the exact receipt trail.
+
+## Relationship to Activity
+
+Command Center is for deciding where to look. **Activity** is for proving what happened.
+
+That distinction matters. A "blocked ticket" badge in Command Center is an attention signal. The webhook payload, run trace, tool calls, and delivery status that explain *why* it blocked live in Activity.
+
+<Callout type="info" title="Where to verify">
+  Open **Command Center** for the live attention stack, then drill into **Work**, **Company**, or
+  **Activity** depending on whether the problem is execution, structure, or receipts.
+</Callout>

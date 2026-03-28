@@ -11,7 +11,9 @@ Current operator runtime shape:
 - `Command Center` is the attention-and-intervention surface.
 - `Company` is the structural portfolio, staffing, and management surface.
 - `Work` is the goals-and-tickets execution surface.
+- `Inbox` is the human follow-up and read-state surface.
 - `Agents` shows roster, capacity, ownership, and direct session launch.
+- `Activity` is the receipt and audit surface.
 
 ## Product principles
 
@@ -85,7 +87,7 @@ Current operator runtime shape:
 - **Agents** — multiple agents, each with a Sprite
 - **Sprites integration** — JS SDK, provisioning, `sprite exec` for tools
 - **Inference loop** — Claude API calls, tool routing, message persistence
-- **Admin dashboard** — manage integrations, agents, work items, jobs
+- **App UI** — manage integrations, agents, goals, tickets, receipts, and jobs
 - **Streaming** — SSE with in-memory buffer, DB replay on reconnect
 - **Secrets** — master key encryption for sensitive config
 - **Deployment** — Dockerfile runs anywhere (Fly, DO, Railway, VPS)
@@ -109,7 +111,7 @@ Current operator runtime shape:
 
 - **Memory system** — what agent remembers across sessions
 - **Learnings** — patterns, preferences discovered over time
-- **Personality/behavior** — human-configurable via admin UI
+- **Personality/behavior** — human-configurable via the app
 - **Context** — relevant history surfaced to agent during inference
 - **Admin UI** — view and edit agent soul
 
@@ -169,7 +171,7 @@ Current operator runtime shape:
 
 - **Notification rules** — per user/team: digest, escalations, approvals
 - **Channels** — email + Slack (initial)
-- **Subscriptions** — follow work items, repos, labels
+- **Subscriptions** — follow goals, tickets, repos, and labels
 - **Digest** — summarized updates on schedule
 
 **Exit criteria:**

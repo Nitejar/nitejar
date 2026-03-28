@@ -1,0 +1,56 @@
+---
+title: Company
+description: The structure and staffing surface for teams, roles, and portfolio shape.
+---
+
+Company is the structural management surface. It answers: *how is the company organized, who owns what, and where is coverage weak?*
+
+This is where Nitejar stops looking like a stream of runs and starts looking like an operating system for a team.
+
+## What belongs in Company
+
+- **Organization structure** -- teams, reporting shape, and how work is grouped.
+- **Staffing depth** -- where you have owners, where you have gaps, and where load is uneven.
+- **Portfolio structure** -- how goals are grouped and which teams or agents are carrying them.
+- **Roles** -- reusable defaults for access, tool posture, queue mode, network posture, and GitHub repo policy.
+
+## Roles and reusable policy
+
+Roles are not just labels. A role is a reusable policy bundle for how an agent should work.
+
+A role can define:
+
+- operational posture, like queue mode and tool posture
+- network defaults
+- reusable GitHub repo capability defaults
+- shared ownership expectations that should flow to multiple agents without reconfiguring each one by hand
+
+Use roles when you want consistency across multiple agents or teams. Use per-agent config when one specific agent needs to diverge.
+
+## Company vs Agents
+
+The distinction is deliberate:
+
+- **Company** shows structure, ownership, and staffing.
+- **Agents** shows the individual operator: soul, model, tools, memory, budget, and current assignments.
+
+If you are asking "who should own this?" or "why is this team thin?" you are in Company. If you are asking "what model is this agent running?" you are in Agents.
+
+## Company vs Work
+
+- **Company** is the management and structure view.
+- **Work** is the execution view.
+
+Company should tell you *where the weakness is*. Work should let you *move the work itself*.
+
+## Typical uses
+
+- audit whether important goals have owners
+- inspect which teams are overloaded or under-covered
+- adjust role defaults that should flow across multiple agents
+- trace a weak area from the company rollup into a specific goal, ticket, or agent
+
+<Callout type="info" title="Where to verify">
+  Open **Company** for structure, staffing, and role defaults. From there, drill into **Work** for
+  execution state, **Agents** for individual configuration, or **Activity** for the receipt trail.
+</Callout>

@@ -4,6 +4,8 @@ Status: Draft for implementation
 Audience: Core engineering, platform engineering, operator docs  
 Last updated: 2026-02-19
 
+> Historical implementation note: this draft predates the app-route cutover. References below to `admin UI`, `/admin/*`, and `/api/admin/*` are legacy route names for what is now the app-level Plugins surface and related API endpoints.
+
 ## 1. Problem Statement
 
 Nitejar currently has partial extensibility:
@@ -73,7 +75,7 @@ Operators run Nitejar from an official image:
 2. Mount durable `/app/data`.
 3. Set required env vars.
 4. Start container.
-5. Configure integrations and agents in admin UI.
+5. Configure integrations and agents in the app.
 
 Example:
 
@@ -718,7 +720,7 @@ Migration strategy:
 
 1. Failed plugin does not block app boot unless marked required.
 2. Plugin marked `error` with last error message.
-3. Startup warning in logs and admin UI.
+3. Startup warning in logs and the app.
 
 ### 21.2 Runtime failure safeguards
 
@@ -853,7 +855,7 @@ This is intentionally single-pass and integration-safe.
 ## 26. Example End-to-End Operator Flow
 
 1. Run Nitejar image with `/app/data` mounted.
-2. Open admin UI.
+2. Open the app.
 3. Install plugin from npm package.
 4. Review declared capabilities with in-process warning banner.
 5. Accept explicit consent and required grants.

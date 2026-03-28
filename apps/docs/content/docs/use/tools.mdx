@@ -1,121 +1,172 @@
 ---
 title: Tools
-description: All built-in tools available to Nitejar agents, organized by category.
+description: Built-in tools available to Nitejar agents, grouped by what operators expect them to do.
 ---
 
-Nitejar agents interact with the world through tools. Each tool is a discrete capability the agent can invoke during a run. Tools are registered by the platform and optionally by plugins. This page lists every built-in tool, grouped by category.
+Nitejar agents interact with the world through tools. Each tool is a discrete capability the agent can invoke during a run. Tools are registered by the platform and optionally by plugins.
+
+This page is organized by operator-facing purpose rather than by internal module names, because the important question is not "which file registered this?" but "what kind of work does this let an agent do?"
 
 <Callout type="info" title="Where to verify">
-Open **Agents > [agent]** to see which tools are enabled for a specific agent. Tools can be toggled per-agent. Disabled tools are hidden from the agent's system prompt and cannot be called.
+  Open **Agents > [agent]** to see which tools are enabled for a specific agent. Disabled tools are
+  hidden from the agent's prompt and cannot be called.
 </Callout>
 
-## Core Execution
+## Important scope rules
 
-| Tool     | Description                                                                                                         | Key Parameters                                                  |
-| -------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| **bash** | Execute bash commands in the agent's sandbox. Auto-includes CI environment variables and optional `~/.nitejar/env`. | `command` (required), `working_directory`, `timeout` (max 600s) |
+- Tool availability is not universal. Some tools are gated by agent configuration, role policy, credentials, feature flags, or granted platform access.
+- Plugin assignment and tool access are different things. A plugin can connect an agent to a channel without granting every possible outbound operation in that domain.
+- Some tools act on the agent's own state. Others inspect or manage broader fleet or platform objects. Treat those as policy-sensitive capabilities.
 
-## Filesystem
+## Execution & Filesystem
 
-| Tool                 | Description                                                                                                                                            | Key Parameters                                                                     |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| **read_file**        | Read file contents with line numbers. Supports partial reads for large files.                                                                          | `path` (required), `start_line`, `max_lines` (default 500)                         |
-| **write_file**       | Write content to a file. Creates the file and parent directories if they do not exist.                                                                 | `path` (required), `content` (required)                                            |
-| **list_directory**   | List directory contents with file type indicators.                                                                                                     | `path` (required)                                                                  |
-| **create_directory** | Create a directory, including parent directories as needed.                                                                                            | `path` (required)                                                                  |
-| **edit_file**        | Surgical string replacement within a file. Returns a unified diff of the change. `old_string` must be unique in the file unless `replace_all` is true. | `path` (required), `old_string` (required), `new_string` (required), `replace_all` |
+| Tool                 | Description                                                                                       | Key Parameters                              |
+| -------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| **bash**             | Execute shell commands in the agent's sandbox.                                                    | `command`, `working_directory`, `timeout`   |
+| **read_file**        | Read file contents with line numbers.                                                             | `path`, `start_line`, `max_lines`           |
+| **write_file**       | Write content to a file.                                                                          | `path`, `content`                           |
+| **list_directory**   | List directory contents with file type indicators.                                                | `path`                                      |
+| **create_directory** | Create a directory, including parents.                                                            | `path`                                      |
+| **edit_file**        | Perform surgical string replacement in a file.                                                    | `path`, `old_string`, `new_string`          |
+| **use_skill**        | Resolve a skill into its sandbox path and file listing.                                           | `name`                                      |
 
-## Memory
+## Services, Background Tasks, & Sandboxes
 
-| Tool              | Description                                                                                                                                | Key Parameters                                   |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
-| **add_memory**    | Store a long-term memory. Pinned memories persist indefinitely; unpinned memories may be evicted under pressure.                           | `content` (required), `pinned`                   |
-| **remove_memory** | Delete a memory by ID or by content matching.                                                                                              | `id` or `content`                                |
-| **update_memory** | Update or delete a memory with version-based concurrency control. Prevents lost-update conflicts when multiple runs touch the same memory. | `id` (required), `content`, `version` (required) |
+| Tool                         | Description                                                                 | Key Parameters              |
+| ---------------------------- | --------------------------------------------------------------------------- | --------------------------- |
+| **create_service**           | Create a managed long-running service inside the sandbox.                   | `name`, `command`, `http_port` |
+| **list_services**            | List services with status, PID, and uptime.                                 | --                          |
+| **manage_service**           | Start, stop, or delete a named service.                                     | `name`, `action`            |
+| **get_sprite_url**           | Return the public URL for routing traffic to the agent's sprite.            | --                          |
+| **start_background_task**    | Start a detached background task in the sandbox.                            | task payload                |
+| **check_background_task**    | Check progress or output for a background task.                             | `task_id`                   |
+| **list_background_tasks**    | List known background tasks.                                                | --                          |
+| **stop_background_task**     | Stop a background task.                                                     | `task_id`                   |
+| **list_sandboxes**           | List available sandboxes.                                                   | --                          |
+| **switch_sandbox**           | Switch the active sandbox.                                                  | `sandbox_id`                |
+| **create_ephemeral_sandbox** | Create a temporary isolated sandbox.                                        | --                          |
+| **delete_sandbox**           | Delete a sandbox and its contents.                                          | `sandbox_id`                |
 
-## Collections
+## Knowledge, Memory, & Collections
 
-Collections are shared, schema-defined data stores that agents can propose, query, and write to. Schemas require admin approval before use.
+| Tool                             | Description                                                   | Key Parameters           |
+| -------------------------------- | ------------------------------------------------------------- | ------------------------ |
+| **add_memory**                   | Store a long-term memory.                                     | `content`, `pinned`      |
+| **remove_memory**                | Delete a memory by ID or matching content.                    | `id` or `content`        |
+| **update_memory**                | Update a memory with concurrency protection.                  | `id`, `content`, `version` |
+| **define_collection**            | Propose a new collection schema.                              | `name`, `fields`         |
+| **collection_list_reviews**      | List pending collection reviews.                              | review filters           |
+| **collection_review_schema**     | Approve or reject a proposed collection schema.               | review payload           |
+| **collection_update_permission** | Update collection access posture.                             | permission payload       |
+| **collection_update_schema**     | Evolve an existing collection schema.                         | schema payload           |
+| **collection_describe**          | Inspect a collection definition and its fields.               | `collection`             |
+| **collection_query**             | Query rows by metadata filters and sort order.                | `collection`, `filters`  |
+| **collection_search**            | Full-text search across collection content.                   | `collection`, `query`    |
+| **collection_get**               | Get a single row by ID.                                       | `collection`, `id`       |
+| **collection_insert**            | Insert rows into a collection.                                | `collection`, `rows`     |
+| **collection_upsert**            | Upsert rows into a collection.                                | `collection`, `rows`     |
 
-| Tool                  | Description                                                                                  | Key Parameters                                                                                                      |
-| --------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **define_collection** | Propose a new collection schema. Requires admin review before the collection becomes active. | `name` (required), `fields` (required). Field types: `string`, `number`, `boolean`, `datetime`, `enum`, `longtext`. |
-| **collection_query**  | Query rows by metadata filters and sort order. Returns a maximum of 100 rows per call.       | `collection` (required), `filters`, `sort`, `limit`                                                                 |
-| **collection_search** | Full-text search across `longtext` content in a collection.                                  | `collection` (required), `query` (required)                                                                         |
-| **collection_read**   | Get a single row by ID, with optional field projections to limit returned data.              | `collection` (required), `id` (required), `fields`                                                                  |
-| **collection_write**  | Insert or upsert rows into a collection.                                                     | `collection` (required), `rows` (required), `upsert`                                                                |
+## Scheduling & Routines
 
-## Scheduling
+| Tool                 | Description                                       | Key Parameters           |
+| -------------------- | ------------------------------------------------- | ------------------------ |
+| **schedule_check**   | Schedule a deferred check-in for the current agent. | `minutes`, `context`   |
+| **list_schedule**    | List pending scheduled items for the current agent. | --                     |
+| **cancel_scheduled** | Cancel a pending scheduled item.                  | `id`                     |
+| **create_routine**   | Create a recurring automated run.                 | routine payload          |
+| **list_routines**    | List routines visible to the agent.               | filters                  |
+| **get_routine**      | Inspect one routine.                              | routine id               |
+| **update_routine**   | Update routine configuration.                     | routine id and fields    |
+| **pause_routine**    | Pause a routine.                                  | routine id               |
+| **delete_routine**   | Delete a routine.                                 | routine id               |
+| **run_routine_now**  | Trigger a routine immediately.                    | routine id               |
 
-| Tool                 | Description                                                                                            | Key Parameters                                      |
-| -------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------- |
-| **schedule_check**   | Schedule a deferred check-in. The agent will be woken at the scheduled time with the provided context. | `minutes` (required, 1--1440), `context` (required) |
-| **list_schedule**    | List all pending scheduled items for the current agent.                                                | --                                                  |
-| **cancel_scheduled** | Cancel a pending scheduled item.                                                                       | `id` (required)                                     |
+## Research, Web, & Media
 
-## Services
+| Tool                    | Description                                         | Key Parameters           |
+| ----------------------- | --------------------------------------------------- | ------------------------ |
+| **web_search**          | Search the web and return ranked results.           | `query`, `time_range`, `domains` |
+| **extract_url**         | Extract one or more URLs as markdown.               | `urls`, `chunk`          |
+| **generate_image**      | Create images when image generation is enabled.     | image prompt payload     |
+| **transcribe_audio**    | Transcribe audio when speech-to-text is enabled.    | audio input payload      |
+| **synthesize_speech**   | Generate audio when text-to-speech is enabled.      | speech payload           |
+| **download_attachment** | Download and inspect inbound attachments.           | `attachment_id`          |
 
-Agents can create and manage long-running background services inside their sandbox. Services auto-restart on crash and can expose HTTP ports through the sprite URL.
+## Work Management
 
-| Tool               | Description                                                                                                          | Key Parameters                                                    |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| **create_service** | Create a managed long-running service. Supports `http_port` for routing HTTP traffic through the agent's sprite URL. | `name` (required), `command` (required), `http_port`              |
-| **list_services**  | List services with their status, PID, and uptime.                                                                    | --                                                                |
-| **manage_service** | Start, stop, or delete a service by name.                                                                            | `name` (required), `action` (required: `start`, `stop`, `delete`) |
-| **get_sprite_url** | Get the public URL for routing traffic to the agent's sprite. Used to expose service endpoints.                      | --                                                                |
+| Tool                    | Description                                               | Key Parameters         |
+| ----------------------- | --------------------------------------------------------- | ---------------------- |
+| **search_goals**        | Search goals by status, owner, health, or text.           | goal filters           |
+| **search_tickets**      | Search tickets by status, owner, or text.                 | ticket filters         |
+| **get_ticket**          | Inspect one ticket in detail.                             | ticket id              |
+| **claim_ticket**        | Claim a ticket for the current agent.                     | ticket id              |
+| **assign_ticket**       | Assign a ticket.                                          | ticket id and assignee |
+| **update_ticket**       | Update ticket status or other mutable fields.             | ticket payload         |
+| **post_ticket_comment** | Add a comment to a ticket.                                | ticket id and comment  |
+| **post_work_update**    | Post a work update or heartbeat-style progress note.      | goal/ticket payload    |
+| **link_ticket_receipt** | Attach a receipt or reference back to a ticket.           | ticket id and receipt  |
+| **run_ticket_now**      | Trigger immediate execution for a ticket.                 | ticket id              |
+| **create_goal**         | Create a new goal.                                        | goal payload           |
+| **delete_goal**         | Delete a goal.                                            | goal id                |
+| **create_ticket**       | Create a new ticket.                                      | ticket payload         |
+| **delete_ticket**       | Delete a ticket.                                          | ticket id              |
 
-## Web
+## Teams, Roles, & Policy
 
-| Tool            | Description                                                                                    | Key Parameters                              |
-| --------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| **web_search**  | Search the web. Returns top results with titles, URLs, and snippets.                           | `query` (required), `time_range`, `domains` |
-| **extract_url** | Extract content from one or more URLs as markdown. Supports semantic chunking for large pages. | `urls` (required, max 20), `chunk`          |
+| Tool                       | Description                                             | Key Parameters        |
+| -------------------------- | ------------------------------------------------------- | --------------------- |
+| **list_teams**             | List teams visible to the agent.                        | filters               |
+| **get_team**               | Inspect a team.                                         | team id               |
+| **create_team**            | Create a team when policy allows.                       | team payload          |
+| **update_team**            | Update a team.                                          | team id and fields    |
+| **delete_team**            | Delete a team.                                          | team id               |
+| **list_roles**             | List roles visible to the agent.                        | filters               |
+| **get_role**               | Inspect one role.                                       | role id               |
+| **create_role**            | Create a role.                                          | role payload          |
+| **update_role**            | Update a role.                                          | role id and fields    |
+| **delete_role**            | Delete a role.                                          | role id               |
+| **assign_role**            | Assign a role to an agent or team target.               | assignment payload    |
+| **unassign_role**          | Remove a role assignment.                               | assignment payload    |
+| **get_self_policy**        | Inspect the current agent's effective policy posture.   | --                    |
+| **refresh_network_policy** | Refresh sandbox egress policy after config changes.     | --                    |
 
-## Sandboxes
+## Platform Control & Self-Inspection
 
-Each agent runs in an isolated sandbox. These tools let the agent manage multiple sandboxes for parallel workstreams.
+| Tool                                    | Description                                      | Key Parameters      |
+| --------------------------------------- | ------------------------------------------------ | ------------------- |
+| **get_self_config**                     | Inspect the current agent's own configuration.   | --                  |
+| **list_agents**                         | List agents visible to the caller.               | filters             |
+| **get_agent_config**                    | Inspect another agent's configuration.           | agent id            |
+| **get_agent_soul**                      | Read an agent's soul prompt.                     | agent id            |
+| **create_agent**                        | Create an agent when policy allows.              | agent payload       |
+| **set_agent_status**                    | Change agent status.                             | agent id and status |
+| **delete_agent**                        | Delete an agent.                                 | agent id            |
+| **update_agent_config**                 | Update agent configuration.                      | agent id and config |
+| **update_agent_soul**                   | Update an agent soul prompt.                     | agent id and content |
+| **list_plugin_instances**               | List plugin instances.                           | filters             |
+| **get_plugin_instance**                 | Inspect one plugin instance.                     | plugin instance id  |
+| **set_plugin_instance_agent_assignment** | Attach or detach an agent from a plugin instance. | assignment payload |
 
-| Tool                         | Description                                                                  | Key Parameters          |
-| ---------------------------- | ---------------------------------------------------------------------------- | ----------------------- |
-| **list_sandboxes**           | List available sandboxes with status and staleness indicators.               | --                      |
-| **switch_sandbox**           | Switch the active sandbox. Resets shell state but preserves filesystem.      | `sandbox_id` (required) |
-| **create_ephemeral_sandbox** | Create a temporary isolated sandbox. Automatically cleaned up after the run. | --                      |
-| **delete_sandbox**           | Delete a sandbox and its contents.                                           | `sandbox_id` (required) |
+## Credentials & GitHub Auth
 
-## Activity
+| Tool                             | Description                                                                                                      | Key Parameters      |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------- |
+| **list_credentials**             | List credentials visible to the agent.                                                                          | filters             |
+| **secure_http_request**          | Make an authenticated HTTP request using stored credentials.                                                    | request payload     |
+| **configure_github_credentials** | Mint a short-lived GitHub App installation token and configure sandbox Git auth for an allowed repository.      | `repo_name`, `duration` |
 
-| Tool               | Description                                                                                                   | Key Parameters                                      |
-| ------------------ | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| **query_activity** | Search the cross-agent activity log. Uses semantic embedding for similarity search across all agent activity. | `query` (required), `agent_id`, `status`, `max_age` |
+## Activity, Receipts, & Run History
 
-## Credentials
-
-| Tool                             | Description                                                                                                                          | Key Parameters                             |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
-| **configure_github_credentials** | Mint a short-lived GitHub App installation token and configure `GH_TOKEN`/`GITHUB_TOKEN` plus git credential helper in the sandbox.  | `repo_name`, `duration`                    |
-| **credentials**                  | Manage stored API credentials. Backed by an encrypted vault with scoped access -- agents can only read credentials assigned to them. | `action` (required: `get`, `list`), `name` |
-
-## Routines
-
-| Tool         | Description                                                             | Key Parameters                                                                                    |
-| ------------ | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| **routines** | Create and manage recurring automated runs using cron-based scheduling. | `action` (required: `create`, `list`, `update`, `delete`), `schedule` (cron expression), `prompt` |
-
-## Other
-
-| Tool                       | Description                                                                                                               | Key Parameters                                 |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| **refresh_network_policy** | Update the sandbox's network access policies. Used after admin changes to allowed domains or egress rules.                | --                                             |
-| **get_self_config**        | Retrieve the agent's own configuration, including name, model, soul, and assigned tools.                                  | --                                             |
-| **run_todo**               | Execute todo list management within a run.                                                                                | `action` (required), `items`                   |
-| **background_tasks**       | Manage background processes running in the sandbox.                                                                       | `action` (required: `list`, `kill`), `task_id` |
-| **attachments**            | Download and handle message attachments from inbound messages.                                                            | `attachment_id` (required)                     |
-| **run_history**            | Access past run execution history for the current agent.                                                                  | `limit`, `offset`                              |
-| **use_skill**              | Look up a skill by name and get its sandbox path and file listing. The agent then uses `read_file` to load skill content. | `name` (required)                              |
+| Tool               | Description                                                   | Key Parameters              |
+| ------------------ | ------------------------------------------------------------- | --------------------------- |
+| **query_activity** | Search the cross-agent activity log.                          | `query`, `agent_id`, `status`, `max_age` |
+| **list_runs**      | List prior runs visible to the current agent.                 | run filters and pagination  |
+| **get_run**        | Inspect one prior run in detail.                              | run id plus detail options  |
+| **run_todo**       | Manage the run-local todo list used during agent execution.   | `action`, `items`           |
 
 ## Plugin-contributed tools
 
-Plugins can contribute additional tools through the `PluginProvider` interface. When a plugin registers a provider, its tools appear alongside the built-in tools in the agent's system prompt and in the admin tools list.
+Plugins can contribute additional tools through the `PluginProvider` interface. When a plugin registers a provider, its tools appear alongside the built-in tools in the agent's prompt and in the app's tools list.
 
 ```ts
 export default definePlugin({
@@ -137,6 +188,6 @@ export default definePlugin({
 })
 ```
 
-Plugin tools follow the same enable/disable rules as built-in tools. They are toggled per-agent from **Agents > [agent]**.
+Plugin tools follow the same enable or disable rules as built-in tools. They are toggled per-agent from **Agents > [agent]**.
 
 For details on building plugins, see the [Plugin SDK documentation](/build/plugins).
