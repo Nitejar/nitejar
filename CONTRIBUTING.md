@@ -50,7 +50,7 @@ pnpm format
 
 ## Release Notes and Changelogs (Changesets)
 
-We use [Changesets](https://github.com/changesets/changesets) to generate consistent package changelogs and version bumps.
+We use hangesets](https://github.com/changesets/changesets) to generate consistent package changelogs and version bumps.
 
 ### When to add a changeset
 
@@ -101,14 +101,28 @@ After that, `npm publish --provenance` in GitHub Actions works using the workflo
 ## Project Structure
 
 - `apps/` - Application packages
-  - `web/` - Next.js web application
+  - `web/` - Next.js 15 admin UI, webhook API, tRPC server
+  - `docs/` - Documentation site (Fumadocs)
+  - `marketing/` - Marketing site (nitejar.dev)
 - `packages/` - Shared packages
+  - `nitejar-cli/` - CLI entry point (`npx @nitejar/cli up`)
+  - `agent/` - Agent engine (tools, memory, skill resolver)
+  - `database/` - Kysely ORM, migrations, 50+ tables
   - `core/` - Core types and interfaces
   - `config/` - Configuration utilities
+  - `plugin-sdk/` - Public SDK for third-party plugins
+  - `plugin-runtime/` - Plugin loader, hook dispatcher, crash guard
+  - `plugin-handlers/` - Built-in handlers (Telegram, GitHub, Discord, Webhook)
   - `connectors-github/` - GitHub integration
-  - `runner-sandbox/` - Runner implementation
+  - `connectors-slack/` - Slack integration
+  - `runner-sandbox/` - Sandbox execution runtime
+  - `sprites/` - Sandbox orchestration via Fly.io Machines
+  - `create-nitejar-plugin/` - `npx create-nitejar-plugin` scaffolding
+  - `integration-tests/` - Integration test suite
   - `typescript-config/` - Shared TypeScript configurations
   - `eslint-config/` - Shared ESLint configurations
+- `plugins/` - Example plugins
+  - `nitejar-plugin-webhook/` - Working webhook plugin example
 
 ## Submitting Changes
 
