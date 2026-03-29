@@ -7,7 +7,9 @@ const isPostgres =
 const defaultTimestamp = isPostgres ? sql`extract(epoch from now())::integer` : sql`(unixepoch())`
 
 export async function up(db: Kysely<unknown>): Promise<void> {
-  await db.schema
+  const typedDb = db as Kysely<any>
+
+  await typedDb.schema
     .createTable('queue_lanes')
     .ifNotExists()
     .addColumn('queue_key', 'text', (col) => col.primaryKey())
@@ -31,7 +33,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     .addColumn('updated_at', 'integer', (col) => col.notNull().defaultTo(defaultTimestamp))
     .execute()
 
-  await db.schema
+  await typedDb.schema
     .createTable('run_dispatches')
     .ifNotExists()
     .addColumn('id', 'text', (col) => col.primaryKey())
@@ -74,7 +76,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     .addColumn('updated_at', 'integer', (col) => col.notNull().defaultTo(defaultTimestamp))
     .execute()
 
-  await db.schema
+  await typedDb.schema
     .createTable('queue_messages')
     .ifNotExists()
     .addColumn('id', 'text', (col) => col.primaryKey())
@@ -97,7 +99,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     .addColumn('created_at', 'integer', (col) => col.notNull().defaultTo(defaultTimestamp))
     .execute()
 
-  await db.schema
+  await typedDb.schema
     .createTable('effect_outbox')
     .ifNotExists()
     .addColumn('id', 'text', (col) => col.primaryKey())
@@ -132,7 +134,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     .addColumn('updated_at', 'integer', (col) => col.notNull().defaultTo(defaultTimestamp))
     .execute()
 
-  await db.schema
+  await typedDb.schema
     .createTable('runtime_control')
     .ifNotExists()
     .addColumn('id', 'text', (col) => col.primaryKey())
@@ -145,7 +147,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     .addColumn('updated_at', 'integer', (col) => col.notNull().defaultTo(defaultTimestamp))
     .execute()
 
-  await db
+  await typedDb
     .insertInto('runtime_control')
     .values({
       id: 'default',
@@ -160,56 +162,56 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     .onConflict((oc) => oc.column('id').doNothing())
     .execute()
 
-  await db.schema
+  await typedDb.schema
     .createIndex('idx_queue_lanes_claim')
     .ifNotExists()
     .on('queue_lanes')
     .columns(['state', 'is_paused', 'debounce_until', 'queue_key'])
     .execute()
 
-  await db.schema
+  await typedDb.schema
     .createIndex('idx_queue_messages_pending')
     .ifNotExists()
     .on('queue_messages')
     .columns(['queue_key', 'status', 'arrived_at', 'id'])
     .execute()
 
-  await db.schema
+  await typedDb.schema
     .createIndex('idx_run_dispatches_claim')
     .ifNotExists()
     .on('run_dispatches')
     .columns(['status', 'scheduled_at', 'id'])
     .execute()
 
-  await db.schema
+  await typedDb.schema
     .createIndex('idx_run_dispatches_queue_status')
     .ifNotExists()
     .on('run_dispatches')
     .columns(['queue_key', 'status', 'scheduled_at', 'id'])
     .execute()
 
-  await db.schema
+  await typedDb.schema
     .createIndex('idx_run_dispatches_job')
     .ifNotExists()
     .on('run_dispatches')
     .column('job_id')
     .execute()
 
-  await db.schema
+  await typedDb.schema
     .createIndex('idx_effect_outbox_claim')
     .ifNotExists()
     .on('effect_outbox')
     .columns(['status', 'next_attempt_at', 'created_at', 'id'])
     .execute()
 
-  await db.schema
+  await typedDb.schema
     .createIndex('idx_effect_outbox_dispatch')
     .ifNotExists()
     .on('effect_outbox')
     .column('dispatch_id')
     .execute()
 
-  await db.schema
+  await typedDb.schema
     .createIndex('idx_effect_outbox_work_item')
     .ifNotExists()
     .on('effect_outbox')

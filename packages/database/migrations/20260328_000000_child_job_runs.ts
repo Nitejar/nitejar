@@ -1,48 +1,50 @@
 import { Kysely } from 'kysely'
 
 export async function up(db: Kysely<unknown>): Promise<void> {
+  const typedDb = db as Kysely<any>
+
   await addColumnIfNotExists('parent_job_id', () =>
-    db.schema
+    typedDb.schema
       .alterTable('jobs')
       .addColumn('parent_job_id', 'text', (col) => col.references('jobs.id').onDelete('set null'))
       .execute()
   )
   await addColumnIfNotExists('root_job_id', () =>
-    db.schema
+    typedDb.schema
       .alterTable('jobs')
       .addColumn('root_job_id', 'text', (col) => col.references('jobs.id').onDelete('set null'))
       .execute()
   )
   await addColumnIfNotExists('run_kind', () =>
-    db.schema
+    typedDb.schema
       .alterTable('jobs')
       .addColumn('run_kind', 'text', (col) => col.notNull().defaultTo('primary'))
       .execute()
   )
   await addColumnIfNotExists('origin_tool_name', () =>
-    db.schema.alterTable('jobs').addColumn('origin_tool_name', 'text').execute()
+    typedDb.schema.alterTable('jobs').addColumn('origin_tool_name', 'text').execute()
   )
 
-  await db.schema
+  await typedDb.schema
     .createIndex('idx_jobs_parent')
     .ifNotExists()
     .on('jobs')
     .column('parent_job_id')
     .execute()
-  await db.schema
+  await typedDb.schema
     .createIndex('idx_jobs_root')
     .ifNotExists()
     .on('jobs')
     .column('root_job_id')
     .execute()
-  await db.schema
+  await typedDb.schema
     .createIndex('idx_jobs_run_kind')
     .ifNotExists()
     .on('jobs')
     .column('run_kind')
     .execute()
 
-  await db
+  await typedDb
     .updateTable('jobs')
     .set((eb) => ({
       root_job_id: eb.ref('id'),
@@ -52,13 +54,15 @@ export async function up(db: Kysely<unknown>): Promise<void> {
 }
 
 export async function down(db: Kysely<unknown>): Promise<void> {
-  await db.schema.dropIndex('idx_jobs_parent').ifExists().execute()
-  await db.schema.dropIndex('idx_jobs_root').ifExists().execute()
-  await db.schema.dropIndex('idx_jobs_run_kind').ifExists().execute()
-  await db.schema.alterTable('jobs').dropColumn('origin_tool_name').execute()
-  await db.schema.alterTable('jobs').dropColumn('run_kind').execute()
-  await db.schema.alterTable('jobs').dropColumn('root_job_id').execute()
-  await db.schema.alterTable('jobs').dropColumn('parent_job_id').execute()
+  const typedDb = db as Kysely<any>
+
+  await typedDb.schema.dropIndex('idx_jobs_parent').ifExists().execute()
+  await typedDb.schema.dropIndex('idx_jobs_root').ifExists().execute()
+  await typedDb.schema.dropIndex('idx_jobs_run_kind').ifExists().execute()
+  await typedDb.schema.alterTable('jobs').dropColumn('origin_tool_name').execute()
+  await typedDb.schema.alterTable('jobs').dropColumn('run_kind').execute()
+  await typedDb.schema.alterTable('jobs').dropColumn('root_job_id').execute()
+  await typedDb.schema.alterTable('jobs').dropColumn('parent_job_id').execute()
 }
 
 async function addColumnIfNotExists(

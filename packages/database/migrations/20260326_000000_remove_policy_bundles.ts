@@ -1,5 +1,5 @@
 import { type Kysely, sql } from 'kysely'
-import { FULL_ACCESS_POLICY_GRANTS } from '../src/policy-grants'
+import { FULL_ACCESS_POLICY_GRANTS } from '../src/policy-grants.js'
 
 /**
  * Remove the policy_bundles abstraction. Move grants and defaults to live

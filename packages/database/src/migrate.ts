@@ -66,14 +66,21 @@ export async function runMigrations(): Promise<void> {
 
   try {
     const baseDir = path.dirname(fileURLToPath(import.meta.url))
-    const migrationFolderCandidates = [
-      // In the repo checkout, prefer source migrations because the compiled
-      // dist folder may only contain a subset of files.
-      path.join(baseDir, '../../migrations'),
-      // In packaged/runtime contexts, source files may be absent, so fall back
-      // to compiled migration artifacts.
-      path.join(baseDir, '../migrations'),
-    ]
+    const isDistRuntime = path.basename(path.dirname(baseDir)) === 'dist'
+    const migrationFolderCandidates = isDistRuntime
+      ? [
+          // Dist/runtime entrypoints need compiled migration artifacts.
+          path.join(baseDir, '../migrations'),
+          path.join(baseDir, '../../migrations'),
+        ]
+      : [
+          // In the repo checkout, prefer source migrations because the compiled
+          // dist folder may only contain a subset of files.
+          path.join(baseDir, '../../migrations'),
+          // In packaged/runtime contexts, source files may be absent, so fall back
+          // to compiled migration artifacts.
+          path.join(baseDir, '../migrations'),
+        ]
     const migrationFolder = migrationFolderCandidates.find((candidate) => existsSync(candidate))
 
     if (!migrationFolder) {

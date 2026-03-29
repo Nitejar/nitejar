@@ -4,6 +4,6 @@
     "outDir": "dist",
     "rootDir": "."
   },
-  "include": ["src", "scripts/manual"],
+  "include": ["src", "scripts/manual", "migrations"],
   "exclude": ["node_modules", "dist", "__tests__"]
 }

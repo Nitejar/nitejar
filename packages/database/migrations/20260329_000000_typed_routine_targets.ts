@@ -35,6 +35,10 @@ function inferTarget(input: {
     const contextKind = typedMatch[1]
     const contextId = typedMatch[2]
 
+    if (!contextKind || !contextId) {
+      return null
+    }
+
     if (contextKind === 'ticket') {
       return { kind: 'app_ticket', ticketId: contextId, sessionMode: 'fresh' }
     }

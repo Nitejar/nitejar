@@ -9,8 +9,10 @@ import { Kysely } from 'kysely'
  * - config.title = role/job description (e.g., "Sr Eng")
  */
 export async function up(db: Kysely<unknown>): Promise<void> {
+  const typedDb = db as Kysely<any>
+
   // Add handle column
-  await db.schema.alterTable('agents').addColumn('handle', 'text').execute()
+  await typedDb.schema.alterTable('agents').addColumn('handle', 'text').execute()
 
   const normalizeHandle = (value: string | null | undefined, fallback: string): string => {
     const slug = (value ?? '')
@@ -23,7 +25,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     return slug || fallback
   }
 
-  const agents = await db
+  const agents = await typedDb
     .selectFrom('agents')
     .select(['id', 'name', 'handle'])
     .orderBy('created_at', 'asc')
@@ -44,12 +46,12 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     usedHandles.add(handle)
 
     if (agent.handle !== handle) {
-      await db.updateTable('agents').set({ handle }).where('id', '=', agent.id).execute()
+      await typedDb.updateTable('agents').set({ handle }).where('id', '=', agent.id).execute()
     }
   }
 
   // Create unique index on handle
-  await db.schema
+  await typedDb.schema
     .createIndex('idx_agents_handle')
     .ifNotExists()
     .on('agents')
@@ -59,7 +61,9 @@ export async function up(db: Kysely<unknown>): Promise<void> {
 }
 
 export async function down(db: Kysely<unknown>): Promise<void> {
-  await db.schema.dropIndex('idx_agents_handle').ifExists().execute()
+  const typedDb = db as Kysely<any>
 
-  await db.schema.alterTable('agents').dropColumn('handle').execute()
+  await typedDb.schema.dropIndex('idx_agents_handle').ifExists().execute()
+
+  await typedDb.schema.alterTable('agents').dropColumn('handle').execute()
 }

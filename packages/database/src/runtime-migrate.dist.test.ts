@@ -17,6 +17,15 @@ const BetterSqlite3 = require('better-sqlite3') as new (path: string) => {
 }
 
 const tempDirs: string[] = []
+const isCoverageRun =
+  process.env.npm_lifecycle_event === 'test:coverage' || process.argv.includes('--coverage')
+const describeRuntimeMigrateDist = isCoverageRun ? describe.skip : describe
+
+function createChildEnv(overrides: Record<string, string | undefined> = {}): NodeJS.ProcessEnv {
+  const env = { ...process.env, ...overrides }
+  delete env.NODE_V8_COVERAGE
+  return env
+}
 
 afterAll(() => {
   for (const dir of tempDirs.splice(0)) {
@@ -24,13 +33,14 @@ afterAll(() => {
   }
 })
 
-describe('runtime-migrate dist executable', () => {
+describeRuntimeMigrateDist('runtime-migrate dist executable', () => {
   it('runs dist/src/runtime-migrate.js against sqlite and writes receipt', () => {
     const currentDir = path.dirname(fileURLToPath(import.meta.url))
     const repoRoot = path.resolve(currentDir, '..', '..', '..')
     const build = spawnSync('pnpm', ['--filter', '@nitejar/database', 'build'], {
       cwd: repoRoot,
       encoding: 'utf8',
+      env: createChildEnv(),
     })
 
     expect(build.status, build.stderr || build.stdout).toBe(0)
@@ -44,12 +54,11 @@ describe('runtime-migrate dist executable', () => {
     const run = spawnSync('node', ['packages/database/dist/src/runtime-migrate.js'], {
       cwd: repoRoot,
       encoding: 'utf8',
-      env: {
-        ...process.env,
+      env: createChildEnv({
         DATABASE_URL: dbPath,
         MIGRATION_RECEIPT_PATH: receiptPath,
         NITEJAR_AUTO_CUTOVER: '0',
-      },
+      }),
     })
 
     expect(run.status, run.stderr || run.stdout).toBe(0)
