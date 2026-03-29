@@ -1,5 +1,12 @@
 # @nitejar/integration-tests
 
+## 0.0.2
+
+### Patch Changes
+
+- Updated dependencies [[`efa992b`](https://github.com/Nitejar/nitejar/commit/efa992b53fbcae1164d145dabcb34a9b20bdce46)]:
+  - @nitejar/agent@0.2.0
+
 ## 0.0.1
 
 ### Patch Changes
