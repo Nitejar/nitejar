@@ -231,6 +231,7 @@ These are default behavior rules for multi-agent conversations across plugin-bac
 - **Remove legacy cruft** - delete obsolete routes, docs, configs, and code when iterating
 - **Use tRPC for admin UI data flows** - add procedures in `apps/web/server/routers`, wire through `apps/web/server/routers/_app.ts`, and consume via `apps/web/lib/trpc.ts` + `apps/web/app/(app)/Providers.tsx`
 - **For publishable package changes, add a changeset** - if you change user-facing behavior in `@nitejar/cli`, `@nitejar/plugin-sdk`, or `create-nitejar-plugin`, add a `.changeset/*.md` entry via `pnpm changeset`
+- **Do not collapse release artifacts together** - verify runtime bundles + `manifest.json`, npm CLI, and GHCR Docker tags as separate release receipts; see `docs/release/artifacts-and-upgrade-paths.md`
 
 ### Commit message convention
 

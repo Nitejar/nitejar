@@ -48,8 +48,17 @@ This runbook validates the public installer/runtime flow before first public rol
    - `cutoverStatus`
    - `startedAt` / `finishedAt`
 
-## 5) Sign-off
+## 5) Docker release verification
+1. Pull the released image by version tag:
+   - `docker pull ghcr.io/nitejar/nitejar:v<new>`
+2. Pull the floating image:
+   - `docker pull ghcr.io/nitejar/nitejar:latest`
+3. Inspect both digests and confirm `latest` resolves to the same image as the candidate release tag.
+4. Optionally pull the `major.minor` alias (`ghcr.io/nitejar/nitejar:<major>.<minor>`) and confirm it matches the same digest.
+
+## 6) Sign-off
 Release is approved only when:
 1. Automated CI and release smoke checks are green.
-2. This runbook has been executed successfully for the candidate.
-3. Any failures are captured with logs and receipts in the release notes.
+2. Runtime bundles, `manifest.json`, npm CLI, and GHCR tags are all present for the candidate.
+3. This runbook has been executed successfully for the candidate.
+4. Any failures are captured with logs and receipts in the release notes.

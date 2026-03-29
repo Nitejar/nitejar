@@ -225,6 +225,14 @@ jobs:
         id: image
         run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve release image tags
+        id: release-tags
+        env:
+          RELEASE_EVENT_NAME: ${{ github.event_name }}
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_VERSION_INPUT: ${{ github.event.inputs.version || '' }}
+        run: node scripts/release/resolve-container-tags.mjs >> "$GITHUB_OUTPUT"
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -244,8 +252,7 @@ jobs:
         with:
           images: ${{ steps.image.outputs.name }}
           tags: |
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=raw,value=${{ github.event.inputs.version }},enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version != '' }}
+            ${{ steps.release-tags.outputs.tags }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=ref,event=tag
@@ -267,3 +274,17 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Verify published image tags
+        env:
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+          EXPECTED_TAGS: ${{ steps.release-tags.outputs.expected_tags }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r tag; do
+            if [ -z "${tag}" ]; then
+              continue
+            fi
+            echo "Verifying ${IMAGE_NAME}:${tag}"
+            docker buildx imagetools inspect "${IMAGE_NAME}:${tag}" > /dev/null
+          done <<< "${EXPECTED_TAGS}"

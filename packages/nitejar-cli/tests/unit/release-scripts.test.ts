@@ -23,6 +23,60 @@ function sha256(filePath: string): string {
   return hash.digest('hex')
 }
 
+function parseGitHubMultilineValue(output: string, key: string): string[] {
+  const marker = `${key}<<`
+  const start = output.indexOf(marker)
+  if (start === -1) {
+    return []
+  }
+
+  const afterMarker = output.slice(start + marker.length)
+  const newlineIndex = afterMarker.indexOf('\n')
+  const delimiter = afterMarker.slice(0, newlineIndex)
+  const bodyStart = start + marker.length + newlineIndex + 1
+  const bodyEnd = output.indexOf(`\n${delimiter}`, bodyStart)
+  if (bodyEnd === -1) {
+    return []
+  }
+
+  return output
+    .slice(bodyStart, bodyEnd)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+}
+
+function parseGitHubScalarValue(output: string, key: string): string {
+  const line = output
+    .split('\n')
+    .find((entry) => entry.startsWith(`${key}=`))
+
+  return line ? line.slice(key.length + 1) : ''
+}
+
+function runResolveContainerTags(env: Record<string, string>) {
+  const run = spawnSync('node', [path.join(repoRoot, 'scripts/release/resolve-container-tags.mjs')], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      ...env,
+    },
+  })
+
+  expect(run.status, run.stderr || run.stdout).toBe(0)
+
+  return {
+    metadataTagLines: parseGitHubMultilineValue(run.stdout, 'tags'),
+    expectedPublishedTags: parseGitHubMultilineValue(run.stdout, 'expected_tags'),
+    normalized: {
+      raw: parseGitHubScalarValue(run.stdout, 'version'),
+      semver: parseGitHubScalarValue(run.stdout, 'semver'),
+      majorMinor: parseGitHubScalarValue(run.stdout, 'major_minor'),
+    },
+  }
+}
+
 describe('generate-manifest script', () => {
   it('defaults base URL to GitHub release download path for the selected version', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'nitejar-release-manifest-default-'))
@@ -169,5 +223,55 @@ describe('build-runtime-bundle script', () => {
     expect(listing.stdout).toContain('./apps/web/server.js')
     expect(listing.stdout).toContain('./packages/database/dist/src/runtime-migrate.js')
     expect(listing.stdout).toContain('./packages/database/migrations/0000_init.sql')
+  })
+})
+
+describe('resolve-container-tags script', () => {
+  it('emits workflow-dispatch tags for the full release tag set', () => {
+    const result = runResolveContainerTags({
+      RELEASE_EVENT_NAME: 'workflow_dispatch',
+      RELEASE_REF: 'refs/heads/main',
+      RELEASE_VERSION_INPUT: 'v0.3.1',
+    })
+
+    expect(result.normalized).toEqual({
+      raw: 'v0.3.1',
+      semver: '0.3.1',
+      majorMinor: '0.3',
+    })
+    expect(result.metadataTagLines).toEqual([
+      'type=raw,value=latest,enable=true',
+      'type=raw,value=v0.3.1,enable=true',
+      'type=raw,value=0.3.1,enable=true',
+      'type=raw,value=0.3,enable=true',
+    ])
+    expect(result.expectedPublishedTags).toEqual(['latest', 'v0.3.1', '0.3.1', '0.3'])
+  })
+
+  it('keeps tag-ref releases on the existing semver/ref path while still verifying latest', () => {
+    const result = runResolveContainerTags({
+      RELEASE_EVENT_NAME: 'push',
+      RELEASE_REF: 'refs/tags/v1.2.3',
+      RELEASE_VERSION_INPUT: '',
+    })
+
+    expect(result.metadataTagLines).toEqual(['type=raw,value=latest,enable=true'])
+    expect(result.expectedPublishedTags).toEqual(['latest', 'v1.2.3', '1.2.3', '1.2'])
+  })
+
+  it('fails fast when workflow dispatch is missing a valid semver release version', () => {
+    const run = spawnSync('node', [path.join(repoRoot, 'scripts/release/resolve-container-tags.mjs')], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        RELEASE_EVENT_NAME: 'workflow_dispatch',
+        RELEASE_REF: 'refs/heads/main',
+        RELEASE_VERSION_INPUT: 'main',
+      },
+    })
+
+    expect(run.status).not.toBe(0)
+    expect(run.stderr).toMatch(/Expected a release version/)
   })
 })

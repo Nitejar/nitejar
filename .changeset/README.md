@@ -1,6 +1,13 @@
 # Changesets In Nitejar
 
 Use changesets to record version bumps and changelog entries for publishable packages.
+The release pipeline publishes three public artifacts together:
+
+- runtime bundles + `manifest.json` for `npx @nitejar/cli up`
+- `@nitejar/cli` on npm
+- `ghcr.io/nitejar/nitejar` for Docker users
+
+Canonical artifact behavior lives in `docs/release/artifacts-and-upgrade-paths.md`.
 
 ## Packages covered
 
@@ -24,6 +31,7 @@ pnpm changeset:version
 ```
 
 `changeset:version` updates package versions and `CHANGELOG.md` entries from pending changesets.
+The repo may synthesize a CLI patch bump when runtime-affecting changes need a fresh release version.
 
 ## CI behavior
 
