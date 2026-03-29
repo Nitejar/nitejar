@@ -80,7 +80,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build ${{ matrix.package }}
-        run: pnpm --filter ${{ matrix.package }} build
+        run: pnpm exec turbo run build --filter=${{ matrix.package }}
 
   build-apps:
     name: build app (${{ matrix.app.name }})
@@ -136,31 +136,16 @@ jobs:
           ENCRYPTION_KEY: 0000000000000000000000000000000000000000000000000000000000000000
           # Intentionally unset in CI to catch module-scope auth initialization at build time.
           # Runtime deployments must provide BETTER_AUTH_SECRET.
-        run: pnpm --filter @nitejar/web build
+        run: pnpm exec turbo run build --filter=@nitejar/web
 
       - name: Build ${{ matrix.app.package }}
         if: matrix.app.name != 'web'
-        run: pnpm --filter ${{ matrix.app.package }} build
+        run: pnpm exec turbo run build --filter=${{ matrix.app.package }}
 
   integration-tests:
     name: integration-tests
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: nitejar_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U postgres -d nitejar_test"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/nitejar_test
       ENCRYPTION_KEY: 0000000000000000000000000000000000000000000000000000000000000000
       NODE_ENV: test
 
@@ -204,10 +189,10 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build database dist
-        run: pnpm --filter @nitejar/database build
+        run: pnpm exec turbo run build --filter=@nitejar/database
 
       - name: Build CLI dist
-        run: pnpm --filter @nitejar/cli build
+        run: pnpm exec turbo run build --filter=@nitejar/cli
 
       - name: Run installer smoke
         run: node packages/nitejar-cli/tests/smoke-linux.mjs
