@@ -38,8 +38,8 @@ RUN pnpm install --frozen-lockfile
 # Copy source code
 COPY . .
 
-# Build the application
-RUN pnpm --filter @nitejar/web build
+# Build the web app and its workspace dependencies in clean checkouts.
+RUN pnpm exec turbo run build --filter=@nitejar/web
 
 # Production stage
 FROM base AS runner

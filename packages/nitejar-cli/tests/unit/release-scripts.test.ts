@@ -226,6 +226,15 @@ describe('build-runtime-bundle script', () => {
   })
 })
 
+describe('Dockerfile release builder', () => {
+  it('builds the web image through turbo so workspace dependencies compile in clean checkouts', () => {
+    const dockerfile = readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf8')
+
+    expect(dockerfile).toContain('RUN pnpm exec turbo run build --filter=@nitejar/web')
+    expect(dockerfile).not.toContain('RUN pnpm --filter @nitejar/web build')
+  })
+})
+
 describe('resolve-container-tags script', () => {
   it('emits workflow-dispatch tags for the full release tag set', () => {
     const result = runResolveContainerTags({
