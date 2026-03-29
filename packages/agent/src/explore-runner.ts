@@ -613,3 +613,10 @@ export async function runExploreChild(input: ExploreRunInput): Promise<string> {
     throw error
   }
 }
+
+export const __exploreRunnerTest = {
+  resolveExplorePath,
+  buildWorkContextSummary,
+  collectGitStatus,
+  executeExploreTool,
+}

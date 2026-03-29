@@ -35,6 +35,13 @@ const context: ToolContext = {
   jobId: 'job-parent',
 }
 
+function createContext(overrides: Partial<ToolContext> = {}): ToolContext {
+  return {
+    ...context,
+    ...overrides,
+  }
+}
+
 describe('exploreCodebaseTool', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -123,5 +130,79 @@ describe('exploreCodebaseTool', () => {
     expect(result.success).toBe(true)
     expect(result.output).toContain('Answer:')
     expect(result.output).toContain('[child run: job-child]')
+  })
+
+  it('rejects when question is missing', async () => {
+    const result = await exploreCodebaseTool({}, context)
+
+    expect(result.success).toBe(false)
+    expect(result.error).toBe('question is required')
+    expect(mockedCreateChildJob).not.toHaveBeenCalled()
+  })
+
+  it('rejects when job or agent context is missing', async () => {
+    const missingJobResult = await exploreCodebaseTool(
+      { question: 'Where is auth handled?' },
+      createContext({ jobId: undefined })
+    )
+    const missingAgentResult = await exploreCodebaseTool(
+      { question: 'Where is auth handled?' },
+      createContext({ agentId: undefined })
+    )
+
+    expect(missingJobResult.success).toBe(false)
+    expect(missingJobResult.error).toContain('requires an active job and agent context')
+    expect(missingAgentResult.success).toBe(false)
+    expect(missingAgentResult.error).toContain('requires an active job and agent context')
+  })
+
+  it('falls back to medium depth for invalid depth input', async () => {
+    await exploreCodebaseTool(
+      { question: 'Where is authentication handled?', depth: 'wildly-deep' },
+      context
+    )
+
+    expect(mockedRunExploreChild).toHaveBeenCalledWith(
+      expect.objectContaining({
+        depth: 'medium',
+      })
+    )
+  })
+
+  it('returns an error when the parent job cannot be found', async () => {
+    mockedFindJobById.mockResolvedValueOnce(null as never)
+
+    const result = await exploreCodebaseTool({ question: 'Where is auth handled?' }, context)
+
+    expect(result.success).toBe(false)
+    expect(result.error).toBe('Parent job not found: job-parent')
+  })
+
+  it('returns an error when the agent cannot be found', async () => {
+    mockedFindAgentById.mockResolvedValueOnce(null as never)
+
+    const result = await exploreCodebaseTool({ question: 'Where is auth handled?' }, context)
+
+    expect(result.success).toBe(false)
+    expect(result.error).toBe('Agent not found: agent-1')
+  })
+
+  it('returns an error when the work item cannot be found', async () => {
+    mockedFindWorkItemById.mockResolvedValueOnce(null as never)
+
+    const result = await exploreCodebaseTool({ question: 'Where is auth handled?' }, context)
+
+    expect(result.success).toBe(false)
+    expect(result.error).toBe('Work item not found: work-1')
+  })
+
+  it('returns child run metadata when the child runner fails', async () => {
+    mockedRunExploreChild.mockRejectedValueOnce(new Error('explore child exploded'))
+
+    const result = await exploreCodebaseTool({ question: 'Where is auth handled?' }, context)
+
+    expect(result.success).toBe(false)
+    expect(result.error).toBe('explore child exploded')
+    expect(result.output).toBe('[child run: job-child]')
   })
 })

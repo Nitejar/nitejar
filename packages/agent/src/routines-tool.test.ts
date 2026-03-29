@@ -2,7 +2,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Routine } from '@nitejar/database'
 import * as Database from '@nitejar/database'
 import type { ToolContext } from './tools'
-import { createRoutineTool, getRoutineTool } from './tools/handlers/routines'
+import {
+  createRoutineTool,
+  deleteRoutineTool,
+  getRoutineTool,
+  listRoutinesTool,
+  pauseRoutineTool,
+  runRoutineNowTool,
+  updateRoutineTool,
+} from './tools/handlers/routines'
+
+function parseRoutineTargetJson(routine: Routine): Database.RoutineTarget | null {
+  return JSON.parse(routine.target_spec_json ?? 'null') as Database.RoutineTarget | null
+}
 
 vi.mock('@nitejar/database', async () => {
   const actual = await vi.importActual<typeof Database>('@nitejar/database')
@@ -44,6 +56,12 @@ vi.mock('@nitejar/database', async () => {
     assertAgentGrant: vi.fn(),
     createRoutine: vi.fn(),
     findRoutineById: vi.fn(),
+    listRoutines: vi.fn(),
+    updateRoutine: vi.fn(),
+    setRoutineEnabled: vi.fn(),
+    archiveRoutine: vi.fn(),
+    enqueueRoutineRun: vi.fn(),
+    getRoutineTarget: vi.fn((routine: Routine) => parseRoutineTargetJson(routine)),
     validateAndCompileRoutineTarget: vi.fn(({ target }: { target: Database.RoutineTarget }) =>
       compileTarget(target)
     ),
@@ -53,6 +71,12 @@ vi.mock('@nitejar/database', async () => {
 const mockedAssertAgentGrant = vi.mocked(Database.assertAgentGrant)
 const mockedCreateRoutine = vi.mocked(Database.createRoutine)
 const mockedFindRoutineById = vi.mocked(Database.findRoutineById)
+const mockedListRoutines = vi.mocked(Database.listRoutines)
+const mockedUpdateRoutine = vi.mocked(Database.updateRoutine)
+const mockedSetRoutineEnabled = vi.mocked(Database.setRoutineEnabled)
+const mockedArchiveRoutine = vi.mocked(Database.archiveRoutine)
+const mockedEnqueueRoutineRun = vi.mocked(Database.enqueueRoutineRun)
+const mockedGetRoutineTarget = vi.mocked(Database.getRoutineTarget)
 
 const context: ToolContext = {
   spriteName: 'nitejar-agent-1',
@@ -98,6 +122,13 @@ beforeEach(() => {
   mockedAssertAgentGrant.mockReset()
   mockedCreateRoutine.mockReset()
   mockedFindRoutineById.mockReset()
+  mockedListRoutines.mockReset()
+  mockedUpdateRoutine.mockReset()
+  mockedSetRoutineEnabled.mockReset()
+  mockedArchiveRoutine.mockReset()
+  mockedEnqueueRoutineRun.mockReset()
+  mockedGetRoutineTarget.mockReset()
+  mockedGetRoutineTarget.mockImplementation((item) => parseRoutineTargetJson(item as Routine))
 })
 
 describe('createRoutineTool', () => {
@@ -262,5 +293,164 @@ describe('getRoutineTool', () => {
 
     expect(result.success).toBe(false)
     expect(result.error).toContain('not found')
+  })
+})
+
+describe('additional routine handlers', () => {
+  it('lists routines and handles the empty state', async () => {
+    mockedAssertAgentGrant.mockResolvedValue(undefined)
+    mockedListRoutines.mockResolvedValue([])
+
+    await expect(listRoutinesTool({}, context)).resolves.toEqual({
+      success: true,
+      output: 'No routines found.',
+    })
+
+    mockedListRoutines.mockResolvedValue([
+      routine(),
+      {
+        ...routine(),
+        id: 'routine-2',
+        enabled: 0,
+        archived_at: Math.floor(Date.now() / 1000),
+        next_run_at: null,
+      },
+    ])
+
+    const listed = await listRoutinesTool({ include_archived: true }, context)
+    expect(listed.success).toBe(true)
+    expect(mockedListRoutines).toHaveBeenLastCalledWith({
+      agentId: 'agent-1',
+      includeArchived: true,
+    })
+    expect(listed.output).toContain('routine-1 [event] enabled')
+    expect(listed.output).toContain('routine-2 [event] paused archived next=n/a')
+  })
+
+  it('updates routines with existing targets and validates missing target repairs', async () => {
+    mockedFindRoutineById.mockResolvedValue(routine())
+    mockedAssertAgentGrant.mockResolvedValue(undefined)
+    mockedUpdateRoutine.mockResolvedValue(routine())
+
+    const result = await updateRoutineTool(
+      {
+        routine_id: 'routine-1',
+        name: 'Updated name',
+        description: '  ',
+        action_prompt: '  Keep going  ',
+        enabled: false,
+      },
+      context
+    )
+
+    expect(result.success).toBe(true)
+    expect(mockedUpdateRoutine).toHaveBeenCalledWith(
+      'routine-1',
+      expect.objectContaining({
+        name: 'Updated name',
+        description: null,
+        action_prompt: 'Keep going',
+        enabled: 0,
+        archived_at: null,
+      })
+    )
+
+    mockedGetRoutineTarget.mockReturnValueOnce(null)
+    const broken = await updateRoutineTool({ routine_id: 'routine-1' }, context)
+    expect(broken.success).toBe(false)
+    expect(broken.error).toBe('Routine target is invalid and must be repaired before updating.')
+  })
+
+  it('surfaces update failures and validation errors', async () => {
+    mockedFindRoutineById.mockResolvedValue(routine())
+    mockedAssertAgentGrant.mockResolvedValue(undefined)
+
+    const invalidJson = await updateRoutineTool(
+      {
+        routine_id: 'routine-1',
+        rule_json: '{not json}',
+      },
+      context
+    )
+    expect(invalidJson.success).toBe(false)
+    expect(invalidJson.error).toBe('Expected valid JSON string.')
+
+    mockedUpdateRoutine.mockResolvedValue(null)
+    const failedUpdate = await updateRoutineTool({ routine_id: 'routine-1' }, context)
+    expect(failedUpdate.success).toBe(false)
+    expect(failedUpdate.error).toBe('Routine routine-1 update failed.')
+  })
+
+  it('pauses and archives owned routines', async () => {
+    mockedFindRoutineById.mockResolvedValue(routine())
+    mockedAssertAgentGrant.mockResolvedValue(undefined)
+    mockedSetRoutineEnabled.mockResolvedValue(null)
+    mockedArchiveRoutine.mockResolvedValue(null)
+
+    const paused = await pauseRoutineTool({ routine_id: 'routine-1' }, context)
+    expect(paused.success).toBe(true)
+    expect(mockedSetRoutineEnabled).toHaveBeenCalledWith('routine-1', false)
+
+    const archived = await deleteRoutineTool({ routine_id: 'routine-1' }, context)
+    expect(archived.success).toBe(true)
+    expect(mockedArchiveRoutine).toHaveBeenCalledWith('routine-1')
+  })
+
+  it('rejects missing or foreign routines before pause/delete', async () => {
+    await expect(pauseRoutineTool({}, context)).resolves.toEqual({
+      success: false,
+      error: 'routine_id is required.',
+    })
+    await expect(deleteRoutineTool({}, context)).resolves.toEqual({
+      success: false,
+      error: 'routine_id is required.',
+    })
+
+    mockedFindRoutineById.mockResolvedValueOnce(null)
+    await expect(pauseRoutineTool({ routine_id: 'routine-404' }, context)).resolves.toEqual({
+      success: false,
+      error: 'Routine routine-404 not found.',
+    })
+
+    mockedFindRoutineById.mockResolvedValueOnce({
+      ...routine(),
+      agent_id: 'agent-2',
+    })
+    await expect(deleteRoutineTool({ routine_id: 'routine-1' }, context)).resolves.toEqual({
+      success: false,
+      error: 'Routine routine-1 not found.',
+    })
+  })
+
+  it('runs a routine immediately and updates its status', async () => {
+    mockedFindRoutineById.mockResolvedValue(routine())
+    mockedAssertAgentGrant.mockResolvedValue(undefined)
+    mockedEnqueueRoutineRun.mockResolvedValue({
+      scheduledItem: {
+        id: 'scheduled-1',
+      },
+    } as never)
+    mockedUpdateRoutine.mockResolvedValue(routine())
+
+    const result = await runRoutineNowTool({ routine_id: 'routine-1' }, context)
+
+    expect(result.success).toBe(true)
+    const enqueueArgs = mockedEnqueueRoutineRun.mock.calls[0]?.[0] as
+      | {
+          routine?: { id?: string }
+          triggerOrigin?: string
+          runAt?: number
+        }
+      | undefined
+    expect(enqueueArgs?.routine?.id).toBe('routine-1')
+    expect(enqueueArgs?.triggerOrigin).toBe('manual')
+    expect(typeof enqueueArgs?.runAt).toBe('number')
+    expect(mockedUpdateRoutine).toHaveBeenCalledWith(
+      'routine-1',
+      expect.objectContaining({
+        last_status: 'enqueued',
+      })
+    )
+    expect(result.output).toContain('scheduled item scheduled-1')
   })
 })

@@ -1081,3 +1081,16 @@ export const fleetObservabilityDefinitions: Anthropic.Tool[] = [
   getWorkItemTriageReceiptsDefinition,
   getMessageChunkDefinition,
 ]
+
+export const __fleetObservabilityTest = {
+  normalizeOffset,
+  resolvePageLimit,
+  buildPageInfo,
+  truncateUtf8,
+  getUtf8Chunk,
+  encodeCursor,
+  decodeCursor,
+  parseDispatchDecision,
+  resolveTriageLogPath,
+  readTriageLogEntriesForWorkItem,
+}
