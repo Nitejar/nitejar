@@ -59,6 +59,16 @@ export function runCommand(cmd, args, cwd) {
   execFileSync(cmd, args, { cwd, stdio: 'inherit' })
 }
 
+export function buildRuntimeAssets(root, deployedDatabaseDir, run = runCommand) {
+  run('pnpm', ['exec', 'turbo', 'run', 'build', '--filter=@nitejar/database'], root)
+  run('pnpm', ['exec', 'turbo', 'run', 'build', '--filter=@nitejar/web'], root)
+  run(
+    'pnpm',
+    ['--filter', '@nitejar/database', 'deploy', '--prod', deployedDatabaseDir, '--force'],
+    root
+  )
+}
+
 function assertExists(filePath, label) {
   if (!existsSync(filePath)) {
     throw new Error(`Missing required ${label}: ${filePath}`)
@@ -90,13 +100,7 @@ export function stageRuntimeBundle(options) {
 
   if (!options.skipBuild) {
     rmSync(deployedDatabaseDir, { recursive: true, force: true })
-    runCommand('pnpm', ['--filter', '@nitejar/database', 'build'], options.root)
-    runCommand('pnpm', ['--filter', '@nitejar/web', 'build'], options.root)
-    runCommand(
-      'pnpm',
-      ['--filter', '@nitejar/database', 'deploy', '--prod', deployedDatabaseDir, '--force'],
-      options.root
-    )
+    buildRuntimeAssets(options.root, deployedDatabaseDir)
   }
 
   assertExists(standaloneDir, 'Next.js standalone build')
