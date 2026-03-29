@@ -229,7 +229,11 @@ export async function triageWorkItem(
   const contextHint = workItem.session_key ? `\n[session: ${workItem.session_key}]` : ''
   const ingressContext = [
     buildTicketLaneIngressHint(agent, workItem),
-    buildSlackAppMentionHint(workItem, undefined, effectiveTriageContext?.agentHandle ?? agent.handle),
+    buildSlackAppMentionHint(
+      workItem,
+      undefined,
+      effectiveTriageContext?.agentHandle ?? agent.handle
+    ),
   ]
     .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
     .join('\n\n')

@@ -1,4 +1,9 @@
-import { listAgentSandboxes, resolveEffectivePolicy, type Agent, type WorkItem } from '@nitejar/database'
+import {
+  listAgentSandboxes,
+  resolveEffectivePolicy,
+  type Agent,
+  type WorkItem,
+} from '@nitejar/database'
 import { getSpritesTokenSettings, isSpritesExecutionAvailable } from '@nitejar/sprites'
 import { parseAgentConfig, DEFAULT_SOUL_TEMPLATE } from './config'
 import { retrieveMemories, formatMemoriesForPrompt } from './memory'

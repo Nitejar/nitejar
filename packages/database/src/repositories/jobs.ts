@@ -27,6 +27,27 @@ export async function listJobsByWorkItem(workItemId: string): Promise<Job[]> {
     .execute()
 }
 
+export async function listChildJobs(parentJobId: string): Promise<Job[]> {
+  const db = getDb()
+  return db
+    .selectFrom('jobs')
+    .selectAll()
+    .where('parent_job_id', '=', parentJobId)
+    .orderBy('created_at', 'asc')
+    .execute()
+}
+
+export async function listChildJobsByParents(parentJobIds: string[]): Promise<Job[]> {
+  if (parentJobIds.length === 0) return []
+  const db = getDb()
+  return db
+    .selectFrom('jobs')
+    .selectAll()
+    .where('parent_job_id', 'in', parentJobIds)
+    .orderBy('created_at', 'asc')
+    .execute()
+}
+
 export async function listJobsByAgent(agentId: string, limit = 100): Promise<Job[]> {
   const db = getDb()
   return db
@@ -55,6 +76,10 @@ export async function createJob(
     .values({
       id,
       ...data,
+      parent_job_id: data.parent_job_id ?? null,
+      root_job_id: data.root_job_id ?? id,
+      run_kind: data.run_kind ?? 'primary',
+      origin_tool_name: data.origin_tool_name ?? null,
       created_at: timestamp,
       updated_at: timestamp,
     })
@@ -62,6 +87,28 @@ export async function createJob(
     .executeTakeFirstOrThrow()
 
   return result
+}
+
+export async function createChildJob(
+  parentJob: Pick<Job, 'id' | 'work_item_id' | 'agent_id' | 'root_job_id'>,
+  data: Omit<
+    NewJob,
+    | 'id'
+    | 'created_at'
+    | 'updated_at'
+    | 'work_item_id'
+    | 'agent_id'
+    | 'parent_job_id'
+    | 'root_job_id'
+  >
+): Promise<Job> {
+  return createJob({
+    ...data,
+    work_item_id: parentJob.work_item_id,
+    agent_id: parentJob.agent_id,
+    parent_job_id: parentJob.id,
+    root_job_id: parentJob.root_job_id ?? parentJob.id,
+  })
 }
 
 export async function updateJob(
@@ -114,6 +161,7 @@ export async function findActiveJobsForSession(sessionKey: string): Promise<Job[
     .selectAll('jobs')
     .where('work_items.session_key', '=', sessionKey)
     .where('jobs.status', 'in', ['RUNNING', 'PENDING'])
+    .where('jobs.run_kind', '=', 'primary')
     .orderBy('jobs.created_at', 'desc')
     .execute()
 }
@@ -148,6 +196,7 @@ export async function listActiveWorkSnapshotsForAgent(
     ])
     .where('jobs.agent_id', '=', agentId)
     .where('jobs.status', 'in', ['PENDING', 'RUNNING', 'PAUSED'])
+    .where('jobs.run_kind', '=', 'primary')
     .$if(!!opts?.excludeJobId, (qb) => qb.where('jobs.id', '!=', opts!.excludeJobId!))
     .orderBy('jobs.created_at', 'desc')
     .limit(limit)
@@ -156,6 +205,10 @@ export async function listActiveWorkSnapshotsForAgent(
 
 export interface RecentActivityEntry {
   job_id: string
+  parent_job_id?: string | null
+  root_job_id?: string | null
+  run_kind?: string
+  origin_tool_name?: string | null
   status: string
   created_at: number
   started_at: number | null
@@ -260,6 +313,10 @@ export async function listRecentActivity(limit = 50): Promise<RecentActivityEntr
     )
     .select([
       'jobs.id as job_id',
+      'jobs.parent_job_id',
+      'jobs.root_job_id',
+      'jobs.run_kind',
+      'jobs.origin_tool_name',
       'jobs.status',
       'jobs.created_at',
       'jobs.started_at',
@@ -294,6 +351,7 @@ export async function listRecentActivity(limit = 50): Promise<RecentActivityEntr
       sql<number>`coalesce(qm.queue_dropped_count, 0)`.as('queue_dropped_count'),
       sql<number>`coalesce(qm.queue_cancelled_count, 0)`.as('queue_cancelled_count'),
     ])
+    .where('jobs.run_kind', '=', 'primary')
     .orderBy('jobs.created_at', 'desc')
     .limit(limit)
     .execute()
@@ -339,6 +397,10 @@ export interface SearchRunsOptions {
 
 export interface SearchRunEntry {
   job_id: string
+  parent_job_id?: string | null
+  root_job_id?: string | null
+  run_kind?: string
+  origin_tool_name?: string | null
   status: string
   agent_id: string
   agent_name: string
@@ -393,6 +455,10 @@ export async function listRunHistoryForAgent(
     .leftJoin('activity_log', 'activity_log.job_id', 'jobs.id')
     .select([
       'jobs.id as job_id',
+      'jobs.parent_job_id',
+      'jobs.root_job_id',
+      'jobs.run_kind',
+      'jobs.origin_tool_name',
       'jobs.status',
       'work_items.title',
       'work_items.source',
@@ -404,6 +470,7 @@ export async function listRunHistoryForAgent(
       sql<string | null>`activity_log.summary`.as('triage_summary'),
     ])
     .where('jobs.agent_id', '=', agentId)
+    .where('jobs.run_kind', '=', 'primary')
 
   if (opts?.status && opts.status !== 'all') {
     query = query.where('jobs.status', '=', opts.status.toUpperCase())

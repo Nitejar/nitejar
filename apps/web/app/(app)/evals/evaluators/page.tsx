@@ -1,7 +1,15 @@
+import loadable from 'next/dynamic'
 import { createPageMetadata } from '@/app/metadata'
 import { PageHeader } from '@/app/(app)/components/PageHeader'
 import { PageScrollShell } from '@/app/(app)/components/PageScrollShell'
-import { EvaluatorListClient } from './EvaluatorListClient'
+import { RouteClientFallback } from '@/app/(app)/components/RouteClientFallback'
+
+const EvaluatorListClient = loadable(
+  () => import('./EvaluatorListClient').then((mod) => mod.EvaluatorListClient),
+  {
+    loading: () => <RouteClientFallback label="Loading evaluators..." />,
+  }
+)
 
 export const dynamic = 'force-dynamic'
 export const metadata = createPageMetadata('Evaluators')

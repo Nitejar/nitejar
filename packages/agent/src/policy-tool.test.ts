@@ -223,10 +223,7 @@ describe('policy tools', () => {
       })),
     } as never)
 
-    const assignResult = await assignRoleTool(
-      { role_id: 'role-1', agent_id: 'agent-2' },
-      context
-    )
+    const assignResult = await assignRoleTool({ role_id: 'role-1', agent_id: 'agent-2' }, context)
     const unassignResult = await unassignRoleTool(
       { role_id: 'role-1', agent_id: 'agent-2' },
       context

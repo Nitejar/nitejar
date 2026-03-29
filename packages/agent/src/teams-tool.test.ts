@@ -138,10 +138,7 @@ describe('team tools', () => {
       })),
     } as never)
 
-    const updateResult = await updateTeamTool(
-      { team_id: 'team-1', name: 'Operations' },
-      context
-    )
+    const updateResult = await updateTeamTool({ team_id: 'team-1', name: 'Operations' }, context)
     const deleteResult = await deleteTeamTool({ team_id: 'team-1' }, context)
 
     expect(updateResult.success).toBe(true)

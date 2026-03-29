@@ -1,7 +1,15 @@
 import Link from 'next/link'
+import loadable from 'next/dynamic'
 import { createPageMetadata } from '@/app/metadata'
+import { RouteClientFallback } from '@/app/(app)/components/RouteClientFallback'
 import { PageScrollShell } from '../../components/PageScrollShell'
-import { NewAgentClient } from './NewAgentClient'
+
+const NewAgentClient = loadable(
+  () => import('./NewAgentClient').then((mod) => mod.NewAgentClient),
+  {
+    loading: () => <RouteClientFallback label="Loading agent form..." />,
+  }
+)
 
 export const dynamic = 'force-dynamic'
 export const metadata = createPageMetadata('New Agent')

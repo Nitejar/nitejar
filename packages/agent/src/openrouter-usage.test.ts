@@ -39,11 +39,12 @@ describe('normalizeOpenRouterChatCompletionUsage', () => {
   it('falls back to generation enrichment when cache details are missing', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({
-        data: {
-          native_tokens_cached: 56448,
-        },
-      }),
+      json: () =>
+        Promise.resolve({
+          data: {
+            native_tokens_cached: 56448,
+          },
+        }),
     })
     vi.stubGlobal('fetch', fetchMock)
 

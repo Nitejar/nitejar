@@ -115,20 +115,24 @@ describe('shouldIgnoreTreeKeyboardTarget', () => {
   it('ignores contenteditable elements and descendants', () => {
     expect(shouldIgnoreTreeKeyboardTarget(asEventTarget({ isContentEditable: true }))).toBe(true)
     expect(
-      shouldIgnoreTreeKeyboardTarget(asEventTarget({
-        isContentEditable: false,
-        closest: (selector: string) => (selector === '[contenteditable="true"]' ? {} : null),
-      }))
+      shouldIgnoreTreeKeyboardTarget(
+        asEventTarget({
+          isContentEditable: false,
+          closest: (selector: string) => (selector === '[contenteditable="true"]' ? {} : null),
+        })
+      )
     ).toBe(true)
   })
 
   it('does not ignore plain non-editable elements', () => {
     expect(
-      shouldIgnoreTreeKeyboardTarget(asEventTarget({
-        tagName: 'DIV',
-        isContentEditable: false,
-        closest: () => null,
-      }))
+      shouldIgnoreTreeKeyboardTarget(
+        asEventTarget({
+          tagName: 'DIV',
+          isContentEditable: false,
+          closest: () => null,
+        })
+      )
     ).toBe(false)
     expect(shouldIgnoreTreeKeyboardTarget(null)).toBe(false)
   })

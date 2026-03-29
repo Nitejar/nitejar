@@ -182,16 +182,16 @@ If using the `mentions` comment policy, make sure the mention handle matches the
 
 ## Configuration reference
 
-| Field            | Type                    | Description                                                              |
-| ---------------- | ----------------------- | ------------------------------------------------------------------------ |
-| `appId`          | `string`                | GitHub App ID.                                                           |
-| `appSlug`        | `string`                | GitHub App slug.                                                         |
-| `privateKey`     | `string`                | GitHub App private key (PEM format). Encrypted at rest.                  |
-| `clientId`       | `string`                | OAuth client ID.                                                         |
-| `clientSecret`   | `string`                | OAuth client secret. Encrypted at rest.                                  |
-| `webhookSecret`  | `string`                | Secret for verifying GitHub webhook signatures. Encrypted at rest.       |
-| `allowedRepos`   | `string[]`              | Optional repo allowlist. Empty means all repos.                          |
-| `commentPolicy`  | `'all'` \| `'mentions'` | Which comments trigger the agent.                                        |
-| `mentionHandle`  | `string`                | GitHub @mention that triggers the bot. Default: `@nitejar`.              |
-| `trackIssueOpen` | `boolean`               | Process new or reopened issues. Default: `true`.                         |
-| `trackCheckRun`  | `boolean`               | Process CI check completions. Default: `true`.                           |
+| Field            | Type                    | Description                                                        |
+| ---------------- | ----------------------- | ------------------------------------------------------------------ |
+| `appId`          | `string`                | GitHub App ID.                                                     |
+| `appSlug`        | `string`                | GitHub App slug.                                                   |
+| `privateKey`     | `string`                | GitHub App private key (PEM format). Encrypted at rest.            |
+| `clientId`       | `string`                | OAuth client ID.                                                   |
+| `clientSecret`   | `string`                | OAuth client secret. Encrypted at rest.                            |
+| `webhookSecret`  | `string`                | Secret for verifying GitHub webhook signatures. Encrypted at rest. |
+| `allowedRepos`   | `string[]`              | Optional repo allowlist. Empty means all repos.                    |
+| `commentPolicy`  | `'all'` \| `'mentions'` | Which comments trigger the agent.                                  |
+| `mentionHandle`  | `string`                | GitHub @mention that triggers the bot. Default: `@nitejar`.        |
+| `trackIssueOpen` | `boolean`               | Process new or reopened issues. Default: `true`.                   |
+| `trackCheckRun`  | `boolean`               | Process CI check completions. Default: `true`.                     |

@@ -1,7 +1,15 @@
+import loadable from 'next/dynamic'
 import { createPageMetadata } from '@/app/metadata'
 import { PageHeader } from '../components/PageHeader'
 import { PageScrollShell } from '../components/PageScrollShell'
-import { SkillsCatalogClient } from './SkillsCatalogClient'
+import { RouteClientFallback } from '../components/RouteClientFallback'
+
+const SkillsCatalogClient = loadable(
+  () => import('./SkillsCatalogClient').then((mod) => mod.SkillsCatalogClient),
+  {
+    loading: () => <RouteClientFallback label="Loading skills..." />,
+  }
+)
 
 export const dynamic = 'force-dynamic'
 export const metadata = createPageMetadata('Skills')

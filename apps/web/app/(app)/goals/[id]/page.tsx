@@ -1,8 +1,16 @@
 import type { Metadata } from 'next'
+import loadable from 'next/dynamic'
 import { findGoalById } from '@nitejar/database'
 import { createPageMetadata } from '@/app/metadata'
+import { RouteClientFallback } from '@/app/(app)/components/RouteClientFallback'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { GoalDetailClient } from './GoalDetailClient'
+
+const GoalDetailClient = loadable(
+  () => import('./GoalDetailClient').then((mod) => mod.GoalDetailClient),
+  {
+    loading: () => <RouteClientFallback label="Loading goal..." className="min-h-[480px]" />,
+  }
+)
 
 export const dynamic = 'force-dynamic'
 

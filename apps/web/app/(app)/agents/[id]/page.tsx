@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import loadable from 'next/dynamic'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -22,22 +23,11 @@ import type { NetworkPolicy } from '@nitejar/agent/types'
 import { createPageMetadata } from '@/app/metadata'
 import { getServerSession } from '@/lib/auth-server'
 import { ADMIN_ROLES, hasRequiredRole } from '@/lib/api-auth'
+import { RouteClientFallback } from '@/app/(app)/components/RouteClientFallback'
 import { DeleteButton } from '../../components/DeleteButton'
-import { SoulSection } from './SoulSection'
-import { ModelSection } from './ModelSection'
-import { MemorySection } from './MemorySection'
-import { SessionSection } from './SessionSection'
-import { NetworkPolicySection } from './NetworkPolicySection'
-import { SandboxesSection } from './SandboxesSection'
-import { AgentIdentityForm } from './AgentIdentityForm'
-import { StatusToggle } from './StatusToggle'
 import { ExportProfileButton } from './ExportProfileButton'
 import { ChatWithAgentButton } from './ChatWithAgentButton'
-import { CostSection } from './CostSection'
-import { RolesSection } from './RolesSection'
 import { PageScrollShell } from '../../components/PageScrollShell'
-import { SkillsSection } from './SkillsSection'
-import { EvalsSection } from './EvalsSection'
 import { WorkSection } from './WorkSection'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -49,6 +39,61 @@ import {
   IconAlertTriangle,
   IconSparkles,
 } from '@tabler/icons-react'
+
+const StatusToggle = loadable(() => import('./StatusToggle').then((mod) => mod.StatusToggle), {
+  loading: () => <RouteClientFallback label="Loading status..." className="min-h-[120px]" />,
+})
+const AgentIdentityForm = loadable(
+  () => import('./AgentIdentityForm').then((mod) => mod.AgentIdentityForm),
+  {
+    loading: () => <RouteClientFallback label="Loading identity..." className="min-h-[240px]" />,
+  }
+)
+const RolesSection = loadable(() => import('./RolesSection').then((mod) => mod.RolesSection), {
+  loading: () => <RouteClientFallback label="Loading roles..." className="min-h-[220px]" />,
+})
+const SoulSection = loadable(() => import('./SoulSection').then((mod) => mod.SoulSection), {
+  loading: () => <RouteClientFallback label="Loading soul..." className="min-h-[220px]" />,
+})
+const ModelSection = loadable(() => import('./ModelSection').then((mod) => mod.ModelSection), {
+  loading: () => (
+    <RouteClientFallback label="Loading model settings..." className="min-h-[280px]" />
+  ),
+})
+const SkillsSection = loadable(() => import('./SkillsSection').then((mod) => mod.SkillsSection), {
+  loading: () => <RouteClientFallback label="Loading skills..." className="min-h-[240px]" />,
+})
+const EvalsSection = loadable(() => import('./EvalsSection').then((mod) => mod.EvalsSection), {
+  loading: () => <RouteClientFallback label="Loading evals..." className="min-h-[220px]" />,
+})
+const NetworkPolicySection = loadable(
+  () => import('./NetworkPolicySection').then((mod) => mod.NetworkPolicySection),
+  {
+    loading: () => (
+      <RouteClientFallback label="Loading network policy..." className="min-h-[320px]" />
+    ),
+  }
+)
+const MemorySection = loadable(() => import('./MemorySection').then((mod) => mod.MemorySection), {
+  loading: () => <RouteClientFallback label="Loading memory..." className="min-h-[280px]" />,
+})
+const CostSection = loadable(() => import('./CostSection').then((mod) => mod.CostSection), {
+  loading: () => <RouteClientFallback label="Loading costs..." className="min-h-[220px]" />,
+})
+const SessionSection = loadable(
+  () => import('./SessionSection').then((mod) => mod.SessionSection),
+  {
+    loading: () => (
+      <RouteClientFallback label="Loading session settings..." className="min-h-[260px]" />
+    ),
+  }
+)
+const SandboxesSection = loadable(
+  () => import('./SandboxesSection').then((mod) => mod.SandboxesSection),
+  {
+    loading: () => <RouteClientFallback label="Loading sandboxes..." className="min-h-[180px]" />,
+  }
+)
 
 export const dynamic = 'force-dynamic'
 

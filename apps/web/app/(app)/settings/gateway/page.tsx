@@ -1,7 +1,15 @@
+import loadable from 'next/dynamic'
 import { createPageMetadata } from '@/app/metadata'
 import { PageHeader } from '@/app/(app)/components/PageHeader'
 import { PageScrollShell } from '@/app/(app)/components/PageScrollShell'
-import { GatewaySettingsClient } from './GatewaySettingsClient'
+import { RouteClientFallback } from '@/app/(app)/components/RouteClientFallback'
+
+const GatewaySettingsClient = loadable(
+  () => import('./GatewaySettingsClient').then((mod) => mod.GatewaySettingsClient),
+  {
+    loading: () => <RouteClientFallback label="Loading gateway settings..." />,
+  }
+)
 
 export const metadata = createPageMetadata('Gateway')
 

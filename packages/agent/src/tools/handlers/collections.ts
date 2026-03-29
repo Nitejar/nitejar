@@ -363,10 +363,7 @@ async function getCollectionForAccess(params: {
   return collection
 }
 
-async function getAdminCollection(params: {
-  collectionName: string
-  agentId: string
-}) {
+async function getAdminCollection(params: { collectionName: string; agentId: string }) {
   const collection = await findCollectionByName(params.collectionName)
   if (!collection) {
     throw new Error(`Collection ${params.collectionName} not found.`)
@@ -448,8 +445,7 @@ export const collectionListReviewsTool: ToolHandler = async (input, context) => 
   }
 
   try {
-    const collectionName =
-      typeof input.collection === 'string' ? input.collection.trim() : ''
+    const collectionName = typeof input.collection === 'string' ? input.collection.trim() : ''
     const status =
       input.status === 'pending' || input.status === 'approved' || input.status === 'rejected'
         ? input.status
@@ -510,7 +506,8 @@ export const collectionReviewSchemaTool: ToolHandler = async (input, context) =>
 
   try {
     const reviewId = typeof input.review_id === 'string' ? input.review_id.trim() : ''
-    const decision = input.decision === 'approve' ? 'approve' : input.decision === 'reject' ? 'reject' : null
+    const decision =
+      input.decision === 'approve' ? 'approve' : input.decision === 'reject' ? 'reject' : null
     const notes = typeof input.notes === 'string' ? input.notes : null
 
     if (!reviewId) {
@@ -647,7 +644,11 @@ export const collectionUpdateSchemaTool: ToolHandler = async (input, context) =>
       collectionId: collection.id,
       name: typeof input.name === 'string' ? input.name.trim() || undefined : undefined,
       description:
-        typeof input.description === 'string' ? input.description : input.description === null ? null : undefined,
+        typeof input.description === 'string'
+          ? input.description
+          : input.description === null
+            ? null
+            : undefined,
       schema: { fields: fields as Array<Record<string, unknown>> },
     })
 

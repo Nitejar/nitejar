@@ -1,7 +1,15 @@
+import loadable from 'next/dynamic'
 import { createPageMetadata } from '@/app/metadata'
 import { PageHeader } from '../components/PageHeader'
 import { PageScrollShell } from '../components/PageScrollShell'
-import { SessionsListClient } from './SessionsListClient'
+import { RouteClientFallback } from '../components/RouteClientFallback'
+
+const SessionsListClient = loadable(
+  () => import('./SessionsListClient').then((mod) => mod.SessionsListClient),
+  {
+    loading: () => <RouteClientFallback label="Loading sessions..." />,
+  }
+)
 
 export const dynamic = 'force-dynamic'
 export const metadata = createPageMetadata('Sessions')

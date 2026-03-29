@@ -4,6 +4,7 @@ import {
   getAgentIdsWithActiveJobs,
   getDb,
   getFleetRosterMetrics,
+  getFleetSparklineData,
   getPerAgentEvalStats,
   getSpendByAgent,
   listAgentWorkloadRollups,
@@ -41,6 +42,7 @@ export interface AgentData {
   totalEvals: number
   spend30dUsd: number
   overloaded: boolean
+  dailyRuns: number[]
 }
 
 function now(): number {
@@ -75,6 +77,7 @@ export async function AgentsClient() {
     spendByAgent,
     evalStats,
     workloadRollups,
+    sparklineRows,
     teamRows,
     allTeams,
     roleRows,
@@ -85,6 +88,7 @@ export async function AgentsClient() {
     getSpendByAgent(spendSince),
     getPerAgentEvalStats(),
     listAgentWorkloadRollups(),
+    getFleetSparklineData(),
     db
       .selectFrom('agent_teams')
       .innerJoin('teams', 'teams.id', 'agent_teams.team_id')
@@ -117,6 +121,17 @@ export async function AgentsClient() {
   const roleMap = new Map<string, string>()
   for (const row of roleRows) {
     roleMap.set(row.agent_id, row.role_name)
+  }
+
+  // Build sparkline map: agent_id → [day0_runs, day1_runs, ..., day6_runs]
+  const sparklineMap = new Map<string, number[]>()
+  for (const row of sparklineRows) {
+    const existing = sparklineMap.get(row.agent_id)
+    if (!existing) {
+      sparklineMap.set(row.agent_id, [row.run_count])
+    } else {
+      existing.push(row.run_count)
+    }
   }
 
   const agentData: AgentData[] = agents.map((agent) => {
@@ -160,23 +175,32 @@ export async function AgentsClient() {
       totalEvals: evalSummary?.total_evals ?? 0,
       spend30dUsd: spend?.total ?? 0,
       overloaded,
+      dailyRuns: sparklineMap.get(agent.id) ?? [],
     }
   })
 
   const busyCount = agentData.filter((agent) => agent.status === 'busy').length
   const overloadedCount = agentData.filter((agent) => agent.overloaded).length
   const activeWorkCount = agentData.reduce((sum, agent) => sum + agent.openTicketCount, 0)
+  const totalRuns = agentData.reduce((sum, agent) => sum + agent.runCount, 0)
+  const totalFailed = agentData.reduce((sum, agent) => sum + agent.failedCount, 0)
   const spend30dTotal = agentData.reduce((sum, agent) => sum + agent.spend30dUsd, 0)
+  const successRate = totalRuns > 0 ? Math.round(((totalRuns - totalFailed) / totalRuns) * 100) : 0
 
   return (
     <div className="space-y-6">
-      <div className="grid divide-x divide-zinc-800 overflow-hidden border border-zinc-800 lg:grid-cols-4">
+      <div className="grid divide-x divide-zinc-800 overflow-hidden border border-zinc-800 sm:grid-cols-3 lg:grid-cols-5">
         <SummaryCard label="Agents" value={agentData.length} detail="Rostered in this fleet" />
         <SummaryCard label="Busy Now" value={busyCount} detail="Agents with active dispatches" />
         <SummaryCard
           label="Open Work"
           value={activeWorkCount}
           detail="Tickets assigned to agents"
+        />
+        <SummaryCard
+          label="Runs (30d)"
+          value={totalRuns}
+          detail={totalRuns > 0 ? `${successRate}% success rate` : 'No runs in last 30 days'}
         />
         <SummaryCard
           label="30d Spend"

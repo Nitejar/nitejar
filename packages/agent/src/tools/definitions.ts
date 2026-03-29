@@ -35,6 +35,7 @@ import { teamDefinitions } from './handlers/teams'
 import { policyToolDefinitions } from './handlers/policy'
 import { workDefinitions } from './handlers/work'
 import { evalDefinitions } from './handlers/evals'
+import { exploreCodebaseDefinition } from './handlers/explore'
 
 const baseToolDefinitions: Anthropic.Tool[] = [
   bashDefinition,
@@ -59,6 +60,7 @@ const baseToolDefinitions: Anthropic.Tool[] = [
   synthesizeSpeechDefinition,
   downloadAttachmentDefinition,
   queryActivityDefinition,
+  exploreCodebaseDefinition,
   ...fleetObservabilityDefinitions,
   ...workDefinitions,
   ...evalDefinitions,

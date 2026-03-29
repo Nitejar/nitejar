@@ -76,11 +76,7 @@ type GitHubRepoCapability =
   | 'review_pr'
   | 'merge_pr'
 
-export function InstanceDetailClient({
-  pluginInstanceId,
-}: {
-  pluginInstanceId: string
-}) {
+export function InstanceDetailClient({ pluginInstanceId }: { pluginInstanceId: string }) {
   const instanceQuery = trpc.pluginInstances.get.useQuery({ pluginInstanceId })
   const catalogQuery = trpc.plugins.catalogType.useQuery(
     { type: instanceQuery.data?.pluginInstance.type ?? '' },
@@ -561,7 +557,8 @@ function GitHubSettingsCard({ pluginInstanceId }: { pluginInstanceId: string }) 
       void installationsQuery.refetch()
       if (data.repoSyncFailures.length > 0) {
         const firstFailure = data.repoSyncFailures[0]
-        const accountLabel = firstFailure?.accountLogin ?? `installation ${firstFailure?.installationId}`
+        const accountLabel =
+          firstFailure?.accountLogin ?? `installation ${firstFailure?.installationId}`
         toast.error(
           `Found ${data.total} installation(s), but repo sync failed for ${accountLabel}: ${firstFailure?.message ?? 'unknown error'}`
         )
@@ -758,7 +755,10 @@ function GitHubSettingsCard({ pluginInstanceId }: { pluginInstanceId: string }) 
               <ol className="mt-3 space-y-1 text-xs text-muted-foreground">
                 <li>1. Open the GitHub App in your GitHub account.</li>
                 <li>2. Install it on the account or organization you want Nitejar to access.</li>
-                <li>3. Come back here and click <span className="text-foreground">Sync Installations</span>.</li>
+                <li>
+                  3. Come back here and click{' '}
+                  <span className="text-foreground">Sync Installations</span>.
+                </li>
               </ol>
               {appInstallUrl ? (
                 <div className="mt-3">
@@ -875,9 +875,10 @@ function GitHubRepoAccessCard({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-3 text-xs text-muted-foreground">
-          Direct repo access lives here. Plugin assignment only gives an agent the GitHub connection;
-          the toggles below decide which synced repos and operations it can actually get credentials for.
-          Reusable defaults still live in <span className="text-foreground">Company → Roles</span>.
+          Direct repo access lives here. Plugin assignment only gives an agent the GitHub
+          connection; the toggles below decide which synced repos and operations it can actually get
+          credentials for. Reusable defaults still live in{' '}
+          <span className="text-foreground">Company → Roles</span>.
         </div>
 
         {reposQuery.isLoading || assignmentsQuery.isLoading ? (
@@ -894,7 +895,8 @@ function GitHubRepoAccessCard({
         ) : (
           <div className="space-y-3">
             {reposQuery.data.map((repo) => {
-              const repoAssignments = assignmentsByRepo.get(repo.id) ?? new Map<string, Set<string>>()
+              const repoAssignments =
+                assignmentsByRepo.get(repo.id) ?? new Map<string, Set<string>>()
               return (
                 <div
                   key={repo.id}
@@ -916,7 +918,8 @@ function GitHubRepoAccessCard({
 
                   <div className="space-y-2">
                     {sortedAgents.map((agent) => {
-                      const selectedCapabilities = repoAssignments.get(agent.id) ?? new Set<string>()
+                      const selectedCapabilities =
+                        repoAssignments.get(agent.id) ?? new Set<string>()
                       const pluginAssigned = pluginAssignedSet.has(agent.id)
                       return (
                         <div

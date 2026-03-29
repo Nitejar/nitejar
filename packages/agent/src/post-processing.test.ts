@@ -45,6 +45,10 @@ function makeJob(todoState: string | null = null): Database.Job {
     id: 'job-1',
     work_item_id: 'work-item-1',
     agent_id: 'agent-1',
+    parent_job_id: null,
+    root_job_id: 'job-1',
+    run_kind: 'primary',
+    origin_tool_name: null,
     status: 'RUNNING',
     error_text: null,
     todo_state: todoState,
@@ -231,9 +235,7 @@ describe('getFirstChoiceOrThrow', () => {
   })
 
   it('throws a clear error when choices are missing without provider details', () => {
-    expect(() => getFirstChoiceOrThrow({}, 'Model call')).toThrow(
-      'Model call returned no choices'
-    )
+    expect(() => getFirstChoiceOrThrow({}, 'Model call')).toThrow('Model call returned no choices')
   })
 })
 
@@ -312,7 +314,9 @@ describe('buildRetrySeedFromJob', () => {
     const todoState = JSON.stringify({
       version: 1,
       updated_at: 1,
-      items: [{ id: 'todo-1', text: 'Ship the patch', status: 'open', created_at: 1, done_at: null }],
+      items: [
+        { id: 'todo-1', text: 'Ship the patch', status: 'open', created_at: 1, done_at: null },
+      ],
     })
     mockedFindJobById.mockResolvedValueOnce(makeJob(todoState))
     mockedListMessagesByJob.mockResolvedValueOnce([

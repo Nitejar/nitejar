@@ -792,7 +792,9 @@ export async function findTicketByWorkItemId(workItemId: string): Promise<Ticket
 
 export async function listTicketsByWorkItemIds(
   workItemIds: string[]
-): Promise<Array<{ work_item_id: string; ticket_id: string; ticket_title: string; goal_id: string | null }>> {
+): Promise<
+  Array<{ work_item_id: string; ticket_id: string; ticket_title: string; goal_id: string | null }>
+> {
   if (workItemIds.length === 0) return []
 
   const db = getDb()
@@ -942,7 +944,9 @@ export async function addTicketParticipants(
         created_at: timestamp,
       }))
     )
-    .onConflict((oc) => oc.columns(['ticket_id', 'participant_kind', 'participant_ref']).doNothing())
+    .onConflict((oc) =>
+      oc.columns(['ticket_id', 'participant_kind', 'participant_ref']).doNothing()
+    )
     .execute()
 
   return db
@@ -994,15 +998,17 @@ export async function createAttentionItem(
     .executeTakeFirstOrThrow()
 }
 
-export async function listAttentionItems(opts: {
-  targetKind?: 'user' | 'agent'
-  targetRef?: string
-  ticketId?: string
-  statuses?: string[]
-  unreadOnly?: boolean
-  limit?: number
-  offset?: number
-} = {}): Promise<AttentionItem[]> {
+export async function listAttentionItems(
+  opts: {
+    targetKind?: 'user' | 'agent'
+    targetRef?: string
+    ticketId?: string
+    statuses?: string[]
+    unreadOnly?: boolean
+    limit?: number
+    offset?: number
+  } = {}
+): Promise<AttentionItem[]> {
   const db = getDb()
   let query = db.selectFrom('attention_items').selectAll()
 

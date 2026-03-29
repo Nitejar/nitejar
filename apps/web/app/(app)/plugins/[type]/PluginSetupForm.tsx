@@ -237,8 +237,8 @@ export function PluginSetupForm({
           <div className="space-y-1">
             <p className="text-xs font-medium text-foreground">GitHub App owner</p>
             <p className="text-xs text-muted-foreground">
-              Choose where the GitHub App itself should be created before we open the manifest
-              setup flow.
+              Choose where the GitHub App itself should be created before we open the manifest setup
+              flow.
             </p>
           </div>
 

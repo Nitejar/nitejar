@@ -31,11 +31,12 @@ import {
 import { toast } from 'sonner'
 import { RelativeTime } from '../components/RelativeTime'
 import { ChatWithAgentButton } from './[id]/ChatWithAgentButton'
+import { Sparkline } from './Sparkline'
 import type { AgentData, AgentStatus } from './AgentsClient'
 
 type BuiltInView = 'all' | 'busy' | 'overloaded' | 'idle' | 'high_spend'
 type GroupBy = 'none' | 'team' | 'status'
-type SortBy = 'name' | 'workload' | 'cost' | 'last_active'
+type SortBy = 'name' | 'workload' | 'cost' | 'last_active' | 'runs'
 
 function StatusIndicator({ status }: { status: AgentStatus }) {
   return (
@@ -274,13 +275,31 @@ function AgentDetailPanel({ agent, onClose }: { agent: AgentData; onClose: () =>
               <h3 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-2">
                 Activity
               </h3>
+              {agent.dailyRuns.length > 0 && (
+                <div className="mb-2">
+                  <Sparkline data={agent.dailyRuns} width={320} height={32} />
+                </div>
+              )}
               <div className="flex items-center gap-4 text-sm text-zinc-400">
                 {agent.runCount > 0 && (
                   <span className="tabular-nums">
                     {agent.runCount} runs
-                    {agent.failedCount > 0 && (
-                      <span className="text-red-400"> ({agent.failedCount} failed)</span>
-                    )}
+                    <span
+                      className={cn(
+                        'ml-1',
+                        (() => {
+                          const rate = Math.round(
+                            ((agent.runCount - agent.failedCount) / agent.runCount) * 100
+                          )
+                          if (rate >= 90) return 'text-emerald-400'
+                          if (rate >= 70) return 'text-amber-400'
+                          return 'text-red-400'
+                        })()
+                      )}
+                    >
+                      ({Math.round(((agent.runCount - agent.failedCount) / agent.runCount) * 100)}%
+                      success)
+                    </span>
                   </span>
                 )}
                 {agent.totalEvals > 0 && agent.avgEvalScore != null && (
@@ -392,6 +411,7 @@ export function AgentsTable({ agents, teams }: AgentsTableProps) {
       if (sortBy === 'name') return a.name.localeCompare(b.name)
       if (sortBy === 'cost') return b.spend30dUsd - a.spend30dUsd
       if (sortBy === 'last_active') return (b.lastActiveAt ?? 0) - (a.lastActiveAt ?? 0)
+      if (sortBy === 'runs') return b.runCount - a.runCount
       const workloadA = a.openTicketCount * 3 + a.blockedTicketCount * 2 + a.openGoalCount
       const workloadB = b.openTicketCount * 3 + b.blockedTicketCount * 2 + b.openGoalCount
       return workloadB - workloadA
@@ -593,6 +613,7 @@ export function AgentsTable({ agents, teams }: AgentsTableProps) {
                   className="mt-1 h-7 w-full text-xs"
                 >
                   <NativeSelectOption value="workload">Workload</NativeSelectOption>
+                  <NativeSelectOption value="runs">Runs</NativeSelectOption>
                   <NativeSelectOption value="cost">Cost</NativeSelectOption>
                   <NativeSelectOption value="last_active">Last Active</NativeSelectOption>
                   <NativeSelectOption value="name">Name</NativeSelectOption>
@@ -666,7 +687,17 @@ export function AgentsTable({ agents, teams }: AgentsTableProps) {
             </div>
 
             <div className="overflow-hidden border border-zinc-800">
-              <Table>
+              <Table className="table-fixed">
+                <colgroup>
+                  <col className="w-auto" />
+                  <col className="w-[90px]" />
+                  <col className="w-[160px]" />
+                  <col className="hidden xl:table-column w-[90px]" />
+                  <col className="hidden lg:table-column w-[100px]" />
+                  <col className="hidden xl:table-column w-[100px]" />
+                  <col className="w-[90px]" />
+                  <col className="w-[120px]" />
+                </colgroup>
                 <TableHeader>
                   <TableRow className="border-zinc-800">
                     <TableHead className="pl-4 text-[0.6rem] uppercase tracking-[0.18em] text-muted-foreground">
@@ -677,6 +708,15 @@ export function AgentsTable({ agents, teams }: AgentsTableProps) {
                     </TableHead>
                     <TableHead className="text-[0.6rem] uppercase tracking-[0.18em] text-muted-foreground">
                       Workload
+                    </TableHead>
+                    <TableHead className="hidden text-[0.6rem] uppercase tracking-[0.18em] text-muted-foreground xl:table-cell">
+                      Runs
+                    </TableHead>
+                    <TableHead className="hidden text-[0.6rem] uppercase tracking-[0.18em] text-muted-foreground lg:table-cell">
+                      Last Active
+                    </TableHead>
+                    <TableHead className="hidden text-[0.6rem] uppercase tracking-[0.18em] text-muted-foreground xl:table-cell">
+                      Trend
                     </TableHead>
                     <TableHead className="text-[0.6rem] uppercase tracking-[0.18em] text-muted-foreground">
                       30d Cost
@@ -800,6 +840,42 @@ export function AgentsTable({ agents, teams }: AgentsTableProps) {
                             </>
                           )}
                         </span>
+                      </TableCell>
+                      <TableCell className="hidden py-3 xl:table-cell">
+                        <span className="text-sm tabular-nums text-white/80">{agent.runCount}</span>
+                        {agent.runCount > 0 && (
+                          <span
+                            className={cn(
+                              'ml-1.5 text-xs tabular-nums',
+                              (() => {
+                                const rate = Math.round(
+                                  ((agent.runCount - agent.failedCount) / agent.runCount) * 100
+                                )
+                                if (rate >= 90) return 'text-emerald-400'
+                                if (rate >= 70) return 'text-amber-400'
+                                return 'text-red-400'
+                              })()
+                            )}
+                          >
+                            {Math.round(
+                              ((agent.runCount - agent.failedCount) / agent.runCount) * 100
+                            )}
+                            %
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="hidden py-3 lg:table-cell">
+                        {agent.lastActiveAt ? (
+                          <RelativeTime
+                            timestamp={agent.lastActiveAt}
+                            className="text-xs text-muted-foreground"
+                          />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="hidden py-3 xl:table-cell">
+                        <Sparkline data={agent.dailyRuns} width={80} height={24} />
                       </TableCell>
                       <TableCell className="py-3 text-sm tabular-nums text-white/80">
                         ${agent.spend30dUsd.toFixed(2)}

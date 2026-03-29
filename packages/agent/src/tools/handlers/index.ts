@@ -51,6 +51,7 @@ import {
 import { extractUrlTool, webSearchTool } from './web'
 import { generateImageTool, synthesizeSpeechTool, transcribeAudioTool } from './media'
 import { queryActivityTool } from './activity-log'
+import { exploreCodebaseTool } from './explore'
 import {
   getDispatchDecisionsTool,
   getMessageChunkTool,
@@ -206,6 +207,7 @@ export const toolHandlers: Record<string, ToolHandler> = {
   synthesize_speech: synthesizeSpeechTool,
   download_attachment: downloadAttachmentTool,
   query_activity: queryActivityTool,
+  explore_codebase: exploreCodebaseTool,
   search_runs: searchRunsTool,
   get_run_trace: getRunTraceTool,
   search_work_items: searchWorkItemsTool,

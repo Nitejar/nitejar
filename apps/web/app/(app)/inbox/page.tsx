@@ -1,7 +1,12 @@
+import loadable from 'next/dynamic'
 import { createPageMetadata } from '@/app/metadata'
 import { PageHeader } from '../components/PageHeader'
 import { PageScrollShell } from '../components/PageScrollShell'
-import { InboxClient } from './InboxClient'
+import { RouteClientFallback } from '../components/RouteClientFallback'
+
+const InboxClient = loadable(() => import('./InboxClient').then((mod) => mod.InboxClient), {
+  loading: () => <RouteClientFallback label="Loading inbox..." />,
+})
 
 export const dynamic = 'force-dynamic'
 export const metadata = createPageMetadata('Inbox')

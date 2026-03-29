@@ -92,7 +92,9 @@ function hasCollectionGrant(
   return grants.some((grant) => {
     const actionMatch = grant.action === '*' || actions.includes(grant.action)
     const resourceTypeMatch =
-      grant.resourceType == null || grant.resourceType === '*' || grant.resourceType === 'collection'
+      grant.resourceType == null ||
+      grant.resourceType === '*' ||
+      grant.resourceType === 'collection'
     const resourceIdMatch =
       grant.resourceId == null || grant.resourceId === '*' || grant.resourceId === collectionId
     return actionMatch && resourceTypeMatch && resourceIdMatch
@@ -100,7 +102,11 @@ function hasCollectionGrant(
 }
 
 async function enrichEffectiveRoleAccess(db: ReturnType<typeof getDb>, collectionId: string) {
-  const agents = await db.selectFrom('agents').select(['id', 'name', 'handle']).orderBy('name', 'asc').execute()
+  const agents = await db
+    .selectFrom('agents')
+    .select(['id', 'name', 'handle'])
+    .orderBy('name', 'asc')
+    .execute()
 
   const resolvedPolicies = await Promise.all(
     agents.map(async (agent) => ({
@@ -112,8 +118,16 @@ async function enrichEffectiveRoleAccess(db: ReturnType<typeof getDb>, collectio
   return resolvedPolicies
     .map(({ agent, resolved }) => {
       const canRead = hasCollectionGrant(resolved.grants, ['collection.read'], collectionId)
-      const canContentWrite = hasCollectionGrant(resolved.grants, ['collection.content.write'], collectionId)
-      const canAdminWrite = hasCollectionGrant(resolved.grants, ['collection.admin.write'], collectionId)
+      const canContentWrite = hasCollectionGrant(
+        resolved.grants,
+        ['collection.content.write'],
+        collectionId
+      )
+      const canAdminWrite = hasCollectionGrant(
+        resolved.grants,
+        ['collection.admin.write'],
+        collectionId
+      )
       if (!canRead && !canContentWrite && !canAdminWrite) return null
       return {
         agentId: agent.id,

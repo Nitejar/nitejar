@@ -4,6 +4,7 @@ import {
   findScheduledItemById,
   listScheduledItemsByAgent,
   markScheduledItemCancelled,
+  parseAppSessionKey,
 } from '@nitejar/database'
 import type { ToolHandler } from '../types'
 
@@ -80,6 +81,20 @@ export const scheduleCheckTool: ToolHandler = async (input, context) => {
 
   const reference = typeof input.reference === 'string' ? input.reference.trim() : undefined
   const runAt = Math.floor(Date.now() / 1000) + delayMinutes * 60
+  const parsedSession = parseAppSessionKey(context.sessionKey)
+  const typedTarget = context.pluginInstanceId
+    ? {
+        kind: 'plugin_conversation' as const,
+        pluginInstanceId: context.pluginInstanceId,
+        sessionKey: context.sessionKey,
+      }
+    : parsedSession.isAppSession
+      ? {
+          kind: 'app_session' as const,
+          sessionKey: context.sessionKey,
+          sessionMode: 'resume' as const,
+        }
+      : null
 
   const { routine, scheduledItem } = await createOneShotRoutineSchedule({
     agentId: context.agentId,
@@ -88,6 +103,7 @@ export const scheduleCheckTool: ToolHandler = async (input, context) => {
     actionPrompt: instructions,
     runAt,
     sourceRef: reference ?? null,
+    targetSpecJson: typedTarget ? JSON.stringify(typedTarget) : null,
     targetPluginInstanceId: context.pluginInstanceId ?? null,
     targetSessionKey: context.sessionKey,
     targetResponseContext: context.responseContext ? JSON.stringify(context.responseContext) : null,

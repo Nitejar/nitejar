@@ -6,11 +6,47 @@ import { createRoutineTool, getRoutineTool } from './tools/handlers/routines'
 
 vi.mock('@nitejar/database', async () => {
   const actual = await vi.importActual<typeof Database>('@nitejar/database')
+
+  function compileTarget(target: Database.RoutineTarget) {
+    if (target.kind === 'plugin_conversation') {
+      return {
+        target,
+        targetSpecJson: JSON.stringify(target),
+        targetPluginInstanceId: target.pluginInstanceId,
+        targetSessionKey: target.sessionKey,
+        targetResponseContext: null,
+      }
+    }
+
+    const targetId =
+      target.kind === 'app_ticket'
+        ? target.ticketId
+        : target.kind === 'app_goal'
+          ? target.goalId
+          : target.kind === 'app_routine'
+            ? target.routineId
+            : 'session'
+
+    return {
+      target,
+      targetSpecJson: JSON.stringify(target),
+      targetPluginInstanceId: null,
+      targetSessionKey:
+        target.kind === 'app_session'
+          ? target.sessionKey
+          : `app:${target.kind}:${targetId}:__family__`,
+      targetResponseContext: null,
+    }
+  }
+
   return {
     ...actual,
     assertAgentGrant: vi.fn(),
     createRoutine: vi.fn(),
     findRoutineById: vi.fn(),
+    validateAndCompileRoutineTarget: vi.fn(({ target }: { target: Database.RoutineTarget }) =>
+      compileTarget(target)
+    ),
   }
 })
 
@@ -40,6 +76,11 @@ function routine(): Routine {
     target_plugin_instance_id: 'integration-1',
     target_session_key: 'telegram:123',
     target_response_context: null,
+    target_spec_json: JSON.stringify({
+      kind: 'plugin_conversation',
+      pluginInstanceId: 'integration-1',
+      sessionKey: 'telegram:123',
+    }),
     action_prompt: 'Do thing',
     next_run_at: null,
     last_evaluated_at: null,
@@ -69,8 +110,11 @@ describe('createRoutineTool', () => {
       {
         name: 'Daily check',
         trigger_kind: 'event',
-        target_plugin_instance_id: 'integration-1',
-        target_session_key: 'telegram:123',
+        target: {
+          kind: 'plugin_conversation',
+          pluginInstanceId: 'integration-1',
+          sessionKey: 'telegram:123',
+        },
         action_prompt: 'Run check',
         rule_json: { field: 'eventType', op: 'eq', value: 'message' },
       },
@@ -90,8 +134,11 @@ describe('createRoutineTool', () => {
       {
         name: 'Daily check',
         trigger_kind: 'event',
-        target_plugin_instance_id: 'integration-1',
-        target_session_key: 'telegram:123',
+        target: {
+          kind: 'plugin_conversation',
+          pluginInstanceId: 'integration-1',
+          sessionKey: 'telegram:123',
+        },
         action_prompt: 'Run check',
         rule_json: { field: 'eventType', op: 'eq', value: 'message' },
       },
@@ -120,8 +167,11 @@ describe('createRoutineTool', () => {
       {
         name: 'Daily check',
         trigger_kind: 'event',
-        target_plugin_instance_id: 'integration-1',
-        target_session_key: 'telegram:123',
+        target: {
+          kind: 'plugin_conversation',
+          pluginInstanceId: 'integration-1',
+          sessionKey: 'telegram:123',
+        },
         action_prompt: 'Run check',
         rule_json: { field: 'eventType', op: 'eq', value: 'message' },
       },
@@ -152,7 +202,11 @@ describe('createRoutineTool', () => {
       {
         name: 'Session follow-up',
         trigger_kind: 'event',
-        target_session_key: 'app:user-1:s1',
+        target: {
+          kind: 'app_session',
+          sessionKey: 'app:user-1:s1',
+          sessionMode: 'fresh',
+        },
         action_prompt: 'Continue work in this session',
         rule_json: { field: 'eventType', op: 'eq', value: 'message' },
       },
@@ -178,6 +232,11 @@ describe('getRoutineTool', () => {
       target_plugin_instance_id: null,
       target_session_key: 'app:user-1:s1',
       target_response_context: '{"goal_id":"goal-1","platform_fix_ticket_id":"ticket-1"}',
+      target_spec_json: JSON.stringify({
+        kind: 'app_session',
+        sessionKey: 'app:user-1:s1',
+        sessionMode: 'fresh',
+      }),
       next_run_at: 1_777_777_777,
       last_fired_at: 1_777_777_700,
       last_status: 'fired',
@@ -187,9 +246,8 @@ describe('getRoutineTool', () => {
 
     expect(result.success).toBe(true)
     expect(result.output).toContain('Routine routine-1')
-    expect(result.output).toContain('target_session_key: app:user-1:s1')
     expect(result.output).toContain(
-      'target_response_context: {"goal_id":"goal-1","platform_fix_ticket_id":"ticket-1"}'
+      'target: {"kind":"app_session","sessionKey":"app:user-1:s1","sessionMode":"fresh"}'
     )
   })
 

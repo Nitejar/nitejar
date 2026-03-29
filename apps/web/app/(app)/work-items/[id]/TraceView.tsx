@@ -2693,7 +2693,9 @@ function renderToolArgHighlightChip(
 
   return (
     <Tooltip key={key} delay={300}>
-      <TooltipTrigger asChild>{chip}</TooltipTrigger>
+      <TooltipTrigger render={<span />} className="inline-flex max-w-full align-baseline">
+        {chip}
+      </TooltipTrigger>
       <TooltipContent side="top" align="start" className="max-w-xl whitespace-pre-wrap break-words">
         <span className="font-mono text-[10px]">{item.fullValue}</span>
       </TooltipContent>

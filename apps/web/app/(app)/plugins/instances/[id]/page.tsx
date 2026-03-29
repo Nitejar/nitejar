@@ -1,7 +1,17 @@
 import type { Metadata } from 'next'
+import loadable from 'next/dynamic'
 import { findPluginInstanceById } from '@nitejar/database'
 import { createPageMetadata } from '@/app/metadata'
-import { InstanceDetailClient } from './InstanceDetailClient'
+import { RouteClientFallback } from '@/app/(app)/components/RouteClientFallback'
+
+const InstanceDetailClient = loadable(
+  () => import('./InstanceDetailClient').then((mod) => mod.InstanceDetailClient),
+  {
+    loading: () => (
+      <RouteClientFallback label="Loading plugin instance..." className="min-h-[420px]" />
+    ),
+  }
+)
 
 export const dynamic = 'force-dynamic'
 

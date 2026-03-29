@@ -1,7 +1,7 @@
 interface:
-  display_name: "Nitejar Dev"
-  short_description: "Repo-specific Nitejar dev workflows"
-  default_prompt: "Use $nitejar-dev to run the right local Nitejar development workflow for this repo."
+  display_name: 'Nitejar Dev'
+  short_description: 'Repo-specific Nitejar dev workflows'
+  default_prompt: 'Use $nitejar-dev to run the right local Nitejar development workflow for this repo.'
 
 policy:
   allow_implicit_invocation: true

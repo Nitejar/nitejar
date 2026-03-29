@@ -17,6 +17,7 @@ import {
   getFleetZombieDispatches,
   listPluginInstances,
   listSkillAssignments,
+  listRecentActivityFeed,
 } from '@nitejar/database'
 import { protectedProcedure, router } from '../trpc'
 
@@ -328,6 +329,18 @@ export const commandCenterRouter = router({
         budgetAlerts,
         needsAttention: needsAttention.slice(0, 10),
       }
+    }),
+
+  getRecentActivity: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().int().min(1).max(50).default(20),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      return listRecentActivityFeed({ limit: input?.limit ?? 20 })
     }),
 })
 

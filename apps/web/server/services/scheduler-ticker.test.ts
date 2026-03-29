@@ -24,7 +24,10 @@ vi.mock('@nitejar/database', () => ({
   createWorkItem: vi.fn(),
   enqueueToLane: vi.fn(),
   findAgentById: vi.fn(),
+  findAppSessionByKey: vi.fn(),
+  findGoalById: vi.fn(),
   findRoutineRunById: vi.fn(),
+  findRoutineById: vi.fn(),
   findTicketById: vi.fn(),
   linkRoutineRunToWorkItemByScheduledItem: vi.fn(),
   parseAppSessionKey: vi.fn(() => ({
@@ -37,6 +40,7 @@ vi.mock('@nitejar/database', () => ({
     familyKey: null,
     ownerUserId: null,
   })),
+  parseRoutineTargetSpec: vi.fn(() => null),
   updateRoutine: vi.fn(),
   archiveRoutine: vi.fn(),
 }))
@@ -51,7 +55,10 @@ vi.mock('./routines/publish', () => ({
 }))
 
 vi.mock('./app-session-context', () => ({
+  createGoalAppSession: vi.fn(() => Promise.resolve(null)),
+  createRoutineAppSession: vi.fn(() => Promise.resolve(null)),
   createRoutineAppSessionFromSeed: vi.fn(() => Promise.resolve(null)),
+  createTicketAppSession: vi.fn(() => Promise.resolve(null)),
 }))
 
 import {
@@ -65,11 +72,19 @@ import {
   createWorkItem,
   enqueueToLane,
   findAgentById,
+  findGoalById,
   findRoutineRunById,
+  findRoutineById,
   findTicketById,
   parseAppSessionKey,
+  parseRoutineTargetSpec,
 } from '@nitejar/database'
-import { createRoutineAppSessionFromSeed } from './app-session-context'
+import {
+  createGoalAppSession,
+  createRoutineAppSession,
+  createRoutineAppSessionFromSeed,
+  createTicketAppSession,
+} from './app-session-context'
 
 const TICKER_STATE_KEY = '__nitejarSchedulerTicker'
 
@@ -106,10 +121,16 @@ const mockedCreateTicketLink = vi.mocked(createTicketLink)
 const mockedCreateWorkItem = vi.mocked(createWorkItem)
 const mockedEnqueueToLane = vi.mocked(enqueueToLane)
 const mockedFindAgent = vi.mocked(findAgentById)
+const mockedFindGoalById = vi.mocked(findGoalById)
 const mockedFindRoutineRunById = vi.mocked(findRoutineRunById)
+const mockedFindRoutineById = vi.mocked(findRoutineById)
 const mockedFindTicketById = vi.mocked(findTicketById)
 const mockedParseAppSessionKey = vi.mocked(parseAppSessionKey)
+const mockedParseRoutineTargetSpec = vi.mocked(parseRoutineTargetSpec)
+const mockedCreateGoalAppSession = vi.mocked(createGoalAppSession)
+const mockedCreateRoutineAppSession = vi.mocked(createRoutineAppSession)
 const mockedCreateRoutineAppSessionFromSeed = vi.mocked(createRoutineAppSessionFromSeed)
+const mockedCreateTicketAppSession = vi.mocked(createTicketAppSession)
 const mockedArchiveRoutine = vi.mocked(archiveRoutine)
 
 type RoutineAppSession = NonNullable<Awaited<ReturnType<typeof createRoutineAppSessionFromSeed>>>
@@ -133,6 +154,7 @@ function makeScheduledItem(overrides?: Partial<ScheduledItem>): ScheduledItem {
     source_ref: null,
     plugin_instance_id: 'integ-1',
     response_context: '{"chat_id":123}',
+    target_spec_json: null,
     routine_id: null,
     routine_run_id: null,
     created_at: 900,
@@ -213,7 +235,13 @@ describe('scheduler-ticker', () => {
       ownerUserId: null,
     })
     mockedCreateRoutineAppSessionFromSeed.mockResolvedValue(null)
+    mockedCreateRoutineAppSession.mockResolvedValue(null as never)
+    mockedCreateGoalAppSession.mockResolvedValue(null as never)
+    mockedCreateTicketAppSession.mockResolvedValue(null as never)
+    mockedParseRoutineTargetSpec.mockReturnValue(null)
     mockedFindRoutineRunById.mockResolvedValue(null)
+    mockedFindRoutineById.mockResolvedValue(null)
+    mockedFindGoalById.mockResolvedValue(null)
     mockedFindTicketById.mockResolvedValue(null)
     mockExecuteTakeFirst.mockResolvedValue(null)
     // Default: transaction runs callback synchronously with mockTrx

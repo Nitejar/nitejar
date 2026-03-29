@@ -6,9 +6,12 @@ import {
   createRoutine,
   enqueueRoutineRun,
   findRoutineById,
+  getRoutineTarget,
   listRoutines,
+  type RoutineTarget,
   setRoutineEnabled,
   updateRoutine,
+  validateAndCompileRoutineTarget,
 } from '@nitejar/database'
 import type { ToolHandler } from '../types'
 
@@ -66,31 +69,22 @@ function parseJsonInput(value: unknown, fallback: unknown): unknown {
   return value
 }
 
-function parseTargetResponseContext(input: unknown): string | null {
-  if (input === undefined || input === null || input === '') {
-    return null
-  }
-
-  if (typeof input === 'string') {
-    const trimmed = input.trim()
-    if (!trimmed) return null
-
-    try {
-      JSON.parse(trimmed)
-      return trimmed
-    } catch {
-      return JSON.stringify(trimmed)
-    }
-  }
-
-  return JSON.stringify(input)
-}
-
 function parseTriggerKind(value: unknown): TriggerKind {
   if (value === 'cron' || value === 'event' || value === 'condition' || value === 'oneshot') {
     return value
   }
   throw new Error('trigger_kind must be one of: cron, event, condition, oneshot.')
+}
+
+function parseRoutineTargetInput(value: unknown): RoutineTarget {
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value) as RoutineTarget
+    } catch {
+      throw new Error('target must be a valid object or JSON string.')
+    }
+  }
+  return value as RoutineTarget
 }
 
 function resolveNextRunAt(input: {
@@ -139,13 +133,14 @@ export const routineDefinitions: Anthropic.Tool[] = [
         },
         condition_probe: { type: 'string' },
         condition_config: { description: 'Probe config object or JSON string.' },
-        target_plugin_instance_id: { type: 'string' },
-        target_session_key: { type: 'string' },
-        target_response_context: { description: 'Target response context object or JSON string.' },
+        target: {
+          description:
+            'Typed target object. Use one of: {kind:"plugin_conversation",pluginInstanceId,sessionKey}, {kind:"app_session",sessionKey,sessionMode}, {kind:"app_ticket",ticketId,sessionMode}, {kind:"app_goal",goalId,sessionMode}, {kind:"app_routine",routineId,sessionMode}.',
+        },
         action_prompt: { type: 'string' },
         enabled: { type: 'boolean' },
       },
-      required: ['name', 'trigger_kind', 'target_session_key', 'action_prompt'],
+      required: ['name', 'trigger_kind', 'target', 'action_prompt'],
     },
   },
   {
@@ -184,9 +179,10 @@ export const routineDefinitions: Anthropic.Tool[] = [
         rule_json: { description: 'JSON rule object or JSON string.' },
         condition_probe: { type: 'string' },
         condition_config: { description: 'Probe config object or JSON string.' },
-        target_plugin_instance_id: { type: 'string' },
-        target_session_key: { type: 'string' },
-        target_response_context: { description: 'Target response context object or JSON string.' },
+        target: {
+          description:
+            'Typed target object. Use one of: {kind:"plugin_conversation",pluginInstanceId,sessionKey}, {kind:"app_session",sessionKey,sessionMode}, {kind:"app_ticket",ticketId,sessionMode}, {kind:"app_goal",goalId,sessionMode}, {kind:"app_routine",routineId,sessionMode}.',
+        },
         action_prompt: { type: 'string' },
         enabled: { type: 'boolean' },
       },
@@ -263,18 +259,13 @@ export const createRoutineTool: ToolHandler = async (input, context) => {
     const triggerKind = parseTriggerKind(input.trigger_kind)
     const enabled = input.enabled !== false
 
-    const targetPluginInstanceId =
-      typeof input.target_plugin_instance_id === 'string'
-        ? input.target_plugin_instance_id.trim() || null
-        : null
-    const targetSessionKey =
-      typeof input.target_session_key === 'string' ? input.target_session_key.trim() : ''
     const actionPrompt = typeof input.action_prompt === 'string' ? input.action_prompt.trim() : ''
+    const target = parseRoutineTargetInput(input.target)
 
-    if (!targetSessionKey || !actionPrompt) {
+    if (!actionPrompt) {
       return {
         success: false,
-        error: 'target_session_key and action_prompt are required.',
+        error: 'target and action_prompt are required.',
       }
     }
 
@@ -290,6 +281,10 @@ export const createRoutineTool: ToolHandler = async (input, context) => {
 
     const ruleInput = parseJsonInput(input.rule_json, {})
     const conditionConfigInput = parseJsonInput(input.condition_config, null)
+    const compiledTarget = await validateAndCompileRoutineTarget({
+      agentId: context.agentId,
+      target,
+    })
 
     const routine = await createRoutine({
       agent_id: context.agentId,
@@ -303,9 +298,10 @@ export const createRoutineTool: ToolHandler = async (input, context) => {
       condition_probe:
         typeof input.condition_probe === 'string' ? input.condition_probe.trim() || null : null,
       condition_config: conditionConfigInput === null ? null : JSON.stringify(conditionConfigInput),
-      target_plugin_instance_id: targetPluginInstanceId,
-      target_session_key: targetSessionKey,
-      target_response_context: parseTargetResponseContext(input.target_response_context),
+      target_plugin_instance_id: compiledTarget.targetPluginInstanceId,
+      target_session_key: compiledTarget.targetSessionKey,
+      target_response_context: compiledTarget.targetResponseContext,
+      target_spec_json: compiledTarget.targetSpecJson,
       action_prompt: actionPrompt,
       next_run_at: nextRunAt,
       last_evaluated_at: null,
@@ -386,6 +382,7 @@ export const getRoutineTool: ToolHandler = async (input, context) => {
     const lastFired = routine.last_fired_at
       ? new Date(routine.last_fired_at * 1000).toISOString()
       : 'n/a'
+    const target = getRoutineTarget(routine)
 
     return {
       success: true,
@@ -394,9 +391,7 @@ export const getRoutineTool: ToolHandler = async (input, context) => {
         `name: ${routine.name}`,
         `trigger_kind: ${routine.trigger_kind}`,
         `enabled: ${routine.enabled === 1 ? 'true' : 'false'}`,
-        `target_session_key: ${routine.target_session_key}`,
-        `target_plugin_instance_id: ${routine.target_plugin_instance_id ?? 'null'}`,
-        `target_response_context: ${routine.target_response_context ?? 'null'}`,
+        `target: ${target ? JSON.stringify(target) : 'null'}`,
         `next_run_at: ${nextRun}`,
         `last_fired_at: ${lastFired}`,
         `last_status: ${routine.last_status ?? 'n/a'}`,
@@ -444,6 +439,20 @@ export const updateRoutineTool: ToolHandler = async (input, context) => {
       timezone,
       enabled,
     })
+    const target =
+      input.target !== undefined
+        ? parseRoutineTargetInput(input.target)
+        : getRoutineTarget(existing)
+    if (!target) {
+      return {
+        success: false,
+        error: 'Routine target is invalid and must be repaired before updating.',
+      }
+    }
+    const compiledTarget = await validateAndCompileRoutineTarget({
+      agentId: context.agentId,
+      target,
+    })
 
     const updated = await updateRoutine(routineId, {
       name: typeof input.name === 'string' ? input.name.trim() || existing.name : existing.name,
@@ -464,18 +473,10 @@ export const updateRoutineTool: ToolHandler = async (input, context) => {
       condition_config: input.condition_config
         ? JSON.stringify(parseJsonInput(input.condition_config, null))
         : existing.condition_config,
-      target_plugin_instance_id:
-        typeof input.target_plugin_instance_id === 'string'
-          ? input.target_plugin_instance_id.trim() || null
-          : existing.target_plugin_instance_id,
-      target_session_key:
-        typeof input.target_session_key === 'string'
-          ? input.target_session_key.trim() || existing.target_session_key
-          : existing.target_session_key,
-      target_response_context:
-        input.target_response_context !== undefined
-          ? parseTargetResponseContext(input.target_response_context)
-          : existing.target_response_context,
+      target_plugin_instance_id: compiledTarget.targetPluginInstanceId,
+      target_session_key: compiledTarget.targetSessionKey,
+      target_response_context: compiledTarget.targetResponseContext,
+      target_spec_json: compiledTarget.targetSpecJson,
       action_prompt:
         typeof input.action_prompt === 'string'
           ? input.action_prompt.trim() || existing.action_prompt

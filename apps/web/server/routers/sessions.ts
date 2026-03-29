@@ -252,7 +252,11 @@ async function ensureSessionParticipant(input: {
   })
 }
 
-function buildTicketExecutionMessage(input: { title: string; body: string | null; message?: string }) {
+function buildTicketExecutionMessage(input: {
+  title: string
+  body: string | null
+  message?: string
+}) {
   const custom = input.message?.trim()
   if (custom) return custom
 
@@ -285,7 +289,9 @@ function computeFailedTurnStatus(input: {
   )
 }
 
-function mapParticipantView(agent: Awaited<ReturnType<typeof listAppSessionParticipantAgents>>[number]) {
+function mapParticipantView(
+  agent: Awaited<ReturnType<typeof listAppSessionParticipantAgents>>[number]
+) {
   const config = parseAgentConfig(agent.config)
   return {
     id: agent.id,
@@ -300,7 +306,12 @@ function mapParticipantView(agent: Awaited<ReturnType<typeof listAppSessionParti
 function describeSessionContext(
   sessionKey: string,
   linkedTicket: Awaited<ReturnType<typeof getSessionWorkContext>>['linkedTicket']
-): { kind: 'standalone' | 'ticket' | 'goal' | 'routine' | 'legacy' | 'external'; id: string | null; label: string | null; familyKey: string | null } {
+): {
+  kind: 'standalone' | 'ticket' | 'goal' | 'routine' | 'legacy' | 'external'
+  id: string | null
+  label: string | null
+  familyKey: string | null
+} {
   const parsed = parseAppSessionKey(sessionKey)
   if (!parsed.isAppSession) {
     return { kind: 'external', id: null, label: null, familyKey: null }
@@ -317,12 +328,27 @@ function describeSessionContext(
     }
   }
   if (parsed.contextKind === 'goal') {
-    return { kind: 'goal', id: parsed.contextId, label: 'Goal conversation', familyKey: parsed.familyKey }
+    return {
+      kind: 'goal',
+      id: parsed.contextId,
+      label: 'Goal conversation',
+      familyKey: parsed.familyKey,
+    }
   }
   if (parsed.contextKind === 'routine') {
-    return { kind: 'routine', id: parsed.contextId, label: 'Routine conversation', familyKey: parsed.familyKey }
+    return {
+      kind: 'routine',
+      id: parsed.contextId,
+      label: 'Routine conversation',
+      familyKey: parsed.familyKey,
+    }
   }
-  return { kind: 'standalone', id: parsed.contextId, label: 'Standalone conversation', familyKey: parsed.familyKey }
+  return {
+    kind: 'standalone',
+    id: parsed.contextId,
+    label: 'Standalone conversation',
+    familyKey: parsed.familyKey,
+  }
 }
 
 async function buildSessionListItem(db: ReturnType<typeof getDb>, session: AppSession) {
@@ -389,7 +415,7 @@ async function buildSessionListItem(db: ReturnType<typeof getDb>, session: AppSe
     } else if (
       latestJob &&
       latestJob.status === 'COMPLETED' &&
-      !(latestJob.final_response?.trim()?.length)
+      !latestJob.final_response?.trim()?.length
     ) {
       preview = truncateText(receiptOnlyReplyFallback(latestJob.name), 80)
       lastMessageAt = latestJob.created_at
@@ -651,7 +677,8 @@ export const sessionsRouter = router({
             all.findIndex((candidate) => candidate.session_key === session.session_key) === index
         )
         .sort((a, b) => {
-          if (b.last_activity_at !== a.last_activity_at) return b.last_activity_at - a.last_activity_at
+          if (b.last_activity_at !== a.last_activity_at)
+            return b.last_activity_at - a.last_activity_at
           return b.created_at - a.created_at
         })
         .slice(0, input.limit)

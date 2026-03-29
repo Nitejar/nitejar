@@ -1,7 +1,17 @@
+import loadable from 'next/dynamic'
 import { createPageMetadata } from '@/app/metadata'
+import { RouteClientFallback } from '@/app/(app)/components/RouteClientFallback'
 import { PageHeader } from '../../components/PageHeader'
 import { PageScrollShell } from '../../components/PageScrollShell'
-import { AgentBuilderWizard } from './AgentBuilderWizard'
+
+const AgentBuilderWizard = loadable(
+  () => import('./AgentBuilderWizard').then((mod) => mod.AgentBuilderWizard),
+  {
+    loading: () => (
+      <RouteClientFallback label="Loading agent builder..." className="min-h-[480px]" />
+    ),
+  }
+)
 
 export const dynamic = 'force-dynamic'
 export const metadata = createPageMetadata('Agent Builder')

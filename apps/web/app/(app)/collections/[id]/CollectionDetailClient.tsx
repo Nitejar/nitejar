@@ -633,8 +633,13 @@ export function CollectionDetailClient({ collectionId }: { collectionId: string 
           <div className="rounded-lg border border-white/10 bg-white/[0.02] p-4">
             <p className="text-xs font-medium text-foreground">Effective access model</p>
             <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-              <p>No explicit ACL entries means the collection is open by default for ordinary agents.</p>
-              <p>Role grants can still override ACLs. Agents with collection role grants may have effective access even without an explicit row here.</p>
+              <p>
+                No explicit ACL entries means the collection is open by default for ordinary agents.
+              </p>
+              <p>
+                Role grants can still override ACLs. Agents with collection role grants may have
+                effective access even without an explicit row here.
+              </p>
             </div>
           </div>
 
@@ -643,8 +648,8 @@ export function CollectionDetailClient({ collectionId }: { collectionId: string 
               <EmptyHeader>
                 <EmptyTitle>No explicit ACL entries</EmptyTitle>
                 <EmptyDescription>
-                  Open by default for agents without overriding role grants. Add an explicit ACL row if
-                  you want to pin access for a specific agent.
+                  Open by default for agents without overriding role grants. Add an explicit ACL row
+                  if you want to pin access for a specific agent.
                 </EmptyDescription>
               </EmptyHeader>
               <Button size="sm" onClick={openGrantDialog}>
@@ -721,7 +726,8 @@ export function CollectionDetailClient({ collectionId }: { collectionId: string 
               <div>
                 <p className="text-sm font-medium text-foreground">Effective role-based access</p>
                 <p className="text-xs text-muted-foreground">
-                  These agents can reach this collection through role grants, even if they do not appear in the ACL table above.
+                  These agents can reach this collection through role grants, even if they do not
+                  appear in the ACL table above.
                 </p>
               </div>
               <div className="overflow-x-auto rounded-lg border border-white/10">

@@ -82,20 +82,14 @@ function resolvePageLimit(total: number, offset: number, limit: unknown, max: nu
   return Math.min(Math.max(requested, 1), max, Math.max(total - offset, 0) || requested)
 }
 
-function buildPageInfo(input: {
-  offset: number
-  limit: number
-  returned: number
-  total: number
-}) {
+function buildPageInfo(input: { offset: number; limit: number; returned: number; total: number }) {
   return {
     offset: input.offset,
     limit: input.limit,
     returned: input.returned,
     total: input.total,
     hasMore: input.offset + input.returned < input.total,
-    nextOffset:
-      input.offset + input.returned < input.total ? input.offset + input.returned : null,
+    nextOffset: input.offset + input.returned < input.total ? input.offset + input.returned : null,
   }
 }
 
@@ -270,11 +264,22 @@ export const searchRunsDefinition: Anthropic.Tool = {
   input_schema: {
     type: 'object' as const,
     properties: {
-      q: { type: 'string', description: 'Optional keyword, run id, work item id, title, handle, or session query.' },
-      statuses: { type: 'array', items: { type: 'string' }, description: 'Optional run statuses to include.' },
+      q: {
+        type: 'string',
+        description: 'Optional keyword, run id, work item id, title, handle, or session query.',
+      },
+      statuses: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Optional run statuses to include.',
+      },
       agentId: { type: 'string', description: 'Optional agent id filter.' },
       workItemId: { type: 'string', description: 'Optional work item id filter.' },
-      sources: { type: 'array', items: { type: 'string' }, description: 'Optional source filters, like telegram or github.' },
+      sources: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Optional source filters, like telegram or github.',
+      },
       pluginInstanceId: { type: 'string', description: 'Optional plugin instance filter.' },
       sessionKeyPrefix: { type: 'string', description: 'Optional session key prefix filter.' },
       createdAfter: { type: 'number', description: 'Optional unix timestamp lower bound.' },
@@ -305,7 +310,8 @@ export const searchRunsTool: ToolHandler = async (input, context) => {
         : undefined,
       pluginInstanceId:
         typeof input.pluginInstanceId === 'string' ? input.pluginInstanceId : undefined,
-      sessionKeyPrefix: typeof input.sessionKeyPrefix === 'string' ? input.sessionKeyPrefix : undefined,
+      sessionKeyPrefix:
+        typeof input.sessionKeyPrefix === 'string' ? input.sessionKeyPrefix : undefined,
       createdAfter: typeof input.createdAfter === 'number' ? input.createdAfter : undefined,
       createdBefore: typeof input.createdBefore === 'number' ? input.createdBefore : undefined,
       limit: typeof input.limit === 'number' ? input.limit : undefined,
@@ -698,7 +704,8 @@ export const searchWorkItemsTool: ToolHandler = async (input, context) => {
       pluginInstanceId:
         typeof input.pluginInstanceId === 'string' ? input.pluginInstanceId : undefined,
       agentId: typeof input.agentId === 'string' ? input.agentId : undefined,
-      sessionKeyPrefix: typeof input.sessionKeyPrefix === 'string' ? input.sessionKeyPrefix : undefined,
+      sessionKeyPrefix:
+        typeof input.sessionKeyPrefix === 'string' ? input.sessionKeyPrefix : undefined,
       createdAfter: typeof input.createdAfter === 'number' ? input.createdAfter : undefined,
       createdBefore: typeof input.createdBefore === 'number' ? input.createdBefore : undefined,
       limit: typeof input.limit === 'number' ? input.limit : undefined,
@@ -751,7 +758,9 @@ export const getWorkItemTool: ToolHandler = async (input, context) => {
     const costs = await getCostByWorkItems([workItem.id])
     const [runs, dispatches, effects] = await Promise.all([
       input.includeRuns ? listJobsByWorkItem(workItem.id) : Promise.resolve(undefined),
-      input.includeDispatches ? listRunDispatchesByWorkItem(workItem.id) : Promise.resolve(undefined),
+      input.includeDispatches
+        ? listRunDispatchesByWorkItem(workItem.id)
+        : Promise.resolve(undefined),
       input.includeEffects ? listEffectOutboxByWorkItem(workItem.id) : Promise.resolve(undefined),
     ])
 
@@ -960,7 +969,9 @@ export const getWorkItemTriageReceiptsTool: ToolHandler = async (input, context)
               reason: typeof entry.result?.reason === 'string' ? entry.result.reason : null,
               reasonAutoDerived: Boolean(entry.result?.reasonAutoDerived),
               resources: Array.isArray(entry.result?.resources)
-                ? entry.result.resources.filter((value): value is string => typeof value === 'string')
+                ? entry.result.resources.filter(
+                    (value): value is string => typeof value === 'string'
+                  )
                 : [],
             },
             usage:

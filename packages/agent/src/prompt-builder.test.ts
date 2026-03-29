@@ -546,7 +546,10 @@ describe('buildSystemPrompt', () => {
   it('includes a dedicated role section from agent title', async () => {
     const agentWithTitle: Agent = {
       ...baseAgent,
-      config: JSON.stringify({ title: 'Chief Executive Officer', memorySettings: { enabled: false } }),
+      config: JSON.stringify({
+        title: 'Chief Executive Officer',
+        memorySettings: { enabled: false },
+      }),
     }
 
     const prompt = await buildSystemPrompt(agentWithTitle, baseWorkItem)

@@ -1,9 +1,17 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import loadable from 'next/dynamic'
 import { findSkillById } from '@nitejar/database'
 import { createPageMetadata } from '@/app/metadata'
 import { PageScrollShell } from '../../components/PageScrollShell'
-import { SkillDetailClient } from './SkillDetailClient'
+import { RouteClientFallback } from '../../components/RouteClientFallback'
+
+const SkillDetailClient = loadable(
+  () => import('./SkillDetailClient').then((mod) => mod.SkillDetailClient),
+  {
+    loading: () => <RouteClientFallback label="Loading skill..." className="min-h-[420px]" />,
+  }
+)
 
 export const dynamic = 'force-dynamic'
 

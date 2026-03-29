@@ -7,7 +7,9 @@ export async function up(db: Kysely<Database>): Promise<void> {
     .createTable('ticket_comments')
     .ifNotExists()
     .addColumn('id', 'text', (col) => col.primaryKey())
-    .addColumn('ticket_id', 'text', (col) => col.notNull().references('tickets.id').onDelete('cascade'))
+    .addColumn('ticket_id', 'text', (col) =>
+      col.notNull().references('tickets.id').onDelete('cascade')
+    )
     .addColumn('author_kind', 'text', (col) => col.notNull())
     .addColumn('author_ref', 'text')
     .addColumn('kind', 'text', (col) => col.notNull().defaultTo('comment'))
@@ -20,7 +22,9 @@ export async function up(db: Kysely<Database>): Promise<void> {
   await db.schema
     .createTable('ticket_participants')
     .ifNotExists()
-    .addColumn('ticket_id', 'text', (col) => col.notNull().references('tickets.id').onDelete('cascade'))
+    .addColumn('ticket_id', 'text', (col) =>
+      col.notNull().references('tickets.id').onDelete('cascade')
+    )
     .addColumn('participant_kind', 'text', (col) => col.notNull())
     .addColumn('participant_ref', 'text', (col) => col.notNull())
     .addColumn('added_by_kind', 'text', (col) => col.notNull())

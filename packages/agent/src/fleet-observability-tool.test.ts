@@ -1,10 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Database from '@nitejar/database'
 import type { ToolContext } from './tools'
-import {
-  searchRunsTool,
-  searchWorkItemsTool,
-} from './tools/handlers/fleet-observability'
+import { searchRunsTool, searchWorkItemsTool } from './tools/handlers/fleet-observability'
 import { getRunTool } from './tools/handlers/run-history'
 
 vi.mock('@nitejar/database', async () => {
@@ -60,7 +57,9 @@ describe('fleet observability tools', () => {
   })
 
   it('requires fleet.run.read for search_runs', async () => {
-    mockedAssertAgentGrant.mockRejectedValue(new Error('Access denied: missing grant "fleet.run.read".'))
+    mockedAssertAgentGrant.mockRejectedValue(
+      new Error('Access denied: missing grant "fleet.run.read".')
+    )
 
     const result = await searchRunsTool({}, context)
 
@@ -145,6 +144,10 @@ describe('fleet observability tools', () => {
       id: 'run-2',
       agent_id: 'agent-scout',
       work_item_id: 'work-2',
+      parent_job_id: null,
+      root_job_id: 'run-2',
+      run_kind: 'primary',
+      origin_tool_name: null,
       status: 'completed',
       started_at: 1,
       completed_at: 2,
@@ -154,7 +157,9 @@ describe('fleet observability tools', () => {
       created_at: 1,
       updated_at: 2,
     } satisfies JobRecord)
-    mockedAssertAgentGrant.mockRejectedValue(new Error('Access denied: missing grant "fleet.run.read".'))
+    mockedAssertAgentGrant.mockRejectedValue(
+      new Error('Access denied: missing grant "fleet.run.read".')
+    )
 
     const result = await getRunTool({ run_id: 'run-2' }, context)
 
@@ -167,6 +172,10 @@ describe('fleet observability tools', () => {
       id: 'run-2',
       agent_id: 'agent-scout',
       work_item_id: 'work-2',
+      parent_job_id: null,
+      root_job_id: 'run-2',
+      run_kind: 'primary',
+      origin_tool_name: null,
       status: 'completed',
       started_at: 1,
       completed_at: 2,

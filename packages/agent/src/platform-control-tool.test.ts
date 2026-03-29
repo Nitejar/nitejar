@@ -125,9 +125,7 @@ describe('platform control tools', () => {
   })
 
   it('includes assigned plugin instances in get_agent_config', async () => {
-    mockedAssertAgentGrant
-      .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce(undefined)
+    mockedAssertAgentGrant.mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
     mockedFindAgentById.mockResolvedValue(
       agent({ id: 'agent-2', handle: 'builder', name: 'Builder' }, { title: 'Builder' })
     )

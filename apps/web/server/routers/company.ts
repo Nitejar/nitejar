@@ -1774,37 +1774,37 @@ export const companyRouter = router({
 
     const [roleGrantsAll, roleDefaultsAll, roleGitHubPoliciesAll, teamDefaults, agentAssignments] =
       await Promise.all([
-      Promise.all(
-        roles.map(async (role) => ({
-          roleId: role.id,
-          grants: await listRoleGrants(role.id),
-        }))
-      ),
-      Promise.all(
-        roles.map(async (role) => ({
-          roleId: role.id,
-          defaults: await listRoleDefaults(role.id),
-        }))
-      ),
-      Promise.all(
-        roles.map(async (role) => ({
-          roleId: role.id,
-          githubRepoPolicies: await listRoleGitHubRepoPolicies(role.id),
-        }))
-      ),
-      Promise.all(
-        teams.map(async (team) => ({
-          teamId: team.id,
-          assignments: await listTeamRoleDefaults(team.id),
-        }))
-      ),
-      Promise.all(
-        agents.map(async (agent) => ({
-          agentId: agent.id,
-          assignments: await listAgentRoleAssignments(agent.id),
-        }))
-      ),
-    ])
+        Promise.all(
+          roles.map(async (role) => ({
+            roleId: role.id,
+            grants: await listRoleGrants(role.id),
+          }))
+        ),
+        Promise.all(
+          roles.map(async (role) => ({
+            roleId: role.id,
+            defaults: await listRoleDefaults(role.id),
+          }))
+        ),
+        Promise.all(
+          roles.map(async (role) => ({
+            roleId: role.id,
+            githubRepoPolicies: await listRoleGitHubRepoPolicies(role.id),
+          }))
+        ),
+        Promise.all(
+          teams.map(async (team) => ({
+            teamId: team.id,
+            assignments: await listTeamRoleDefaults(team.id),
+          }))
+        ),
+        Promise.all(
+          agents.map(async (agent) => ({
+            agentId: agent.id,
+            assignments: await listAgentRoleAssignments(agent.id),
+          }))
+        ),
+      ])
 
     const defaultsByRoleId = new Map<string, Array<{ teamId: string; teamName: string }>>()
     for (const row of teamDefaults) {

@@ -1,7 +1,15 @@
+import loadable from 'next/dynamic'
 import { createPageMetadata } from '@/app/metadata'
 import { PageHeader } from '@/app/(app)/components/PageHeader'
 import { PageScrollShell } from '@/app/(app)/components/PageScrollShell'
-import { RuntimeControlClient } from './RuntimeControlClient'
+import { RouteClientFallback } from '@/app/(app)/components/RouteClientFallback'
+
+const RuntimeControlClient = loadable(
+  () => import('./RuntimeControlClient').then((mod) => mod.RuntimeControlClient),
+  {
+    loading: () => <RouteClientFallback label="Loading runtime controls..." />,
+  }
+)
 
 export const metadata = createPageMetadata('Runtime')
 

@@ -962,7 +962,6 @@ function CapabilitiesStep({
             </div>
           )}
         </div>
-
       </CardContent>
     </Card>
   )

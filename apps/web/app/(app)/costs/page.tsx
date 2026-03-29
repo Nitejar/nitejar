@@ -1,7 +1,15 @@
+import loadable from 'next/dynamic'
 import { createPageMetadata } from '@/app/metadata'
 import { PageHeader } from '../components/PageHeader'
 import { PageScrollShell } from '../components/PageScrollShell'
-import { CostsDashboard } from './CostsDashboard'
+import { RouteClientFallback } from '../components/RouteClientFallback'
+
+const CostsDashboard = loadable(
+  () => import('./CostsDashboard').then((mod) => mod.CostsDashboard),
+  {
+    loading: () => <RouteClientFallback label="Loading costs..." className="min-h-[420px]" />,
+  }
+)
 
 export const dynamic = 'force-dynamic'
 export const metadata = createPageMetadata('Costs')

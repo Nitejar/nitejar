@@ -3,6 +3,7 @@ export { getDb, closeDb, getDatabaseType, type DatabaseType } from './db'
 export { sql } from 'kysely'
 export * from './policy-grants'
 export * from './github-repo-capabilities'
+export * from './routine-targets'
 
 // Type exports
 export {

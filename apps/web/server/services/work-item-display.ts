@@ -23,7 +23,9 @@ function extractTicketId(triggerRef: string | null | undefined): string | null {
   return triggerRef.slice('ticket:'.length) || null
 }
 
-function extractGoalIdFromGoalHeartbeatSessionKey(sessionKey: string | null | undefined): string | null {
+function extractGoalIdFromGoalHeartbeatSessionKey(
+  sessionKey: string | null | undefined
+): string | null {
   if (!sessionKey) return null
   const match = /^work:goal:(.+):heartbeat$/.exec(sessionKey)
   return match?.[1] ?? null
@@ -88,11 +90,11 @@ export async function resolveWorkItemTicketContexts(
       if (parsedSession?.isAppSession && parsedSession.contextKind === 'goal') {
         return {
           workItemId: item.workItemId,
-              context: {
-                ticketId: null,
-                ticketTitle: null,
-                goalId: parsedSession.contextId,
-              },
+          context: {
+            ticketId: null,
+            ticketTitle: null,
+            goalId: parsedSession.contextId,
+          },
         }
       }
 
@@ -101,11 +103,11 @@ export async function resolveWorkItemTicketContexts(
         if (goalId) {
           return {
             workItemId: item.workItemId,
-              context: {
-                ticketId: null,
-                ticketTitle: null,
-                goalId,
-              },
+            context: {
+              ticketId: null,
+              ticketTitle: null,
+              goalId,
+            },
           }
         }
       }

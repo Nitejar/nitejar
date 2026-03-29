@@ -1,7 +1,15 @@
+import loadable from 'next/dynamic'
 import { createPageMetadata } from '@/app/metadata'
 import { PageHeader } from '@/app/(app)/components/PageHeader'
 import { PageScrollShell } from '@/app/(app)/components/PageScrollShell'
-import { RoutinesClient } from './RoutinesClient'
+import { RouteClientFallback } from '@/app/(app)/components/RouteClientFallback'
+
+const RoutinesClient = loadable(
+  () => import('./RoutinesClient').then((mod) => mod.RoutinesClient),
+  {
+    loading: () => <RouteClientFallback label="Loading routines..." className="min-h-[420px]" />,
+  }
+)
 
 export const metadata = createPageMetadata('Routines')
 

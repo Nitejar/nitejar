@@ -11,13 +11,21 @@ import {
   findAgentById,
   findRoutineRunById,
   findTicketById,
+  findGoalById,
   linkRoutineRunToWorkItemByScheduledItem,
   updateRoutine,
   archiveRoutine,
   parseAppSessionKey,
+  parseRoutineTargetSpec,
+  findRoutineById,
 } from '@nitejar/database'
 import { publishRoutineEnvelopeFromWorkItem } from './routines/publish'
-import { createRoutineAppSessionFromSeed } from './app-session-context'
+import {
+  createGoalAppSession,
+  createRoutineAppSession,
+  createRoutineAppSessionFromSeed,
+  createTicketAppSession,
+} from './app-session-context'
 
 const TICK_INTERVAL_MS = 30_000
 const TICKER_STATE_KEY = '__nitejarSchedulerTicker'
@@ -57,6 +65,189 @@ function getTickerState(): TickerState {
   return initialized
 }
 
+async function findLatestAppSessionByPrefix(prefix: string) {
+  const db = getDb()
+  return db
+    .selectFrom('app_sessions')
+    .selectAll()
+    .where('session_key', 'like', `${prefix}:%`)
+    .orderBy('last_activity_at', 'desc')
+    .orderBy('created_at', 'desc')
+    .limit(1)
+    .executeTakeFirst()
+}
+
+async function resolveScheduledDelivery(input: {
+  item: Awaited<ReturnType<typeof listPendingScheduledItems>>[number]
+}): Promise<{
+  sessionKey: string
+  pluginInstanceId: string | null
+  responseContext: string | null
+}> {
+  const target = parseRoutineTargetSpec(input.item.target_spec_json)
+  if (!target) {
+    let effectiveSessionKey = input.item.session_key
+    if (input.item.routine_id) {
+      const parsed = parseAppSessionKey(input.item.session_key)
+      if (parsed.isAppSession) {
+        const freshSession = await createRoutineAppSessionFromSeed({
+          routineId: input.item.routine_id,
+          seedSessionKey: input.item.session_key,
+          agentId: input.item.agent_id,
+        })
+        if (freshSession) {
+          effectiveSessionKey = freshSession.session_key
+        }
+      }
+    }
+
+    return {
+      sessionKey: effectiveSessionKey,
+      pluginInstanceId: input.item.plugin_instance_id ?? null,
+      responseContext: input.item.response_context,
+    }
+  }
+
+  switch (target.kind) {
+    case 'plugin_conversation':
+      return {
+        sessionKey: target.sessionKey,
+        pluginInstanceId: target.pluginInstanceId,
+        responseContext: input.item.response_context,
+      }
+    case 'app_session': {
+      if (target.sessionMode === 'resume') {
+        return {
+          sessionKey: target.sessionKey,
+          pluginInstanceId: null,
+          responseContext: null,
+        }
+      }
+
+      if (!input.item.routine_id) {
+        return {
+          sessionKey: target.sessionKey,
+          pluginInstanceId: null,
+          responseContext: null,
+        }
+      }
+
+      const freshSession = await createRoutineAppSessionFromSeed({
+        routineId: input.item.routine_id,
+        seedSessionKey: target.sessionKey,
+        agentId: input.item.agent_id,
+      })
+
+      return {
+        sessionKey: freshSession?.session_key ?? target.sessionKey,
+        pluginInstanceId: null,
+        responseContext: null,
+      }
+    }
+    case 'app_ticket': {
+      const prefix = `app:ticket:${target.ticketId}`
+      const latestSession = await findLatestAppSessionByPrefix(prefix)
+      if (target.sessionMode === 'resume' && latestSession) {
+        return {
+          sessionKey: latestSession.session_key,
+          pluginInstanceId: null,
+          responseContext: null,
+        }
+      }
+
+      const ticket = await findTicketById(target.ticketId)
+      const ownerUserId =
+        latestSession?.owner_user_id ??
+        ticket?.created_by_user_id ??
+        (input.item.routine_id
+          ? (await findRoutineById(input.item.routine_id))?.created_by_ref
+          : null)
+      if (!ticket || !ownerUserId) {
+        throw new Error(`Unable to resolve app ticket target ${target.ticketId}.`)
+      }
+
+      const created = await createTicketAppSession({
+        ticketId: target.ticketId,
+        userId: ownerUserId,
+        agentId: input.item.agent_id,
+        title: latestSession?.title ?? ticket.title,
+        createdBy: { kind: 'system', ref: 'scheduler' },
+      })
+
+      return {
+        sessionKey: created.session_key,
+        pluginInstanceId: null,
+        responseContext: null,
+      }
+    }
+    case 'app_goal': {
+      const prefix = `app:goal:${target.goalId}`
+      const latestSession = await findLatestAppSessionByPrefix(prefix)
+      if (target.sessionMode === 'resume' && latestSession) {
+        return {
+          sessionKey: latestSession.session_key,
+          pluginInstanceId: null,
+          responseContext: null,
+        }
+      }
+
+      const goal = await findGoalById(target.goalId)
+      const ownerUserId =
+        latestSession?.owner_user_id ??
+        goal?.created_by_user_id ??
+        (input.item.routine_id
+          ? (await findRoutineById(input.item.routine_id))?.created_by_ref
+          : null)
+      if (!goal || !ownerUserId) {
+        throw new Error(`Unable to resolve app goal target ${target.goalId}.`)
+      }
+
+      const created = await createGoalAppSession({
+        goalId: target.goalId,
+        userId: ownerUserId,
+        agentId: input.item.agent_id,
+        title: latestSession?.title ?? goal.title,
+      })
+
+      return {
+        sessionKey: created.session_key,
+        pluginInstanceId: null,
+        responseContext: null,
+      }
+    }
+    case 'app_routine': {
+      const prefix = `app:routine:${target.routineId}`
+      const latestSession = await findLatestAppSessionByPrefix(prefix)
+      if (target.sessionMode === 'resume' && latestSession) {
+        return {
+          sessionKey: latestSession.session_key,
+          pluginInstanceId: null,
+          responseContext: null,
+        }
+      }
+
+      const targetRoutine = await findRoutineById(target.routineId)
+      const ownerUserId = latestSession?.owner_user_id ?? targetRoutine?.created_by_ref ?? null
+      if (!targetRoutine || !ownerUserId) {
+        throw new Error(`Unable to resolve app routine target ${target.routineId}.`)
+      }
+
+      const created = await createRoutineAppSession({
+        routineId: target.routineId,
+        userId: ownerUserId,
+        agentId: input.item.agent_id,
+        title: latestSession?.title ?? targetRoutine.name,
+      })
+
+      return {
+        sessionKey: created.session_key,
+        pluginInstanceId: null,
+        responseContext: null,
+      }
+    }
+  }
+}
+
 async function tick(): Promise<void> {
   // Recover any items stuck in 'firing' from a previous crash
   const recovered = await recoverStaleFiringItems(STALE_FIRING_SECONDS)
@@ -91,23 +282,13 @@ async function tick(): Promise<void> {
 
       // Scheduler-specific queue_key — isolates from conversation lanes so mode='followup'
       // sticks (upsertQueueLaneOnMessage doesn't overwrite mode on existing lanes)
-      let effectiveSessionKey = item.session_key
+      const delivery = await resolveScheduledDelivery({ item })
+      const effectiveSessionKey = delivery.sessionKey
       const routineRun = item.routine_run_id ? await findRoutineRunById(item.routine_run_id) : null
-      const linkedTicketId = extractTicketIdFromTriggerRef(routineRun?.trigger_ref ?? item.source_ref)
+      const linkedTicketId = extractTicketIdFromTriggerRef(
+        routineRun?.trigger_ref ?? item.source_ref
+      )
       const linkedTicket = linkedTicketId ? await findTicketById(linkedTicketId) : null
-      if (item.routine_id) {
-        const parsed = parseAppSessionKey(item.session_key)
-        if (parsed.isAppSession) {
-          const freshSession = await createRoutineAppSessionFromSeed({
-            routineId: item.routine_id,
-            seedSessionKey: item.session_key,
-            agentId: item.agent_id,
-          })
-          if (freshSession) {
-            effectiveSessionKey = freshSession.session_key
-          }
-        }
-      }
 
       const queueKey = `sched:${effectiveSessionKey}:${item.agent_id}`
       const arrivedAt = now()
@@ -126,9 +307,11 @@ async function tick(): Promise<void> {
               : `scheduled:${item.id}`,
             session_key: effectiveSessionKey,
             status: 'NEW',
-            title: linkedTicket ? `Scheduled ticket: ${linkedTicket.title}` : `Scheduled: ${item.type}`,
+            title: linkedTicket
+              ? `Scheduled ticket: ${linkedTicket.title}`
+              : `Scheduled: ${item.type}`,
             payload: item.payload,
-            plugin_instance_id: item.plugin_instance_id ?? undefined,
+            plugin_instance_id: delivery.pluginInstanceId ?? undefined,
           },
           trx
         )
@@ -171,8 +354,8 @@ async function tick(): Promise<void> {
           {
             queue_key: queueKey,
             work_item_id: workItem.id,
-            plugin_instance_id: item.plugin_instance_id,
-            response_context: item.response_context,
+            plugin_instance_id: delivery.pluginInstanceId,
+            response_context: delivery.responseContext,
             text: item.payload,
             sender_name: null,
             arrived_at: arrivedAt,
@@ -184,7 +367,7 @@ async function tick(): Promise<void> {
             queueKey,
             sessionKey: effectiveSessionKey,
             agentId: item.agent_id,
-            pluginInstanceId: item.plugin_instance_id,
+            pluginInstanceId: delivery.pluginInstanceId,
             arrivedAt,
             debounceMs: 0,
             maxQueued: 1,

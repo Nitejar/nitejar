@@ -798,7 +798,9 @@ function hasCollectionPolicyGrant(
   return grants.some((grant) => {
     const actionMatch = grant.action === '*' || actions.includes(grant.action)
     const resourceTypeMatch =
-      grant.resourceType == null || grant.resourceType === '*' || grant.resourceType === 'collection'
+      grant.resourceType == null ||
+      grant.resourceType === '*' ||
+      grant.resourceType === 'collection'
     const resourceIdMatch =
       resourceId == null || grant.resourceId == null || grant.resourceId === resourceId
     return actionMatch && resourceTypeMatch && resourceIdMatch

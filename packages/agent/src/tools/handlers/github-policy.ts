@@ -242,7 +242,8 @@ export const listGitHubRepoAssignmentsTool: ToolHandler = async (input, context)
     const githubRepoId =
       typeof input.github_repo_id === 'number' ? Math.trunc(input.github_repo_id) : undefined
 
-    const resolvedAgent = agentId || agentHandle ? await resolveAgentRecord({ agentId, agentHandle }) : null
+    const resolvedAgent =
+      agentId || agentHandle ? await resolveAgentRecord({ agentId, agentHandle }) : null
     const resolvedRepo =
       githubRepoId !== undefined || repoName
         ? await resolveRepoRecord({ githubRepoId, repoName, pluginInstanceId })

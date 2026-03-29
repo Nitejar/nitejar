@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@nitejar/database', () => ({
   addAppSessionParticipants: vi.fn(),
-  buildGoalAppSessionKey: vi.fn((goalId: string, sessionId: string) => `app:goal:${goalId}:${sessionId}`),
+  buildGoalAppSessionKey: vi.fn(
+    (goalId: string, sessionId: string) => `app:goal:${goalId}:${sessionId}`
+  ),
   buildRoutineAppSessionKey: vi.fn(
     (routineId: string, sessionId: string) => `app:routine:${routineId}:${sessionId}`
   ),
@@ -227,7 +229,9 @@ describe('sessions router sendMessage', () => {
       archived_at: null,
       sort_order: 1,
     })
-    mockedCreateAppSession.mockImplementation((data) => Promise.resolve(createAppSessionRecord(data)))
+    mockedCreateAppSession.mockImplementation((data) =>
+      Promise.resolve(createAppSessionRecord(data))
+    )
     mockedListAppSessionsByOwnerAndPrefix.mockResolvedValue([])
     mockedListAppSessionsByOwnerAndKeys.mockResolvedValue([])
     mockedListTicketLinksByTicket.mockResolvedValue([])
@@ -432,7 +436,9 @@ describe('sessions router runTicketNow', () => {
     )
     expect(createdWorkUpdate?.ticket_id).toBe('ticket-1')
     expect(createdWorkUpdate?.body).toContain('Queued execution in session')
-    expect(enqueuedMessage?.targetAgents).toEqual([{ id: 'agent-1', handle: 'scout', name: 'Scout' }])
+    expect(enqueuedMessage?.targetAgents).toEqual([
+      { id: 'agent-1', handle: 'scout', name: 'Scout' },
+    ])
     expect(enqueuedMessage?.workContext?.ticketId).toBe('ticket-1')
     expect(enqueuedMessage?.workContext?.goalId).toBe('goal-1')
   })
@@ -520,7 +526,9 @@ describe('sessions router session creation', () => {
       created_at: 1,
       updated_at: 1,
     })
-    mockedCreateAppSession.mockImplementation((data) => Promise.resolve(createAppSessionRecord(data)))
+    mockedCreateAppSession.mockImplementation((data) =>
+      Promise.resolve(createAppSessionRecord(data))
+    )
   })
 
   it('creates a fresh typed standalone session instead of resuming a recent one', async () => {
@@ -574,7 +582,9 @@ describe('sessions router forkSession', () => {
         added_by_user_id: 'user-1',
       },
     ])
-    mockedCreateAppSession.mockImplementation((data) => Promise.resolve(createAppSessionRecord(data)))
+    mockedCreateAppSession.mockImplementation((data) =>
+      Promise.resolve(createAppSessionRecord(data))
+    )
   })
 
   it('forks into a fresh typed sibling session with lineage', async () => {

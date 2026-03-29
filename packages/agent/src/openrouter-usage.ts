@@ -117,7 +117,7 @@ async function fetchGenerationCacheDetails(
 }
 
 export async function normalizeOpenRouterChatCompletionUsage(
-  response: OpenAI.ChatCompletion | Record<string, unknown> | unknown,
+  response: OpenAI.ChatCompletion | Record<string, unknown>,
   options: NormalizeOpenRouterUsageOptions = {}
 ): Promise<OpenRouterUsageSummary> {
   const responseRecord = asRecord(response)

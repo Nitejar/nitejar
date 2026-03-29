@@ -108,7 +108,8 @@ export const getRunDefinition: Anthropic.Tool = {
       section: {
         type: 'string',
         enum: ['response', 'summary', 'timeline', 'messages'],
-        description: 'Legacy compact view selector. If omitted, the tool returns a structured run record.',
+        description:
+          'Legacy compact view selector. If omitted, the tool returns a structured run record.',
       },
       offset: {
         type: 'integer',
@@ -470,49 +471,49 @@ async function buildStructuredRunSection(
   const includeFullMessageContent = input.includeFullMessageContent !== false
   const maxContentBytes =
     typeof input.maxContentBytes === 'number' ? Math.floor(input.maxContentBytes) : undefined
-  const normalizedMessages = messages?.map((message: Awaited<
-    ReturnType<typeof listMessagesByJobPaged>
-  >[number]) => {
-    const content = message.content ?? ''
-    const contentBytes = Buffer.byteLength(content, 'utf8')
+  const normalizedMessages = messages?.map(
+    (message: Awaited<ReturnType<typeof listMessagesByJobPaged>>[number]) => {
+      const content = message.content ?? ''
+      const contentBytes = Buffer.byteLength(content, 'utf8')
 
-    if (!includeFullMessageContent) {
-      return {
-        ...message,
-        content: null,
-        contentMeta: {
-          omitted: true,
-          truncated: false,
-          contentBytes,
-          returnedBytes: 0,
-        },
+      if (!includeFullMessageContent) {
+        return {
+          ...message,
+          content: null,
+          contentMeta: {
+            omitted: true,
+            truncated: false,
+            contentBytes,
+            returnedBytes: 0,
+          },
+        }
       }
-    }
 
-    if (typeof maxContentBytes === 'number' && content.length > 0) {
-      const truncated = truncateMessageContent(content, maxContentBytes)
+      if (typeof maxContentBytes === 'number' && content.length > 0) {
+        const truncated = truncateMessageContent(content, maxContentBytes)
+        return {
+          ...message,
+          content: truncated.text,
+          contentMeta: {
+            omitted: false,
+            truncated: truncated.truncated,
+            contentBytes,
+            returnedBytes: Buffer.byteLength(truncated.text, 'utf8'),
+          },
+        }
+      }
+
       return {
         ...message,
-        content: truncated.text,
         contentMeta: {
           omitted: false,
-          truncated: truncated.truncated,
+          truncated: false,
           contentBytes,
-          returnedBytes: Buffer.byteLength(truncated.text, 'utf8'),
+          returnedBytes: contentBytes,
         },
       }
     }
-
-    return {
-      ...message,
-      contentMeta: {
-        omitted: false,
-        truncated: false,
-        contentBytes,
-        returnedBytes: contentBytes,
-      },
-    }
-  })
+  )
 
   const output = {
     run: job,

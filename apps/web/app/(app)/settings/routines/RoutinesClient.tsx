@@ -61,6 +61,40 @@ import { describeCron } from './cron-describe'
 // ---------------------------------------------------------------------------
 
 type TriggerKind = 'cron' | 'event' | 'condition' | 'oneshot'
+type RoutineTargetKind =
+  | 'plugin_conversation'
+  | 'app_session'
+  | 'app_ticket'
+  | 'app_goal'
+  | 'app_routine'
+type RoutineTargetSessionMode = 'resume' | 'fresh'
+
+type RoutineTarget =
+  | {
+      kind: 'plugin_conversation'
+      pluginInstanceId: string
+      sessionKey: string
+    }
+  | {
+      kind: 'app_session'
+      sessionKey: string
+      sessionMode: RoutineTargetSessionMode
+    }
+  | {
+      kind: 'app_ticket'
+      ticketId: string
+      sessionMode: RoutineTargetSessionMode
+    }
+  | {
+      kind: 'app_goal'
+      goalId: string
+      sessionMode: RoutineTargetSessionMode
+    }
+  | {
+      kind: 'app_routine'
+      routineId: string
+      sessionMode: RoutineTargetSessionMode
+    }
 
 const TRIGGER_KIND_META: Record<
   TriggerKind,
@@ -182,6 +216,29 @@ const PROBE_META: Record<string, { label: string; description: string }> = {
   },
 }
 
+const TARGET_KIND_META: Record<RoutineTargetKind, { label: string; description: string }> = {
+  plugin_conversation: {
+    label: 'Plugin Conversation',
+    description: 'Reply into an existing Telegram, GitHub, or other plugin-backed thread.',
+  },
+  app_session: {
+    label: 'App Session',
+    description: 'Resume or fork from a specific app conversation.',
+  },
+  app_ticket: {
+    label: 'Ticket Sessions',
+    description: 'Target the session family for a ticket.',
+  },
+  app_goal: {
+    label: 'Goal Sessions',
+    description: 'Target the session family for a goal.',
+  },
+  app_routine: {
+    label: 'Routine Sessions',
+    description: 'Target the session family for another routine.',
+  },
+}
+
 const DEFAULT_RULE_JSON = JSON.stringify(
   {
     field: 'eventType',
@@ -203,9 +260,13 @@ const DEFAULT_FORM = {
   ruleJsonText: DEFAULT_RULE_JSON,
   conditionProbe: '',
   conditionConfigText: '',
+  targetKind: 'plugin_conversation' as RoutineTargetKind,
   targetPluginInstanceId: '',
   targetSessionKey: '',
-  targetResponseContextText: '',
+  targetSessionMode: 'resume' as RoutineTargetSessionMode,
+  targetTicketId: '',
+  targetGoalId: '',
+  targetRoutineId: '',
   actionPrompt: '',
   enabled: true,
 }
@@ -302,32 +363,106 @@ function formatSessionKeyLabel(sessionKey: string): string {
   return sessionKey
 }
 
-/** Derive response context JSON from a session key. */
-function deriveResponseContextFromSessionKey(sessionKey: string): string {
-  const telegramThread = sessionKey.match(/^telegram:(-?\d+):thread:(\d+)$/)
-  if (telegramThread) {
-    return JSON.stringify(
-      { chatId: Number(telegramThread[1]), messageThreadId: Number(telegramThread[2]) },
-      null,
-      2
-    )
+function applyTargetToForm(target: RoutineTarget | null | undefined) {
+  if (!target) {
+    return {
+      targetKind: 'plugin_conversation' as RoutineTargetKind,
+      targetPluginInstanceId: '',
+      targetSessionKey: '',
+      targetSessionMode: 'resume' as RoutineTargetSessionMode,
+      targetTicketId: '',
+      targetGoalId: '',
+      targetRoutineId: '',
+    }
   }
 
-  const telegramSimple = sessionKey.match(/^telegram:(-?\d+)$/)
-  if (telegramSimple) {
-    return JSON.stringify({ chatId: Number(telegramSimple[1]) }, null, 2)
+  switch (target.kind) {
+    case 'plugin_conversation':
+      return {
+        targetKind: target.kind,
+        targetPluginInstanceId: target.pluginInstanceId,
+        targetSessionKey: target.sessionKey,
+        targetSessionMode: 'resume' as RoutineTargetSessionMode,
+        targetTicketId: '',
+        targetGoalId: '',
+        targetRoutineId: '',
+      }
+    case 'app_session':
+      return {
+        targetKind: target.kind,
+        targetPluginInstanceId: '',
+        targetSessionKey: target.sessionKey,
+        targetSessionMode: target.sessionMode,
+        targetTicketId: '',
+        targetGoalId: '',
+        targetRoutineId: '',
+      }
+    case 'app_ticket':
+      return {
+        targetKind: target.kind,
+        targetPluginInstanceId: '',
+        targetSessionKey: '',
+        targetSessionMode: target.sessionMode,
+        targetTicketId: target.ticketId,
+        targetGoalId: '',
+        targetRoutineId: '',
+      }
+    case 'app_goal':
+      return {
+        targetKind: target.kind,
+        targetPluginInstanceId: '',
+        targetSessionKey: '',
+        targetSessionMode: target.sessionMode,
+        targetTicketId: '',
+        targetGoalId: target.goalId,
+        targetRoutineId: '',
+      }
+    case 'app_routine':
+      return {
+        targetKind: target.kind,
+        targetPluginInstanceId: '',
+        targetSessionKey: '',
+        targetSessionMode: target.sessionMode,
+        targetTicketId: '',
+        targetGoalId: '',
+        targetRoutineId: target.routineId,
+      }
   }
+}
 
-  const githubIssue = sessionKey.match(/^github:([^/]+)\/([^#]+)#(\d+)$/)
-  if (githubIssue) {
-    return JSON.stringify(
-      { owner: githubIssue[1], repo: githubIssue[2], issueNumber: Number(githubIssue[3]) },
-      null,
-      2
-    )
+function buildTargetFromForm(form: typeof DEFAULT_FORM): RoutineTarget {
+  switch (form.targetKind) {
+    case 'plugin_conversation':
+      return {
+        kind: 'plugin_conversation',
+        pluginInstanceId: form.targetPluginInstanceId,
+        sessionKey: form.targetSessionKey,
+      }
+    case 'app_session':
+      return {
+        kind: 'app_session',
+        sessionKey: form.targetSessionKey,
+        sessionMode: form.targetSessionMode,
+      }
+    case 'app_ticket':
+      return {
+        kind: 'app_ticket',
+        ticketId: form.targetTicketId,
+        sessionMode: form.targetSessionMode,
+      }
+    case 'app_goal':
+      return {
+        kind: 'app_goal',
+        goalId: form.targetGoalId,
+        sessionMode: form.targetSessionMode,
+      }
+    case 'app_routine':
+      return {
+        kind: 'app_routine',
+        routineId: form.targetRoutineId,
+        sessionMode: form.targetSessionMode,
+      }
   }
-
-  return ''
 }
 
 // ---------------------------------------------------------------------------
@@ -589,9 +724,6 @@ export function RoutinesClient() {
   const [simpleOp, setSimpleOp] = useState('eq')
   const [simpleValue, setSimpleValue] = useState('message')
 
-  // Response context disclosure
-  const [showResponseContextEditor, setShowResponseContextEditor] = useState(false)
-
   const utils = trpc.useUtils()
   const routinesQuery = trpc.routines.list.useQuery({ includeArchived: false })
   const agentsQuery = trpc.org.listAgents.useQuery()
@@ -698,8 +830,19 @@ export function RoutinesClient() {
   }, [form.agentId, agentsQuery.data])
 
   const pluginTargetsForAgent = useMemo(() => {
-    return targetsQuery.data ?? []
+    return targetsQuery.data?.pluginConversations ?? []
   }, [targetsQuery.data])
+
+  const appSessionsForAgent = useMemo(
+    () => targetsQuery.data?.appSessions ?? [],
+    [targetsQuery.data]
+  )
+  const appTicketsForAgent = useMemo(() => targetsQuery.data?.tickets ?? [], [targetsQuery.data])
+  const appGoalsForAgent = useMemo(() => targetsQuery.data?.goals ?? [], [targetsQuery.data])
+  const appRoutinesForAgent = useMemo(
+    () => (targetsQuery.data?.routines ?? []).filter((routine) => routine.id !== form.routineId),
+    [form.routineId, targetsQuery.data]
+  )
 
   const sessionsForSelectedPluginTarget = useMemo(() => {
     return (
@@ -716,11 +859,14 @@ export function RoutinesClient() {
     setSimpleField('eventType')
     setSimpleOp('eq')
     setSimpleValue('message')
-    setShowResponseContextEditor(false)
     setIsModalOpen(true)
   }
 
   const openEditModal = (routine: NonNullable<typeof routinesQuery.data>[number]) => {
+    if (!routine.target) {
+      toast.error('This routine still uses a legacy target and cannot be edited here yet.')
+      return
+    }
     setIsEditing(true)
     const ruleText = stringifySafe(routine.ruleJson)
     setForm({
@@ -734,14 +880,11 @@ export function RoutinesClient() {
       ruleJsonText: ruleText,
       conditionProbe: routine.condition_probe ?? '',
       conditionConfigText: stringifySafe(routine.conditionConfig),
-      targetPluginInstanceId: routine.target_plugin_instance_id ?? '',
-      targetSessionKey: routine.target_session_key,
-      targetResponseContextText: stringifySafe(routine.targetResponseContext),
+      ...applyTargetToForm(routine.target),
       actionPrompt: routine.action_prompt,
       enabled: routine.enabled,
     })
     setErrorMessage(null)
-    setShowResponseContextEditor(false)
 
     // Auto-detect simple vs JSON mode for event triggers
     if (routine.trigger_kind === 'event') {
@@ -780,11 +923,9 @@ export function RoutinesClient() {
 
   const handleSessionKeyChange = (sessionKey: string | null) => {
     if (!sessionKey) return
-    const derived = deriveResponseContextFromSessionKey(sessionKey)
     setForm((prev) => ({
       ...prev,
       targetSessionKey: sessionKey,
-      targetResponseContextText: derived || prev.targetResponseContextText,
     }))
   }
 
@@ -800,7 +941,6 @@ export function RoutinesClient() {
 
       const ruleJson = parseJsonOrThrow(ruleText, {})
       const conditionConfig = parseJsonOrThrow(form.conditionConfigText, null)
-      const targetResponseContext = parseJsonOrThrow(form.targetResponseContextText, null)
 
       const payload = {
         name: form.name,
@@ -812,9 +952,7 @@ export function RoutinesClient() {
         ruleJson,
         conditionProbe: form.conditionProbe || undefined,
         conditionConfig,
-        targetPluginInstanceId: form.targetPluginInstanceId,
-        targetSessionKey: form.targetSessionKey,
-        targetResponseContext,
+        target: buildTargetFromForm(form),
         actionPrompt: form.actionPrompt,
         enabled: form.enabled,
       }
@@ -838,11 +976,30 @@ export function RoutinesClient() {
   const selectedRoutine = routines.find((r) => r.id === selectedRoutineId) ?? null
   const selectedRoutineName = routines.find((r) => r.id === selectedRoutineId)?.name ?? null
 
-  // Derive a summary line for the response context
-  const responseContextSummary = useMemo(() => {
-    if (!form.targetSessionKey) return null
-    return formatSessionKeyLabel(form.targetSessionKey)
-  }, [form.targetSessionKey])
+  const selectedTargetSummary = useMemo(() => {
+    switch (form.targetKind) {
+      case 'plugin_conversation':
+      case 'app_session':
+        return form.targetSessionKey ? formatSessionKeyLabel(form.targetSessionKey) : null
+      case 'app_ticket':
+        return appTicketsForAgent.find((ticket) => ticket.id === form.targetTicketId)?.title ?? null
+      case 'app_goal':
+        return appGoalsForAgent.find((goal) => goal.id === form.targetGoalId)?.title ?? null
+      case 'app_routine':
+        return (
+          appRoutinesForAgent.find((routine) => routine.id === form.targetRoutineId)?.name ?? null
+        )
+    }
+  }, [
+    appGoalsForAgent,
+    appRoutinesForAgent,
+    appTicketsForAgent,
+    form.targetGoalId,
+    form.targetKind,
+    form.targetRoutineId,
+    form.targetSessionKey,
+    form.targetTicketId,
+  ])
 
   return (
     <div className="space-y-6">
@@ -1087,7 +1244,8 @@ export function RoutinesClient() {
             </div>
           ) : (
             <div className="rounded-lg border border-dashed border-white/10 px-4 py-6 text-xs text-muted-foreground">
-              Choose a routine from the catalog to view sibling conversations or start a fresh session.
+              Choose a routine from the catalog to view sibling conversations or start a fresh
+              session.
             </div>
           )}
         </CardContent>
@@ -1225,8 +1383,13 @@ export function RoutinesClient() {
                       setForm({
                         ...form,
                         agentId: value ?? '',
+                        targetKind: 'plugin_conversation',
                         targetPluginInstanceId: '',
                         targetSessionKey: '',
+                        targetSessionMode: 'resume',
+                        targetTicketId: '',
+                        targetGoalId: '',
+                        targetRoutineId: '',
                       })
                     }
                   >
@@ -1418,40 +1581,127 @@ export function RoutinesClient() {
                 Where &amp; What
               </legend>
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Target Type</Label>
+                <Select
+                  value={form.targetKind}
+                  onValueChange={(value) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      targetKind: (value as RoutineTargetKind) ?? 'plugin_conversation',
+                      targetPluginInstanceId: '',
+                      targetSessionKey: '',
+                      targetTicketId: '',
+                      targetGoalId: '',
+                      targetRoutineId: '',
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select target type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(TARGET_KIND_META).map(([kind, meta]) => (
+                      <SelectItem key={kind} value={kind}>
+                        {meta.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {TARGET_KIND_META[form.targetKind].description}
+                </p>
+              </div>
+
+              {form.targetKind !== 'plugin_conversation' && (
                 <div className="space-y-2">
-                  <Label>Destination</Label>
+                  <Label>Session Mode</Label>
                   <Select
-                    value={form.targetPluginInstanceId}
+                    value={form.targetSessionMode}
                     onValueChange={(value) =>
-                      setForm({ ...form, targetPluginInstanceId: value ?? '' })
+                      setForm({
+                        ...form,
+                        targetSessionMode: (value as RoutineTargetSessionMode) ?? 'resume',
+                      })
                     }
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select plugin instance" />
+                      <SelectValue placeholder="Select session mode" />
                     </SelectTrigger>
                     <SelectContent>
-                      {pluginTargetsForAgent.map((target) => (
-                        <SelectItem key={target.pluginInstanceId} value={target.pluginInstanceId}>
-                          {target.pluginInstanceName ?? target.integrationName} (
-                          {target.pluginInstanceType ?? target.integrationType})
-                        </SelectItem>
-                      ))}
+                      <SelectItem value="resume">Resume latest session</SelectItem>
+                      <SelectItem value="fresh">Start fresh session</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
+              )}
+
+              {form.targetKind === 'plugin_conversation' && (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Plugin</Label>
+                    <Select
+                      value={form.targetPluginInstanceId}
+                      onValueChange={(value) =>
+                        setForm({
+                          ...form,
+                          targetPluginInstanceId: value ?? '',
+                          targetSessionKey: '',
+                        })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select plugin instance" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {pluginTargetsForAgent.map((target) => (
+                          <SelectItem key={target.pluginInstanceId} value={target.pluginInstanceId}>
+                            {target.pluginInstanceName} ({target.pluginInstanceType})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Conversation</Label>
+                    <Select value={form.targetSessionKey} onValueChange={handleSessionKeyChange}>
+                      <SelectTrigger>
+                        {form.targetSessionKey ? (
+                          <span>{formatSessionKeyLabel(form.targetSessionKey)}</span>
+                        ) : (
+                          <SelectValue placeholder="Select conversation" />
+                        )}
+                      </SelectTrigger>
+                      <SelectContent>
+                        {sessionsForSelectedPluginTarget.map((session) => (
+                          <SelectItem key={session.sessionKey} value={session.sessionKey}>
+                            <div>
+                              <div>{formatSessionKeyLabel(session.sessionKey)}</div>
+                              {session.title && (
+                                <div className="text-xs text-muted-foreground">{session.title}</div>
+                              )}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+
+              {form.targetKind === 'app_session' && (
                 <div className="space-y-2">
-                  <Label>Channel</Label>
+                  <Label>App Session</Label>
                   <Select value={form.targetSessionKey} onValueChange={handleSessionKeyChange}>
                     <SelectTrigger>
                       {form.targetSessionKey ? (
                         <span>{formatSessionKeyLabel(form.targetSessionKey)}</span>
                       ) : (
-                        <SelectValue placeholder="Select channel" />
+                        <SelectValue placeholder="Select app session" />
                       )}
                     </SelectTrigger>
                     <SelectContent>
-                      {sessionsForSelectedPluginTarget.map((session) => (
+                      {appSessionsForAgent.map((session) => (
                         <SelectItem key={session.sessionKey} value={session.sessionKey}>
                           <div>
                             <div>{formatSessionKeyLabel(session.sessionKey)}</div>
@@ -1464,48 +1714,75 @@ export function RoutinesClient() {
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
+              )}
 
-              {/* Delivery Context — progressive disclosure */}
-              <div className="space-y-2">
-                <LabelWithHint
-                  label="Delivery Context"
-                  hint="Platform-specific metadata for delivering the response (e.g. thread IDs, reply targets). Auto-filled from channel selection."
-                />
-                {!showResponseContextEditor ? (
-                  <div className="flex items-center justify-between rounded-md border border-white/10 bg-white/[0.02] px-3 py-2">
-                    <span className="text-xs text-muted-foreground">
-                      {responseContextSummary
-                        ? responseContextSummary
-                        : 'Select a channel to auto-fill.'}
-                    </span>
-                    <button
-                      type="button"
-                      className="text-xs text-primary hover:underline"
-                      onClick={() => setShowResponseContextEditor(true)}
-                    >
-                      Edit manually
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    <Textarea
-                      rows={4}
-                      value={form.targetResponseContextText}
-                      onChange={(e) =>
-                        setForm({ ...form, targetResponseContextText: e.target.value })
-                      }
-                      className="font-mono text-xs"
-                    />
-                    <button
-                      type="button"
-                      className="text-xs text-muted-foreground hover:text-foreground"
-                      onClick={() => setShowResponseContextEditor(false)}
-                    >
-                      Collapse
-                    </button>
-                  </div>
-                )}
+              {form.targetKind === 'app_ticket' && (
+                <div className="space-y-2">
+                  <Label>Ticket</Label>
+                  <Select
+                    value={form.targetTicketId}
+                    onValueChange={(value) => setForm({ ...form, targetTicketId: value ?? '' })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select ticket" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {appTicketsForAgent.map((ticket) => (
+                        <SelectItem key={ticket.id} value={ticket.id}>
+                          {ticket.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {form.targetKind === 'app_goal' && (
+                <div className="space-y-2">
+                  <Label>Goal</Label>
+                  <Select
+                    value={form.targetGoalId}
+                    onValueChange={(value) => setForm({ ...form, targetGoalId: value ?? '' })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select goal" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {appGoalsForAgent.map((goal) => (
+                        <SelectItem key={goal.id} value={goal.id}>
+                          {goal.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {form.targetKind === 'app_routine' && (
+                <div className="space-y-2">
+                  <Label>Routine</Label>
+                  <Select
+                    value={form.targetRoutineId}
+                    onValueChange={(value) => setForm({ ...form, targetRoutineId: value ?? '' })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select routine" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {appRoutinesForAgent.map((routine) => (
+                        <SelectItem key={routine.id} value={routine.id}>
+                          {routine.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              <div className="rounded-md border border-white/10 bg-white/[0.02] px-3 py-2 text-xs text-muted-foreground">
+                {selectedTargetSummary
+                  ? `Selected target: ${selectedTargetSummary}`
+                  : 'Pick the conversation or session family this routine should fire into.'}
               </div>
 
               <div className="space-y-2">

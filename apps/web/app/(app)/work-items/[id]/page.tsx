@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import loadable from 'next/dynamic'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -23,23 +24,17 @@ import {
 import { parseAgentConfig, getSessionSettings } from '@nitejar/agent/config'
 import { buildSessionContext, formatSessionMessages } from '@nitejar/agent/session'
 import { createPageMetadata } from '@/app/metadata'
+import { RouteClientFallback } from '@/app/(app)/components/RouteClientFallback'
 import { getWorkItemDisplayTitle, getWorkItemSourceLabel } from '@/lib/work-item-display'
 import { resolveWorkItemTicketContexts } from '@/server/services/work-item-display'
+import { buildJobCostRollups } from '@/server/services/run-cost-rollups'
 import { listModelCatalog } from '@/server/services/model-catalog'
 import { IdentityBadge } from '../../components/IdentityBadge'
 import { PageScrollShell } from '../../components/PageScrollShell'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
-import { LiveRunView } from './LiveRunView'
-import { PayloadModal } from './PayloadViewer'
-import { RunTodoPanel } from './RunTodoPanel'
 import { TriagePanel } from './TriagePanel'
-import { TraceView } from './TraceView'
-import { CostBadge } from './CostBadge'
-import { RunTimeline } from './RunTimeline'
 import { RelativeTime } from './RelativeTime'
-import { RetryRunButton } from './RetryRunButton'
-import { WorkItemAutoRefresh } from './WorkItemAutoRefresh'
 import { parseArbiterControlReason } from '@/lib/arbiter-receipts'
 import { describeCron } from '../../settings/routines/cron-describe'
 import {
@@ -48,6 +43,37 @@ import {
   IconPlugConnected,
   IconClock,
 } from '@tabler/icons-react'
+
+const LiveRunView = loadable(() => import('./LiveRunView').then((mod) => mod.LiveRunView), {
+  loading: () => <RouteClientFallback label="Loading live run..." className="min-h-[220px]" />,
+})
+const PayloadModal = loadable(() => import('./PayloadViewer').then((mod) => mod.PayloadModal), {
+  loading: () => null,
+})
+const RunTodoPanel = loadable(() => import('./RunTodoPanel').then((mod) => mod.RunTodoPanel), {
+  loading: () => <RouteClientFallback label="Loading todo state..." className="min-h-[160px]" />,
+})
+const TraceView = loadable(() => import('./TraceView').then((mod) => mod.TraceView), {
+  loading: () => <RouteClientFallback label="Loading trace..." className="min-h-[320px]" />,
+})
+const CostBadge = loadable(() => import('./CostBadge').then((mod) => mod.CostBadge), {
+  loading: () => <span className="text-xs text-muted-foreground">Loading cost...</span>,
+})
+const RunTimeline = loadable(() => import('./RunTimeline').then((mod) => mod.RunTimeline), {
+  loading: () => <RouteClientFallback label="Loading timeline..." className="min-h-[260px]" />,
+})
+const RetryRunButton = loadable(
+  () => import('./RetryRunButton').then((mod) => mod.RetryRunButton),
+  {
+    loading: () => null,
+  }
+)
+const WorkItemAutoRefresh = loadable(
+  () => import('./WorkItemAutoRefresh').then((mod) => mod.WorkItemAutoRefresh),
+  {
+    loading: () => null,
+  }
+)
 
 export const dynamic = 'force-dynamic'
 
@@ -59,12 +85,17 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { id } = await params
   const item = await findWorkItemById(id)
   const linkedContext = item
-    ? (await resolveWorkItemTicketContexts([
-        { workItemId: item.id, sourceRef: item.source_ref, sessionKey: item.session_key },
-      ])).get(id) ?? null
+    ? ((
+        await resolveWorkItemTicketContexts([
+          { workItemId: item.id, sourceRef: item.source_ref, sessionKey: item.session_key },
+        ])
+      ).get(id) ?? null)
     : null
   return createPageMetadata(
-    getWorkItemDisplayTitle({ title: item?.title, linkedTicketTitle: linkedContext?.ticketTitle ?? null })
+    getWorkItemDisplayTitle({
+      title: item?.title,
+      linkedTicketTitle: linkedContext?.ticketTitle ?? null,
+    })
   )
 }
 
@@ -94,6 +125,49 @@ const pluginInstanceIcons: Record<string, React.ComponentType<{ className?: stri
   github: IconBrandGithub,
 }
 
+function buildJobExternalCallRollups(
+  jobs: JobType[],
+  externalCallsByJob: Map<string, ExternalCallType[]>
+): Map<string, JobExternalCallRollup> {
+  const childJobsByParent = new Map<string, JobType[]>()
+  for (const job of jobs) {
+    if (!job.parent_job_id) continue
+    const children = childJobsByParent.get(job.parent_job_id) ?? []
+    children.push(job)
+    childJobsByParent.set(job.parent_job_id, children)
+  }
+
+  const memo = new Map<string, JobExternalCallRollup>()
+
+  const visit = (jobId: string): JobExternalCallRollup => {
+    const cached = memo.get(jobId)
+    if (cached) return cached
+
+    const directCalls = externalCallsByJob.get(jobId) ?? []
+    let rollup: JobExternalCallRollup = {
+      callCount: directCalls.length,
+      unpricedCallCount: directCalls.filter((call) => call.cost_usd == null).length,
+    }
+
+    for (const child of childJobsByParent.get(jobId) ?? []) {
+      const childRollup = visit(child.id)
+      rollup = {
+        callCount: rollup.callCount + childRollup.callCount,
+        unpricedCallCount: rollup.unpricedCallCount + childRollup.unpricedCallCount,
+      }
+    }
+
+    memo.set(jobId, rollup)
+    return rollup
+  }
+
+  for (const job of jobs) {
+    visit(job.id)
+  }
+
+  return memo
+}
+
 type JobType = Awaited<ReturnType<typeof listJobsByWorkItem>>[number]
 type SpanType = Awaited<ReturnType<typeof listSpansByJob>>[number]
 type MessageType = Awaited<ReturnType<typeof listMessagesByJob>>[number]
@@ -103,6 +177,7 @@ type InferenceCallType = Awaited<
 type ExternalCallType = Awaited<ReturnType<typeof listExternalApiCallsByJob>>[number]
 type BackgroundTaskType = Awaited<ReturnType<typeof listBackgroundTasksByJob>>[number]
 type ActivityEntryType = Awaited<ReturnType<typeof findActivityEntriesByJobIds>>[number]
+type JobCostSummaryType = Awaited<ReturnType<typeof getCostByJobs>>[number]
 type TraceMediaArtifactInfo = {
   id: string
   artifact_type: string
@@ -160,6 +235,11 @@ type GoalHeartbeatSnapshot = {
 type GoalHeartbeatContext = GoalHeartbeatSnapshot & {
   liveGoalId: string | null
   cadenceLabel: string | null
+}
+
+type JobExternalCallRollup = {
+  callCount: number
+  unpricedCallCount: number
 }
 
 function queueStatusClassName(status: string): string {
@@ -310,6 +390,8 @@ function effectDestination(effect: {
 function JobDetail({
   job,
   isOpen,
+  childRuns,
+  nested = false,
   agentMap,
   agentIdentity,
   agentIdentityByHandle,
@@ -321,6 +403,8 @@ function JobDetail({
   backgroundTasksByJob,
   activityByJob,
   jobCostMap,
+  jobCostRollups,
+  jobExternalCallRollups,
   mediaArtifactsByJob,
   replayMeta,
   allJobs,
@@ -330,6 +414,8 @@ function JobDetail({
 }: {
   job: JobType
   isOpen: boolean
+  childRuns?: JobType[]
+  nested?: boolean
   agentMap: Map<string, AgentType>
   agentIdentity: Map<string, AgentIdentityType>
   agentIdentityByHandle: Record<string, { name: string; emoji: string | null }>
@@ -340,16 +426,9 @@ function JobDetail({
   promptSessionHistoryByJob: Map<string, SessionHistoryData>
   backgroundTasksByJob: Map<string, BackgroundTaskType[]>
   activityByJob: Map<string, ActivityEntryType>
-  jobCostMap: Map<
-    string,
-    {
-      total_cost: number
-      prompt_tokens: number
-      completion_tokens: number
-      cache_read_tokens: number
-      cache_write_tokens: number
-    }
-  >
+  jobCostMap: Map<string, JobCostSummaryType>
+  jobCostRollups: ReturnType<typeof buildJobCostRollups>
+  jobExternalCallRollups: Map<string, JobExternalCallRollup>
   mediaArtifactsByJob: Map<string, TraceMediaArtifactInfo[]>
   replayMeta: ReplayMeta | undefined
   allJobs: JobType[]
@@ -404,9 +483,12 @@ function JobDetail({
   const active = isActiveRun(job.status)
   const passed = activityEntry?.status === 'passed'
   const jobCost = jobCostMap.get(job.id)
+  const jobCostRollup = jobCostRollups.get(job.id)
   const jobExternalCost = externalCalls.reduce((sum, c) => sum + (c.cost_usd ?? 0), 0)
   const jobUnpricedExternalCallCount = externalCalls.filter((call) => call.cost_usd == null).length
+  const jobExternalCallRollup = jobExternalCallRollups.get(job.id)
   const hasSpans = !active && spans.length > 0
+  const nestedChildRuns = childRuns ?? []
   // Keep the newest settled attempt replayable so the affordance doesn't vanish
   // just because an auto-resume or manual replay eventually completed.
   const canReplay = !active && replayMeta?.dispatchId != null && !replayMeta.isSuperseded
@@ -431,12 +513,12 @@ function JobDetail({
       id={`run-${job.id}`}
       data-run-id={job.id}
       open={isOpen ? true : undefined}
-      className="group/run"
+      className={`group/run ${nested ? 'ml-5' : ''}`}
     >
       <summary
         className={`flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 rounded-t-lg border border-white/10 bg-white/[0.02] px-4 py-2.5 [&::-webkit-details-marker]:hidden ${
           active ? 'ring-1 ring-primary/30' : ''
-        } group-not-open/run:rounded-b-lg`}
+        } group-not-open/run:rounded-b-lg ${nested ? 'border-l-blue-400/30 bg-blue-400/[0.03]' : ''}`}
       >
         <div className="flex items-center gap-3">
           <span className={`h-2 w-2 shrink-0 rounded-full ${statusDotColor}`} title={job.status} />
@@ -492,22 +574,46 @@ function JobDetail({
               SUPERSEDED
             </span>
           )}
+          {job.run_kind === 'child_explore' && (
+            <span className="rounded bg-blue-400/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-300/85">
+              EXPLORE
+            </span>
+          )}
           {job.error_text && (
             <span className="max-w-xs truncate text-[10px] text-red-400">{job.error_text}</span>
           )}
         </div>
         <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-          {jobCost && (
+          {(jobCost || (jobCostRollup?.inclusive.total_cost ?? 0) > 0) && (
             <>
               <CostBadge
-                totalCost={jobCost.total_cost}
+                totalCost={jobCost?.total_cost ?? 0}
                 externalCost={jobExternalCost}
                 externalCallCount={externalCalls.length}
                 unpricedExternalCallCount={jobUnpricedExternalCallCount}
-                promptTokens={jobCost.prompt_tokens}
-                completionTokens={jobCost.completion_tokens}
-                cacheReadTokens={jobCost.cache_read_tokens}
-                cacheWriteTokens={jobCost.cache_write_tokens}
+                promptTokens={jobCost?.prompt_tokens ?? 0}
+                completionTokens={jobCost?.completion_tokens ?? 0}
+                cacheReadTokens={jobCost?.cache_read_tokens ?? 0}
+                cacheWriteTokens={jobCost?.cache_write_tokens ?? 0}
+                passiveMemoryCost={jobCost?.passive_memory_cost ?? 0}
+                rollup={
+                  jobCostRollup && jobCostRollup.descendantRunCount > 0
+                    ? {
+                        totalCost: jobCostRollup.inclusive.total_cost,
+                        externalCost: jobCostRollup.inclusive.external_cost,
+                        externalCallCount: jobExternalCallRollup?.callCount ?? externalCalls.length,
+                        unpricedExternalCallCount:
+                          jobExternalCallRollup?.unpricedCallCount ?? jobUnpricedExternalCallCount,
+                        promptTokens: jobCostRollup.inclusive.prompt_tokens,
+                        completionTokens: jobCostRollup.inclusive.completion_tokens,
+                        cacheReadTokens: jobCostRollup.inclusive.cache_read_tokens,
+                        cacheWriteTokens: jobCostRollup.inclusive.cache_write_tokens,
+                        passiveMemoryCost: jobCostRollup.inclusive.passive_memory_cost,
+                        childRunCost: jobCostRollup.descendants.total_cost,
+                        childRunCount: jobCostRollup.descendantRunCount,
+                      }
+                    : undefined
+                }
                 variant="inline"
               />
               <span className="text-white/20">·</span>
@@ -559,12 +665,52 @@ function JobDetail({
       ) : active ? (
         <LiveRunView jobId={job.id} />
       ) : null}
+
+      {nestedChildRuns.length > 0 ? (
+        <div className="rounded-b-lg border-x border-b border-white/10 bg-white/[0.01] px-4 py-3">
+          <div className="mb-2 flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-blue-200/70">
+            <span className="h-1.5 w-1.5 rounded-full bg-blue-300/70" />
+            Explore Child Runs
+          </div>
+          <div className="space-y-2">
+            {nestedChildRuns.map((childRun) => (
+              <JobDetail
+                key={childRun.id}
+                job={childRun}
+                isOpen={false}
+                childRuns={[]}
+                nested
+                replayMeta={undefined}
+                agentMap={agentMap}
+                agentIdentity={agentIdentity}
+                agentIdentityByHandle={agentIdentityByHandle}
+                messagesByJob={messagesByJob}
+                inferenceCallsByJob={inferenceCallsByJob}
+                spansByJob={spansByJob}
+                externalCallsByJob={externalCallsByJob}
+                promptSessionHistoryByJob={promptSessionHistoryByJob}
+                backgroundTasksByJob={backgroundTasksByJob}
+                activityByJob={activityByJob}
+                jobCostMap={jobCostMap}
+                jobCostRollups={jobCostRollups}
+                jobExternalCallRollups={jobExternalCallRollups}
+                mediaArtifactsByJob={mediaArtifactsByJob}
+                allJobs={allJobs}
+                defaultUserLabel={defaultUserLabel}
+                isPrivateTelegramConversation={isPrivateTelegramConversation}
+                modelCatalog={modelCatalog}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
     </details>
   )
 }
 
 function JobList({
   sortedJobs,
+  childJobsByParent,
   agentMap,
   agentIdentity,
   agentIdentityByHandle,
@@ -576,6 +722,8 @@ function JobList({
   backgroundTasksByJob,
   activityByJob,
   jobCostMap,
+  jobCostRollups,
+  jobExternalCallRollups,
   mediaArtifactsByJob,
   jobReplayMeta,
   allJobs,
@@ -584,6 +732,7 @@ function JobList({
   modelCatalog,
 }: {
   sortedJobs: JobType[]
+  childJobsByParent: Map<string, JobType[]>
   agentMap: Map<string, AgentType>
   agentIdentity: Map<string, AgentIdentityType>
   agentIdentityByHandle: Record<string, { name: string; emoji: string | null }>
@@ -594,16 +743,9 @@ function JobList({
   promptSessionHistoryByJob: Map<string, SessionHistoryData>
   backgroundTasksByJob: Map<string, BackgroundTaskType[]>
   activityByJob: Map<string, ActivityEntryType>
-  jobCostMap: Map<
-    string,
-    {
-      total_cost: number
-      prompt_tokens: number
-      completion_tokens: number
-      cache_read_tokens: number
-      cache_write_tokens: number
-    }
-  >
+  jobCostMap: Map<string, JobCostSummaryType>
+  jobCostRollups: ReturnType<typeof buildJobCostRollups>
+  jobExternalCallRollups: Map<string, JobExternalCallRollup>
   mediaArtifactsByJob: Map<string, TraceMediaArtifactInfo[]>
   jobReplayMeta: Map<string, ReplayMeta>
   allJobs: JobType[]
@@ -641,6 +783,8 @@ function JobList({
     backgroundTasksByJob,
     activityByJob,
     jobCostMap,
+    jobCostRollups,
+    jobExternalCallRollups,
     mediaArtifactsByJob,
     allJobs,
     defaultUserLabel,
@@ -673,6 +817,7 @@ function JobList({
               key={job.id}
               job={job}
               isOpen={isOpen}
+              childRuns={childJobsByParent.get(job.id) ?? []}
               replayMeta={jobReplayMeta.get(job.id)}
               {...sharedProps}
             />
@@ -719,6 +864,7 @@ function JobList({
                       key={ej.id}
                       job={ej}
                       isOpen={!passed && ej.id === firstNonPassedJobId}
+                      childRuns={childJobsByParent.get(ej.id) ?? []}
                       replayMeta={jobReplayMeta.get(ej.id)}
                       {...sharedProps}
                     />
@@ -731,6 +877,7 @@ function JobList({
             <JobDetail
               job={latestJob}
               isOpen={latestIsOpen}
+              childRuns={childJobsByParent.get(latestJob.id) ?? []}
               replayMeta={jobReplayMeta.get(latestJob.id)}
               {...sharedProps}
             />
@@ -754,15 +901,25 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
     ? await findPluginInstanceById(item.plugin_instance_id)
     : null
   const linkedTicketContext =
-    (await resolveWorkItemTicketContexts([
-      { workItemId: item.id, sourceRef: item.source_ref, sessionKey: item.session_key },
-    ])).get(item.id) ?? null
+    (
+      await resolveWorkItemTicketContexts([
+        { workItemId: item.id, sourceRef: item.source_ref, sessionKey: item.session_key },
+      ])
+    ).get(item.id) ?? null
   const displayTitle = getWorkItemDisplayTitle({
     title: item.title,
     linkedTicketTitle: linkedTicketContext?.ticketTitle ?? null,
   })
 
   const jobs = await listJobsByWorkItem(id)
+  const primaryJobs = jobs.filter((job) => job.parent_job_id == null)
+  const childJobsByParent = new Map<string, JobType[]>()
+  for (const job of jobs) {
+    if (!job.parent_job_id) continue
+    const siblings = childJobsByParent.get(job.parent_job_id) ?? []
+    siblings.push(job)
+    childJobsByParent.set(job.parent_job_id, siblings)
+  }
   const [dispatches, effects, queueMessages, ingressReceipts] = await Promise.all([
     listRunDispatchesByWorkItem(id),
     listEffectOutboxByWorkItem(id),
@@ -771,11 +928,13 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
   ])
   const jobCostData = await getCostByJobs(jobs.map((j) => j.id))
   const jobCostMap = new Map(jobCostData.map((c) => [c.job_id, c]))
+  const jobCostRollups = buildJobCostRollups(jobs, jobCostData)
   const totalCost = jobCostData.reduce((sum, c) => sum + c.total_cost, 0)
   const totalPromptTokens = jobCostData.reduce((sum, c) => sum + c.prompt_tokens, 0)
   const totalCompletionTokens = jobCostData.reduce((sum, c) => sum + c.completion_tokens, 0)
   const totalCacheReadTokens = jobCostData.reduce((sum, c) => sum + c.cache_read_tokens, 0)
   const totalCacheWriteTokens = jobCostData.reduce((sum, c) => sum + c.cache_write_tokens, 0)
+  const totalPassiveMemoryCost = jobCostData.reduce((sum, c) => sum + c.passive_memory_cost, 0)
   const agentIds = Array.from(new Set(jobs.map((job) => job.agent_id)))
   const agents = await Promise.all(agentIds.map((agentId) => findAgentById(agentId)))
   const agentMap = new Map(agents.filter(Boolean).map((agent) => [agent!.id, agent!]))
@@ -838,11 +997,22 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
     ),
     Promise.all(
       jobs.map(async (job) => {
+        const emptySessionHistory: SessionHistoryData = {
+          messages: [],
+          totalTokens: 0,
+          turnCount: 0,
+          truncated: false,
+          siblingJobIds: [],
+        }
         const sessionSettings = getSessionSettings(agentConfigMap.get(job.agent_id) ?? {})
         const contextAsOf = job.started_at ?? job.created_at
 
-        // Sibling jobs: other jobs in the same work item that completed before this job started
-        const siblingJobIds = jobs
+        if (job.parent_job_id) {
+          return [job.id, emptySessionHistory] as [string, SessionHistoryData]
+        }
+
+        // Sibling jobs: other primary jobs in the same work item that completed before this job started
+        const siblingJobIds = primaryJobs
           .filter(
             (j) =>
               j.id !== job.id && j.completed_at != null && j.completed_at <= (job.started_at ?? 0)
@@ -870,7 +1040,7 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
             truncated: sessionContext.truncated,
             siblingJobIds,
           },
-        ] as const
+        ] as [string, SessionHistoryData]
       })
     ),
     Promise.all(jobs.map(async (job) => [job.id, await listBackgroundTasksByJob(job.id)] as const)),
@@ -880,6 +1050,7 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
   const inferenceCallsByJob = new Map(inferenceCallsByJobEntries)
   const spansByJob = new Map(spansByJobEntries)
   const externalCallsByJob = new Map(externalCallsByJobEntries)
+  const jobExternalCallRollups = buildJobExternalCallRollups(jobs, externalCallsByJob)
   const promptSessionHistoryByJob = new Map(promptSessionHistoryEntries)
   const backgroundTasksByJob = new Map(backgroundTasksByJobEntries)
   const activityByJob = new Map(
@@ -1005,12 +1176,13 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
         entry.replay?.isReplay === true && entry.replay != null
     )
   const autoResumeCount = replayJobs.filter((entry) => entry.replay.replayKind === 'auto').length
-  const manualReplayCount = replayJobs.filter((entry) => entry.replay.replayKind === 'manual').length
+  const manualReplayCount = replayJobs.filter(
+    (entry) => entry.replay.replayKind === 'manual'
+  ).length
   const latestReplayEntry =
     replayJobs.length > 0
       ? [...replayJobs].sort(
-          (a, b) =>
-            (b.job.started_at ?? b.job.created_at) - (a.job.started_at ?? a.job.created_at)
+          (a, b) => (b.job.started_at ?? b.job.created_at) - (a.job.started_at ?? a.job.created_at)
         )[0]
       : null
 
@@ -1054,7 +1226,7 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
     item.source === 'telegram' && payloadRecord?.chatType === 'private'
 
   // Sort jobs: active first, then by started_at ascending (chronological)
-  const sortedJobs = [...jobs].sort((a, b) => {
+  const sortedJobs = [...primaryJobs].sort((a, b) => {
     const aActive = isActiveRun(a.status)
     const bActive = isActiveRun(b.status)
     if (aActive && !bActive) return -1
@@ -1326,6 +1498,7 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
                   completionTokens={totalCompletionTokens}
                   cacheReadTokens={totalCacheReadTokens}
                   cacheWriteTokens={totalCacheWriteTokens}
+                  passiveMemoryCost={totalPassiveMemoryCost}
                   variant="inline"
                 />
               </>
@@ -1344,10 +1517,7 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
                 </span>
               ) : null}
               {latestReplayEntry?.replay.replaySummary ? (
-                <span
-                  className="text-white/55"
-                  title={latestReplayEntry.replay.replaySummary}
-                >
+                <span className="text-white/55" title={latestReplayEntry.replay.replaySummary}>
                   {latestReplayEntry.replay.replaySummary}
                 </span>
               ) : null}
@@ -1368,7 +1538,7 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
           <RunTimeline
             runs={sortedJobs.map((job) => {
               const profile = agentIdentity.get(job.agent_id)
-              const cost = jobCostMap.get(job.id)
+              const cost = jobCostRollups.get(job.id)
               const jobActivity = activityByJob.get(job.id)
               const replayMeta = jobReplayMeta.get(job.id)
               return {
@@ -1379,7 +1549,7 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
                 startedAt: job.started_at,
                 completedAt: job.completed_at,
                 status: job.status,
-                cost: cost?.total_cost,
+                cost: cost?.inclusive.total_cost,
                 errorText: job.error_text,
                 passed: jobActivity?.status === 'passed',
                 isReplay: replayMeta?.isReplay,
@@ -1402,6 +1572,7 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
         ) : (
           <JobList
             sortedJobs={sortedJobs}
+            childJobsByParent={childJobsByParent}
             agentMap={agentMap}
             agentIdentity={agentIdentity}
             agentIdentityByHandle={agentIdentityByHandle}
@@ -1413,9 +1584,11 @@ export default async function WorkItemDetailPage({ params }: PageProps) {
             backgroundTasksByJob={backgroundTasksByJob}
             activityByJob={activityByJob}
             jobCostMap={jobCostMap}
+            jobCostRollups={jobCostRollups}
+            jobExternalCallRollups={jobExternalCallRollups}
             mediaArtifactsByJob={mediaArtifactsByJob}
             jobReplayMeta={jobReplayMeta}
-            allJobs={jobs}
+            allJobs={primaryJobs}
             defaultUserLabel={defaultUserLabel}
             isPrivateTelegramConversation={isPrivateTelegramConversation}
             modelCatalog={modelCatalog}

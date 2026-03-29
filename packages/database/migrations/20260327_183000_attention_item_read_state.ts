@@ -16,7 +16,10 @@ export async function up(db: Kysely<Database>): Promise<void> {
 }
 
 export async function down(db: Kysely<Database>): Promise<void> {
-  await db.schema.dropIndex('idx_attention_items_target_read_status_created_at').ifExists().execute()
+  await db.schema
+    .dropIndex('idx_attention_items_target_read_status_created_at')
+    .ifExists()
+    .execute()
 
   await db.schema.alterTable('attention_items').dropColumn('read_by_ref').execute()
   await db.schema.alterTable('attention_items').dropColumn('read_by_kind').execute()

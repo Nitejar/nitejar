@@ -5,5 +5,5 @@ export const dynamic = 'force-dynamic'
 export const metadata = createPageMetadata('Company Org Chart')
 
 export default function CompanyOrgChartPage() {
-  return <CompanyPageShell />
+  return <CompanyPageShell activeViewId="org_chart" />
 }

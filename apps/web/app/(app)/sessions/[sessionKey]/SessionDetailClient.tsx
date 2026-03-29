@@ -388,7 +388,9 @@ export function SessionDetailClient({ sessionKey }: { sessionKey: string }) {
                   <ChevronRight className="h-3 w-3" />
                 </>
               ) : null}
-              <span className="text-white/70">{sessionQuery.data.title ?? headerPrimaryAgent?.name ?? 'Session'}</span>
+              <span className="text-white/70">
+                {sessionQuery.data.title ?? headerPrimaryAgent?.name ?? 'Session'}
+              </span>
             </>
           )}
         </nav>

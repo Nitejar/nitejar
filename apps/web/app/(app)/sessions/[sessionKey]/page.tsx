@@ -1,7 +1,15 @@
 import type { Metadata } from 'next'
+import loadable from 'next/dynamic'
 import { findAppSessionByKey } from '@nitejar/database'
 import { createPageMetadata } from '@/app/metadata'
-import { SessionDetailClient } from './SessionDetailClient'
+import { RouteClientFallback } from '@/app/(app)/components/RouteClientFallback'
+
+const SessionDetailClient = loadable(
+  () => import('./SessionDetailClient').then((mod) => mod.SessionDetailClient),
+  {
+    loading: () => <RouteClientFallback label="Loading session..." className="min-h-[420px]" />,
+  }
+)
 
 export const dynamic = 'force-dynamic'
 

@@ -1,7 +1,15 @@
 import type { Metadata } from 'next'
+import loadable from 'next/dynamic'
 import { findTicketById } from '@nitejar/database'
 import { createPageMetadata } from '@/app/metadata'
-import { TicketDetailClient } from './TicketDetailClient'
+import { RouteClientFallback } from '@/app/(app)/components/RouteClientFallback'
+
+const TicketDetailClient = loadable(
+  () => import('./TicketDetailClient').then((mod) => mod.TicketDetailClient),
+  {
+    loading: () => <RouteClientFallback label="Loading ticket..." className="min-h-[480px]" />,
+  }
+)
 
 export const dynamic = 'force-dynamic'
 

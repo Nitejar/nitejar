@@ -87,6 +87,10 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     .addColumn('agent_id', 'text', (col) =>
       col.notNull().references('agents.id').onDelete('cascade')
     )
+    .addColumn('parent_job_id', 'text', (col) => col.references('jobs.id').onDelete('set null'))
+    .addColumn('root_job_id', 'text', (col) => col.references('jobs.id').onDelete('set null'))
+    .addColumn('run_kind', 'text', (col) => col.notNull().defaultTo('primary'))
+    .addColumn('origin_tool_name', 'text')
     .addColumn('status', 'text', (col) => col.notNull().defaultTo('PENDING'))
     .addColumn('error_text', 'text')
     .addColumn('started_at', 'integer')
@@ -180,6 +184,27 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     .ifNotExists()
     .on('jobs')
     .column('agent_id')
+    .execute()
+
+  await db.schema
+    .createIndex('idx_jobs_parent')
+    .ifNotExists()
+    .on('jobs')
+    .column('parent_job_id')
+    .execute()
+
+  await db.schema
+    .createIndex('idx_jobs_root')
+    .ifNotExists()
+    .on('jobs')
+    .column('root_job_id')
+    .execute()
+
+  await db.schema
+    .createIndex('idx_jobs_run_kind')
+    .ifNotExists()
+    .on('jobs')
+    .column('run_kind')
     .execute()
 
   await db.schema

@@ -14,6 +14,7 @@ import {
 } from '../types'
 import { generateUuidV7 } from '@nitejar/core'
 import { createScheduledItem } from './scheduled-items'
+import { inferRoutineTargetFromLegacy, type RoutineTarget } from '../routine-targets'
 
 export type RoutineTriggerKind = 'cron' | 'event' | 'condition' | 'oneshot'
 export type RoutineRunOrigin = 'cron' | 'event' | 'condition' | 'manual' | 'oneshot'
@@ -56,6 +57,16 @@ export async function findRoutineById(id: string): Promise<Routine | null> {
   const db = getDb()
   const row = await db.selectFrom('routines').selectAll().where('id', '=', id).executeTakeFirst()
   return row ?? null
+}
+
+export function getRoutineTarget(
+  routine: Pick<Routine, 'target_spec_json' | 'target_plugin_instance_id' | 'target_session_key'>
+): RoutineTarget | null {
+  return inferRoutineTargetFromLegacy({
+    targetSpecJson: routine.target_spec_json,
+    targetPluginInstanceId: routine.target_plugin_instance_id,
+    targetSessionKey: routine.target_session_key,
+  })
 }
 
 export async function listRoutines(opts?: {
@@ -319,6 +330,7 @@ async function enqueueRoutineRunInTransaction(
       source_ref: `routine:${routine.id}:run:${run.id}`,
       plugin_instance_id: routine.target_plugin_instance_id,
       response_context: routine.target_response_context,
+      target_spec_json: routine.target_spec_json,
       routine_id: routine.id,
       routine_run_id: run.id,
       fired_at: null,
@@ -373,6 +385,7 @@ async function sanitizeRoutineResponseContextForEnqueue(
     routine.id,
     {
       target_response_context: serializedContext,
+      target_spec_json: routine.target_spec_json,
       last_evaluated_at: routine.last_evaluated_at,
       last_fired_at: routine.last_fired_at,
       last_status: routine.last_status,
@@ -408,6 +421,7 @@ export async function createOneShotRoutineSchedule(input: {
   actionPrompt: string
   runAt: number
   sourceRef?: string | null
+  targetSpecJson?: string | null
   targetPluginInstanceId: string | null
   targetSessionKey: string
   targetResponseContext?: string | null
@@ -432,6 +446,7 @@ export async function createOneShotRoutineSchedule(input: {
         target_plugin_instance_id: input.targetPluginInstanceId,
         target_session_key: input.targetSessionKey,
         target_response_context: input.targetResponseContext ?? null,
+        target_spec_json: input.targetSpecJson ?? null,
         action_prompt: input.actionPrompt,
         next_run_at: input.runAt,
         last_evaluated_at: now(),

@@ -562,7 +562,9 @@ export async function buildSessionContext(
   const latestUserMessageWithAttachments = [...messages]
     .reverse()
     .find((msg) => msg.role === 'user' && parseMessageAttachments(msg.content) != null)
-  const recentAttachments = parseMessageAttachments(latestUserMessageWithAttachments?.content ?? null)
+  const recentAttachments = parseMessageAttachments(
+    latestUserMessageWithAttachments?.content ?? null
+  )
 
   // Group into turn groups — pass currentAgentId so other agents' messages
   // are attributed (prefixed with [@handle]) and their tool calls are skipped

@@ -67,7 +67,9 @@ export function isGitHubRepoCapability(value: string): value is GitHubRepoCapabi
   return GITHUB_REPO_CAPABILITY_SET.has(value)
 }
 
-export function parseGitHubRepoCapabilities(value: string | null | undefined): GitHubRepoCapability[] {
+export function parseGitHubRepoCapabilities(
+  value: string | null | undefined
+): GitHubRepoCapability[] {
   if (!value) return []
   try {
     const parsed = JSON.parse(value) as unknown
@@ -85,7 +87,9 @@ export function parseGitHubRepoCapabilities(value: string | null | undefined): G
   }
 }
 
-export function serializeGitHubRepoCapabilities(capabilities: Iterable<GitHubRepoCapability>): string {
+export function serializeGitHubRepoCapabilities(
+  capabilities: Iterable<GitHubRepoCapability>
+): string {
   const unique = Array.from(new Set(capabilities)).filter(isGitHubRepoCapability).sort()
   return JSON.stringify(unique)
 }

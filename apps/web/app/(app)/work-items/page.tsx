@@ -116,7 +116,9 @@ export default async function WorkItemsPage() {
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         <div className="flex flex-col">
-                          <span className="text-xs font-medium text-foreground">{displaySource}</span>
+                          <span className="text-xs font-medium text-foreground">
+                            {displaySource}
+                          </span>
                           <span className="text-[0.65rem] text-muted-foreground">
                             {item.source_ref}
                           </span>

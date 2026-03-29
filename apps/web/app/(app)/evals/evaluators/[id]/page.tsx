@@ -1,9 +1,17 @@
 import type { Metadata } from 'next'
+import loadable from 'next/dynamic'
 import { findEvaluatorById } from '@nitejar/database'
 import { createPageMetadata } from '@/app/metadata'
 import { PageHeader } from '@/app/(app)/components/PageHeader'
 import { PageScrollShell } from '@/app/(app)/components/PageScrollShell'
-import { EvaluatorDetailClient } from './EvaluatorDetailClient'
+import { RouteClientFallback } from '@/app/(app)/components/RouteClientFallback'
+
+const EvaluatorDetailClient = loadable(
+  () => import('./EvaluatorDetailClient').then((mod) => mod.EvaluatorDetailClient),
+  {
+    loading: () => <RouteClientFallback label="Loading evaluator..." className="min-h-[420px]" />,
+  }
+)
 
 export const dynamic = 'force-dynamic'
 

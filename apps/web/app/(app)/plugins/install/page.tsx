@@ -1,7 +1,17 @@
+import loadable from 'next/dynamic'
 import { createPageMetadata } from '@/app/metadata'
 import { PageHeader } from '../../components/PageHeader'
 import { PageScrollShell } from '../../components/PageScrollShell'
-import { PluginInstallWizard } from './PluginInstallWizard'
+import { RouteClientFallback } from '../../components/RouteClientFallback'
+
+const PluginInstallWizard = loadable(
+  () => import('./PluginInstallWizard').then((mod) => mod.PluginInstallWizard),
+  {
+    loading: () => (
+      <RouteClientFallback label="Loading plugin installer..." className="min-h-[420px]" />
+    ),
+  }
+)
 
 export const dynamic = 'force-dynamic'
 export const metadata = createPageMetadata('Install Plugin')

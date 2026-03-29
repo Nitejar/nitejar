@@ -186,6 +186,7 @@ const SANDBOX_REQUIRED_TOOLS = new Set([
   'generate_image',
   'transcribe_audio',
   'synthesize_speech',
+  'explore_codebase',
 ])
 const POLICY_GATED_TOOLS: Record<string, string[]> = {
   list_roles: ['policy.read'],

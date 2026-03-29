@@ -34,22 +34,22 @@ vi.mock('@nitejar/agent/config', () => ({
 }))
 
 vi.mock('@nitejar/agent', () => ({
-  normalizeOpenRouterChatCompletionUsage: vi.fn(async (response: Record<string, unknown>) => {
+  normalizeOpenRouterChatCompletionUsage: vi.fn((response: Record<string, unknown>) => {
     const usage = (response.usage ?? {}) as Record<string, unknown>
     const details = (usage.prompt_tokens_details ?? {}) as Record<string, unknown>
-    return {
+    return Promise.resolve({
       promptTokens: (usage.prompt_tokens as number | undefined) ?? 0,
       completionTokens: (usage.completion_tokens as number | undefined) ?? 0,
       totalTokens:
         (usage.total_tokens as number | undefined) ??
-        (((usage.prompt_tokens as number | undefined) ?? 0) +
-          ((usage.completion_tokens as number | undefined) ?? 0)),
+        ((usage.prompt_tokens as number | undefined) ?? 0) +
+          ((usage.completion_tokens as number | undefined) ?? 0),
       costUsd:
         (usage.cost as number | undefined) ?? (usage.total_cost as number | undefined) ?? null,
       cacheReadTokens: (details.cached_tokens as number | undefined) ?? 0,
       cacheWriteTokens: (details.cache_write_tokens as number | undefined) ?? 0,
       generationId: (response.id as string | undefined) ?? null,
-    }
+    })
   }),
 }))
 

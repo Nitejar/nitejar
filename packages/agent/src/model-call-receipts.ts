@@ -3,6 +3,7 @@ import { insertInferenceCall, upsertModelCallPayload } from '@nitejar/database'
 export type InferenceAttemptKind =
   | 'triage'
   | 'primary'
+  | 'explore'
   | 'no_tools_fallback'
   | 'image_fallback'
   | 'image_no_tools_fallback'

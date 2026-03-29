@@ -20,7 +20,9 @@ vi.mock('@nitejar/database', async () => {
 })
 
 vi.mock('@nitejar/plugin-handlers/telegram', async () => {
-  const actual = await vi.importActual<typeof TelegramIntegrations>('@nitejar/plugin-handlers/telegram')
+  const actual = await vi.importActual<typeof TelegramIntegrations>(
+    '@nitejar/plugin-handlers/telegram'
+  )
   return {
     ...actual,
     sendPhoto: vi.fn(),

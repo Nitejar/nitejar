@@ -3,6 +3,7 @@
  */
 export type EditToolMode = 'hashline' | 'replace'
 export type TriageReasoningEffort = 'low' | 'medium' | 'high'
+export type ExploreDepth = 'quick' | 'medium' | 'thorough'
 
 export type QueueMode = 'collect' | 'followup' | 'steer'
 
@@ -26,6 +27,11 @@ export interface TriageSettings {
   recentHistoryLookbackMessages?: number
   /** Per-message truncation cap when building triage history lines */
   recentHistoryPerMessageMaxChars?: number
+}
+
+export interface ExploreSettings {
+  /** Optional dedicated model for question-only code exploration child runs. */
+  model?: string
 }
 
 export interface AgentConfig {
@@ -60,6 +66,9 @@ export interface AgentConfig {
 
   // Triage settings (lightweight classifier pass before full run)
   triageSettings?: TriageSettings
+
+  // Explore settings (question-only child exploration runs)
+  exploreSettings?: ExploreSettings
 }
 
 /**

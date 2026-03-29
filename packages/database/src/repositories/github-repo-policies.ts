@@ -200,11 +200,7 @@ export async function listRoleGitHubRepoPolicies(roleId: string): Promise<RoleGi
   const rows = await db
     .selectFrom('role_github_repo_capabilities')
     .innerJoin('github_repos', 'github_repos.id', 'role_github_repo_capabilities.github_repo_id')
-    .innerJoin(
-      'github_installations',
-      'github_installations.id',
-      'github_repos.installation_id'
-    )
+    .innerJoin('github_installations', 'github_installations.id', 'github_repos.installation_id')
     .select([
       'role_github_repo_capabilities.role_id as role_id',
       'role_github_repo_capabilities.github_repo_id as github_repo_id',
@@ -281,11 +277,7 @@ export async function listEffectiveGitHubRepoCapabilities(
   const directRows = await db
     .selectFrom('agent_repo_capabilities')
     .innerJoin('github_repos', 'github_repos.id', 'agent_repo_capabilities.github_repo_id')
-    .innerJoin(
-      'github_installations',
-      'github_installations.id',
-      'github_repos.installation_id'
-    )
+    .innerJoin('github_installations', 'github_installations.id', 'github_repos.installation_id')
     .select([
       'agent_repo_capabilities.github_repo_id as github_repo_id',
       'agent_repo_capabilities.capabilities as capabilities',
@@ -297,7 +289,9 @@ export async function listEffectiveGitHubRepoCapabilities(
     .execute()
 
   for (const row of directRows) {
-    addCapabilities(ensureAccumulator(row), row.capabilities, { sourceType: 'direct_agent_assignment' })
+    addCapabilities(ensureAccumulator(row), row.capabilities, {
+      sourceType: 'direct_agent_assignment',
+    })
   }
 
   const assignedRoles = await listAgentRoleAssignments(agentId)
@@ -305,11 +299,7 @@ export async function listEffectiveGitHubRepoCapabilities(
     const rows = await db
       .selectFrom('role_github_repo_capabilities')
       .innerJoin('github_repos', 'github_repos.id', 'role_github_repo_capabilities.github_repo_id')
-      .innerJoin(
-        'github_installations',
-        'github_installations.id',
-        'github_repos.installation_id'
-      )
+      .innerJoin('github_installations', 'github_installations.id', 'github_repos.installation_id')
       .select([
         'role_github_repo_capabilities.github_repo_id as github_repo_id',
         'role_github_repo_capabilities.capabilities as capabilities',
@@ -342,7 +332,11 @@ export async function listEffectiveGitHubRepoCapabilities(
     for (const assignment of defaults) {
       const rows = await db
         .selectFrom('role_github_repo_capabilities')
-        .innerJoin('github_repos', 'github_repos.id', 'role_github_repo_capabilities.github_repo_id')
+        .innerJoin(
+          'github_repos',
+          'github_repos.id',
+          'role_github_repo_capabilities.github_repo_id'
+        )
         .innerJoin(
           'github_installations',
           'github_installations.id',

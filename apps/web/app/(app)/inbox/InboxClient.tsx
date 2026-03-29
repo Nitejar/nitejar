@@ -86,7 +86,11 @@ export function InboxClient() {
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryTile label="Unread" value={summary.unreadCount} emphasis={summary.unreadCount > 0} />
+        <SummaryTile
+          label="Unread"
+          value={summary.unreadCount}
+          emphasis={summary.unreadCount > 0}
+        />
         <SummaryTile
           label="Needs action"
           value={summary.openCount}
@@ -245,7 +249,8 @@ export function InboxClient() {
                     </Badge>
                   </div>
                   <p className="text-sm text-white/55">
-                    {selectedItem.body || 'This attention item points back to the ticket thread for context.'}
+                    {selectedItem.body ||
+                      'This attention item points back to the ticket thread for context.'}
                   </p>
                 </div>
 

@@ -329,6 +329,98 @@ export interface LatestSessionActivityByAgent {
  * Latest activity-log (triage) entry per agent for a specific session.
  * Returns at most one row per requested agent ID, newest first per-agent.
  */
+/**
+ * Recent activity feed for the Command Center dashboard.
+ * Returns completed/failed activity entries with agent/goal/job context.
+ */
+export interface RecentActivityFeedEntry {
+  id: string
+  agentId: string
+  agentHandle: string
+  agentName: string | null
+  agentConfig: string | null
+  status: string
+  summary: string
+  finalSummary: string | null
+  goalId: string | null
+  goalTitle: string | null
+  sessionKey: string | null
+  jobId: string | null
+  jobStatus: string | null
+  jobDurationSeconds: number | null
+  workItemId: string | null
+  workItemTitle: string | null
+  source: string | null
+  sourceRef: string | null
+  createdAt: number
+}
+
+export async function listRecentActivityFeed(opts?: {
+  limit?: number
+  maxAgeSeconds?: number
+}): Promise<RecentActivityFeedEntry[]> {
+  const db = getDb()
+  const limit = Math.min(opts?.limit ?? 20, 50)
+  const cutoff = now() - (opts?.maxAgeSeconds ?? 86400) // default 24h
+
+  const rows = await db
+    .selectFrom('activity_log')
+    .innerJoin('agents', 'agents.id', 'activity_log.agent_id')
+    .leftJoin('jobs', 'jobs.id', 'activity_log.job_id')
+    .leftJoin('work_items', 'work_items.id', 'jobs.work_item_id')
+    .leftJoin('goals', 'goals.id', 'activity_log.goal_id')
+    .select([
+      'activity_log.id',
+      'activity_log.agent_id',
+      'activity_log.agent_handle',
+      'agents.name as agent_name',
+      'agents.config as agent_config',
+      'activity_log.status',
+      'activity_log.summary',
+      'activity_log.final_summary',
+      'activity_log.goal_id',
+      'goals.title as goal_title',
+      'activity_log.session_key',
+      'activity_log.job_id',
+      'jobs.status as job_status',
+      'jobs.started_at as job_started_at',
+      'jobs.completed_at as job_completed_at',
+      'jobs.work_item_id as work_item_id',
+      'work_items.title as wi_title',
+      'work_items.source as wi_source',
+      'work_items.source_ref as wi_source_ref',
+      'activity_log.created_at',
+    ])
+    .where('activity_log.created_at', '>=', cutoff)
+    .where('activity_log.status', 'in', ['completed', 'failed', 'passed'])
+    .orderBy('activity_log.created_at', 'desc')
+    .limit(limit)
+    .execute()
+
+  return rows.map((r) => ({
+    id: r.id,
+    agentId: r.agent_id,
+    agentHandle: r.agent_handle,
+    agentName: r.agent_name,
+    agentConfig: r.agent_config,
+    status: r.status,
+    summary: r.summary,
+    finalSummary: r.final_summary,
+    goalId: r.goal_id,
+    goalTitle: r.goal_title,
+    sessionKey: r.session_key,
+    jobId: r.job_id,
+    jobStatus: r.job_status,
+    jobDurationSeconds:
+      r.job_started_at && r.job_completed_at ? r.job_completed_at - r.job_started_at : null,
+    workItemId: r.work_item_id,
+    workItemTitle: r.wi_title,
+    source: r.wi_source,
+    sourceRef: r.wi_source_ref,
+    createdAt: r.created_at,
+  }))
+}
+
 export async function listLatestSessionActivityByAgents(
   sessionKey: string,
   agentIds: string[],

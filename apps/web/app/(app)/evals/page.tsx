@@ -1,7 +1,17 @@
+import loadable from 'next/dynamic'
 import { createPageMetadata } from '@/app/metadata'
 import { PageHeader } from '@/app/(app)/components/PageHeader'
 import { PageScrollShell } from '@/app/(app)/components/PageScrollShell'
-import { EvalDashboardClient } from './EvalDashboardClient'
+import { RouteClientFallback } from '@/app/(app)/components/RouteClientFallback'
+
+const EvalDashboardClient = loadable(
+  () => import('./EvalDashboardClient').then((mod) => mod.EvalDashboardClient),
+  {
+    loading: () => (
+      <RouteClientFallback label="Loading eval dashboard..." className="min-h-[420px]" />
+    ),
+  }
+)
 
 export const dynamic = 'force-dynamic'
 export const metadata = createPageMetadata('Evals')

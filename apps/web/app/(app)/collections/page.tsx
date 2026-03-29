@@ -1,8 +1,16 @@
+import loadable from 'next/dynamic'
 import { createPageMetadata } from '@/app/metadata'
 import { PageHeader } from '../components/PageHeader'
 import { ClientErrorBoundary } from '../components/ClientErrorBoundary'
 import { PageScrollShell } from '../components/PageScrollShell'
-import { CollectionsClient } from './CollectionsClient'
+import { RouteClientFallback } from '../components/RouteClientFallback'
+
+const CollectionsClient = loadable(
+  () => import('./CollectionsClient').then((mod) => mod.CollectionsClient),
+  {
+    loading: () => <RouteClientFallback label="Loading collections..." />,
+  }
+)
 
 export const metadata = createPageMetadata('Collections')
 

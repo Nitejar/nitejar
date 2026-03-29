@@ -15,6 +15,19 @@ interface CostBadgeProps {
   cacheWriteTokens: number
   /** Cost attributed to passive memory extraction. */
   passiveMemoryCost?: number
+  rollup?: {
+    totalCost: number
+    externalCost: number
+    externalCallCount: number
+    unpricedExternalCallCount: number
+    promptTokens: number
+    completionTokens: number
+    cacheReadTokens: number
+    cacheWriteTokens: number
+    passiveMemoryCost: number
+    childRunCost: number
+    childRunCount: number
+  }
   /** "pill" (default) renders with border/bg; "inline" renders as plain text */
   variant?: 'pill' | 'inline'
 }
@@ -29,14 +42,29 @@ export function CostBadge({
   cacheReadTokens,
   cacheWriteTokens,
   passiveMemoryCost = 0,
+  rollup,
   variant = 'pill',
 }: CostBadgeProps) {
   const isPill = variant === 'pill'
-  const inferenceCost = totalCost - externalCost - passiveMemoryCost
-  const totalTokens = promptTokens + completionTokens
+  const displayedTotalCost = rollup?.totalCost ?? totalCost
+  const displayedExternalCost = rollup?.externalCost ?? externalCost
+  const displayedExternalCallCount = rollup?.externalCallCount ?? externalCallCount
+  const displayedUnpricedExternalCallCount =
+    rollup?.unpricedExternalCallCount ?? unpricedExternalCallCount
+  const displayedPromptTokens = rollup?.promptTokens ?? promptTokens
+  const displayedCompletionTokens = rollup?.completionTokens ?? completionTokens
+  const displayedCacheReadTokens = rollup?.cacheReadTokens ?? cacheReadTokens
+  const displayedCacheWriteTokens = rollup?.cacheWriteTokens ?? cacheWriteTokens
+  const displayedPassiveMemoryCost = rollup?.passiveMemoryCost ?? passiveMemoryCost
+  const inferenceCost = displayedTotalCost - displayedExternalCost - displayedPassiveMemoryCost
+  const totalTokens = displayedPromptTokens + displayedCompletionTokens
   // Estimate input/output cost split proportionally by token count
-  const promptCost = totalTokens > 0 ? inferenceCost * (promptTokens / totalTokens) : 0
-  const completionCost = totalTokens > 0 ? inferenceCost * (completionTokens / totalTokens) : 0
+  const promptCost = totalTokens > 0 ? inferenceCost * (displayedPromptTokens / totalTokens) : 0
+  const completionCost =
+    totalTokens > 0 ? inferenceCost * (displayedCompletionTokens / totalTokens) : 0
+  const childRunCost = rollup?.childRunCost ?? 0
+  const childRunCount = rollup?.childRunCount ?? 0
+  const hasChildRunRollup = childRunCost > 0 && childRunCount > 0
 
   const badge = (
     <span
@@ -47,18 +75,18 @@ export function CostBadge({
       }
     >
       {isPill && <IconCurrencyDollar className="h-3 w-3" />}
-      {promptTokens.toLocaleString()} in / {completionTokens.toLocaleString()} out
+      {displayedPromptTokens.toLocaleString()} in / {displayedCompletionTokens.toLocaleString()} out
       {!isPill && <span> · </span>}
       {isPill && <span className="text-white/20">·</span>}
-      {cacheReadTokens.toLocaleString()} cache read / {cacheWriteTokens.toLocaleString()} cache
-      write
+      {displayedCacheReadTokens.toLocaleString()} cache read /{' '}
+      {displayedCacheWriteTokens.toLocaleString()} cache write
       {isPill && <span className="text-white/20">·</span>}
       {!isPill && <span> · </span>}
-      {formatCost(totalCost)}
-      {externalCallCount > 0 && (
+      {formatCost(displayedTotalCost)}
+      {displayedExternalCallCount > 0 && (
         <span
           className={`h-1.5 w-1.5 rounded-full ${
-            unpricedExternalCallCount > 0 ? 'bg-amber-400' : 'bg-emerald-400'
+            displayedUnpricedExternalCallCount > 0 ? 'bg-amber-400' : 'bg-emerald-400'
           }`}
         />
       )}
@@ -74,62 +102,70 @@ export function CostBadge({
             <tr>
               <td className="pr-3 text-muted-foreground">Input</td>
               <td className="text-right">{formatCost(promptCost)}</td>
-              <td className="pl-2 text-muted-foreground">{promptTokens.toLocaleString()} tokens</td>
+              <td className="pl-2 text-muted-foreground">
+                {displayedPromptTokens.toLocaleString()} tokens
+              </td>
             </tr>
             <tr>
               <td className="pr-3 text-muted-foreground">Output</td>
               <td className="text-right">{formatCost(completionCost)}</td>
               <td className="pl-2 text-muted-foreground">
-                {completionTokens.toLocaleString()} tokens
+                {displayedCompletionTokens.toLocaleString()} tokens
               </td>
             </tr>
             <tr>
               <td className="pr-3 text-muted-foreground">Cache read</td>
               <td className="text-right">-</td>
               <td className="pl-2 text-muted-foreground">
-                {cacheReadTokens.toLocaleString()} tokens
+                {displayedCacheReadTokens.toLocaleString()} tokens
               </td>
             </tr>
             <tr>
               <td className="pr-3 text-muted-foreground">Cache write</td>
               <td className="text-right">-</td>
               <td className="pl-2 text-muted-foreground">
-                {cacheWriteTokens.toLocaleString()} tokens
+                {displayedCacheWriteTokens.toLocaleString()} tokens
               </td>
             </tr>
-            {passiveMemoryCost > 0 && (
+            {displayedPassiveMemoryCost > 0 && (
               <tr>
                 <td className="pr-3 text-muted-foreground">Memory extraction</td>
-                <td className="text-right">{formatCost(passiveMemoryCost)}</td>
+                <td className="text-right">{formatCost(displayedPassiveMemoryCost)}</td>
                 <td />
               </tr>
             )}
-            {externalCallCount > 0 && (
+            {displayedExternalCallCount > 0 && (
               <tr>
                 <td className="pr-3 text-muted-foreground">External APIs</td>
                 <td className="text-right">
-                  {externalCost > 0
-                    ? formatCost(externalCost)
-                    : unpricedExternalCallCount > 0
+                  {displayedExternalCost > 0
+                    ? formatCost(displayedExternalCost)
+                    : displayedUnpricedExternalCallCount > 0
                       ? 'Unpriced'
                       : formatCost(0)}
                 </td>
                 <td className="pl-2 text-muted-foreground">
-                  {externalCallCount.toLocaleString()} call
-                  {externalCallCount === 1 ? '' : 's'}
-                  {unpricedExternalCallCount > 0
-                    ? ` (${unpricedExternalCallCount.toLocaleString()} unknown)`
+                  {displayedExternalCallCount.toLocaleString()} call
+                  {displayedExternalCallCount === 1 ? '' : 's'}
+                  {displayedUnpricedExternalCallCount > 0
+                    ? ` (${displayedUnpricedExternalCallCount.toLocaleString()} unknown)`
                     : ''}
                 </td>
               </tr>
             )}
             <tr className="border-t border-white/10 font-semibold">
               <td className="pr-3 pt-0.5">Total</td>
-              <td className="pt-0.5 text-right">{formatCost(totalCost)}</td>
+              <td className="pt-0.5 text-right">{formatCost(displayedTotalCost)}</td>
               <td />
             </tr>
           </tbody>
         </table>
+        {hasChildRunRollup ? (
+          <div className="mt-2 border-t border-white/10 pt-2 text-[11px] text-muted-foreground">
+            Includes {childRunCount.toLocaleString()} child run{childRunCount === 1 ? '' : 's'}: +
+            {formatCost(childRunCost)}
+          </div>
+        ) : null}
       </TooltipContent>
     </Tooltip>
   )

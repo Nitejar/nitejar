@@ -39,6 +39,7 @@ describe('activity-log repository helpers', () => {
       .addColumn('condition_config', 'text')
       .addColumn('target_plugin_instance_id', 'text')
       .addColumn('target_response_context', 'text')
+      .addColumn('target_spec_json', 'text')
       .addColumn('action_prompt', 'text')
       .addColumn('next_run_at', 'integer')
       .addColumn('last_evaluated_at', 'integer')

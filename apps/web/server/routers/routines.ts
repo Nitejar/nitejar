@@ -5,12 +5,15 @@ import {
   enqueueRoutineRun,
   findRoutineById,
   getDb,
+  getRoutineTarget,
   listRoutineRunsByRoutine,
   listRoutines,
   setRoutineEnabled,
   updateRoutine,
   archiveRoutine,
   getPluginInstancesForAgent,
+  parseAppSessionKey,
+  validateAndCompileRoutineTarget,
 } from '@nitejar/database'
 import { protectedProcedure, router } from '../trpc'
 import { getMinimumRoutineRecurrenceSeconds, validateCronSchedule } from '../services/routines/cron'
@@ -19,14 +22,33 @@ import { getAlwaysTrueRuleForEnvelope, parseRoutineRule } from '../services/rout
 const triggerKindSchema = z.enum(['cron', 'event', 'condition', 'oneshot'])
 const createdByKindSchema = z.enum(['admin', 'agent', 'system'])
 const GOAL_HEARTBEAT_SESSION_KEY_RE = /^work:goal:(.+):heartbeat$/
-const targetPluginInstanceIdSchema = z.preprocess((value) => {
-  if (typeof value !== 'string') {
-    return value ?? null
-  }
-
-  const trimmed = value.trim()
-  return trimmed ? trimmed : null
-}, z.string().nullable())
+const routineTargetSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('plugin_conversation'),
+    pluginInstanceId: z.string().trim().min(1),
+    sessionKey: z.string().trim().min(1),
+  }),
+  z.object({
+    kind: z.literal('app_session'),
+    sessionKey: z.string().trim().min(1),
+    sessionMode: z.enum(['resume', 'fresh']),
+  }),
+  z.object({
+    kind: z.literal('app_ticket'),
+    ticketId: z.string().trim().min(1),
+    sessionMode: z.enum(['resume', 'fresh']),
+  }),
+  z.object({
+    kind: z.literal('app_goal'),
+    goalId: z.string().trim().min(1),
+    sessionMode: z.enum(['resume', 'fresh']),
+  }),
+  z.object({
+    kind: z.literal('app_routine'),
+    routineId: z.string().trim().min(1),
+    sessionMode: z.enum(['resume', 'fresh']),
+  }),
+])
 
 const createUpdateInputSchema = z.object({
   name: z.string().trim().min(1),
@@ -37,9 +59,7 @@ const createUpdateInputSchema = z.object({
   ruleJson: z.unknown(),
   conditionProbe: z.string().trim().optional(),
   conditionConfig: z.unknown().optional(),
-  targetPluginInstanceId: targetPluginInstanceIdSchema,
-  targetSessionKey: z.string().trim().min(1),
-  targetResponseContext: z.unknown().optional(),
+  target: routineTargetSchema,
   actionPrompt: z.string().trim().min(1),
   enabled: z.boolean().default(true),
   description: z.string().trim().optional(),
@@ -56,25 +76,6 @@ function parseOptionalJsonString(value: string | null): unknown {
   } catch {
     return value
   }
-}
-
-function normalizeTargetResponseContext(value: unknown): string | null {
-  if (value === undefined || value === null || value === '') {
-    return null
-  }
-
-  if (typeof value === 'string') {
-    const trimmed = value.trim()
-    if (!trimmed) return null
-    try {
-      JSON.parse(trimmed)
-      return trimmed
-    } catch {
-      return JSON.stringify(trimmed)
-    }
-  }
-
-  return JSON.stringify(value)
 }
 
 function resolveRuleJson(input: {
@@ -150,7 +151,7 @@ function normalizeRoutineRow(row: Awaited<ReturnType<typeof findRoutineById>>) {
     enabled: row.enabled === 1,
     ruleJson: parseOptionalJsonString(row.rule_json),
     conditionConfig: parseOptionalJsonString(row.condition_config),
-    targetResponseContext: parseOptionalJsonString(row.target_response_context),
+    target: getRoutineTarget(row),
   }
 }
 
@@ -158,6 +159,23 @@ function extractGoalHeartbeatId(sessionKey: string | null | undefined): string |
   if (!sessionKey) return null
   const match = sessionKey.match(GOAL_HEARTBEAT_SESSION_KEY_RE)
   return match?.[1] ?? null
+}
+
+function extractGoalIdFromRoutine(row: Awaited<ReturnType<typeof findRoutineById>>): string | null {
+  if (!row) return null
+
+  const target = getRoutineTarget(row)
+  if (target?.kind === 'app_goal') {
+    return target.goalId
+  }
+  if (target?.kind === 'app_session') {
+    const parsed = parseAppSessionKey(target.sessionKey)
+    if (parsed.isAppSession && parsed.contextKind === 'goal') {
+      return parsed.contextId
+    }
+  }
+
+  return extractGoalHeartbeatId(row.target_session_key)
 }
 
 export const routinesRouter = router({
@@ -182,7 +200,7 @@ export const routinesRouter = router({
       const goalIds = [
         ...new Set(
           rows
-            .map((row) => extractGoalHeartbeatId(row.target_session_key))
+            .map((row) => extractGoalIdFromRoutine(row))
             .filter((goalId): goalId is string => !!goalId)
         ),
       ]
@@ -229,7 +247,7 @@ export const routinesRouter = router({
       return rows.map((row) => {
         const normalized = normalizeRoutineRow(row)!
         const agent = agentMap.get(row.agent_id)
-        const linkedGoalId = extractGoalHeartbeatId(row.target_session_key)
+        const linkedGoalId = extractGoalIdFromRoutine(row)
         const linkedGoal = linkedGoalId ? goalMap.get(linkedGoalId) : null
         const latestRun = latestRunByRoutine.get(row.id) ?? null
         return {
@@ -266,6 +284,10 @@ export const routinesRouter = router({
   }),
 
   create: protectedProcedure.input(createUpdateInputSchema).mutation(async ({ input, ctx }) => {
+    const compiledTarget = await validateAndCompileRoutineTarget({
+      agentId: input.agentId,
+      target: input.target,
+    })
     const nextRunAt = resolveNextRunAt({
       triggerKind: input.triggerKind,
       enabled: input.enabled,
@@ -287,9 +309,10 @@ export const routinesRouter = router({
       }),
       condition_probe: input.conditionProbe ?? null,
       condition_config: serializeConditionConfig(input.conditionConfig),
-      target_plugin_instance_id: input.targetPluginInstanceId ?? null,
-      target_session_key: input.targetSessionKey,
-      target_response_context: normalizeTargetResponseContext(input.targetResponseContext),
+      target_plugin_instance_id: compiledTarget.targetPluginInstanceId,
+      target_session_key: compiledTarget.targetSessionKey,
+      target_response_context: compiledTarget.targetResponseContext,
+      target_spec_json: compiledTarget.targetSpecJson,
       action_prompt: input.actionPrompt,
       next_run_at: nextRunAt,
       last_evaluated_at: null,
@@ -319,9 +342,21 @@ export const routinesRouter = router({
       }
 
       const triggerKind = triggerKindSchema.parse(input.patch.triggerKind ?? existing.trigger_kind)
+      const agentId = input.patch.agentId ?? existing.agent_id
       const enabled = input.patch.enabled ?? existing.enabled === 1
       const cronExpr = input.patch.cronExpr ?? existing.cron_expr ?? undefined
       const timezone = input.patch.timezone ?? existing.timezone ?? undefined
+      const target = input.patch.target ?? getRoutineTarget(existing)
+      if (!target) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Routine target is invalid and must be repaired before updating.',
+        })
+      }
+      const compiledTarget = await validateAndCompileRoutineTarget({
+        agentId,
+        target,
+      })
 
       const nextRunAt = resolveNextRunAt({
         triggerKind,
@@ -331,6 +366,7 @@ export const routinesRouter = router({
       })
 
       const updated = await updateRoutine(input.routineId, {
+        agent_id: agentId,
         name: input.patch.name ?? existing.name,
         description: input.patch.description ?? existing.description,
         enabled: enabled ? 1 : 0,
@@ -349,15 +385,10 @@ export const routinesRouter = router({
           input.patch.conditionConfig !== undefined
             ? serializeConditionConfig(input.patch.conditionConfig)
             : existing.condition_config,
-        target_plugin_instance_id:
-          input.patch.targetPluginInstanceId !== undefined
-            ? input.patch.targetPluginInstanceId
-            : existing.target_plugin_instance_id,
-        target_session_key: input.patch.targetSessionKey ?? existing.target_session_key,
-        target_response_context:
-          input.patch.targetResponseContext !== undefined
-            ? normalizeTargetResponseContext(input.patch.targetResponseContext)
-            : existing.target_response_context,
+        target_plugin_instance_id: compiledTarget.targetPluginInstanceId,
+        target_session_key: compiledTarget.targetSessionKey,
+        target_response_context: compiledTarget.targetResponseContext,
+        target_spec_json: compiledTarget.targetSpecJson,
         action_prompt: input.patch.actionPrompt ?? existing.action_prompt,
         next_run_at: nextRunAt,
       })
@@ -464,11 +495,12 @@ export const routinesRouter = router({
 
   listTargets: protectedProcedure
     .input(z.object({ agentId: z.string() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const pluginInstances = await getPluginInstancesForAgent(input.agentId)
       const db = getDb()
+      const userId = ctx.session.user.id
 
-      const targets = await Promise.all(
+      const pluginConversations = await Promise.all(
         pluginInstances.map(async (pluginInstance) => {
           const sessions = await db
             .selectFrom('work_items')
@@ -492,9 +524,6 @@ export const routinesRouter = router({
             pluginInstanceId: pluginInstance.id,
             pluginInstanceName: pluginInstance.name,
             pluginInstanceType: pluginInstance.type,
-            // Legacy response keys for existing clients.
-            integrationName: pluginInstance.name,
-            integrationType: pluginInstance.type,
             sessions: [...deduped.entries()].map(([sessionKey, info]) => ({
               sessionKey,
               lastSeenAt: info.lastSeenAt,
@@ -504,7 +533,99 @@ export const routinesRouter = router({
         })
       )
 
-      return targets
+      const appSessions = await db
+        .selectFrom('app_sessions')
+        .selectAll()
+        .where('owner_user_id', '=', userId)
+        .orderBy('last_activity_at', 'desc')
+        .orderBy('created_at', 'desc')
+        .limit(50)
+        .execute()
+
+      const latestTicketSessionById = new Map<string, (typeof appSessions)[number]>()
+      const latestGoalSessionById = new Map<string, (typeof appSessions)[number]>()
+      const latestRoutineSessionById = new Map<string, (typeof appSessions)[number]>()
+
+      const appSessionItems = appSessions.map((session) => {
+        const parsed = parseAppSessionKey(session.session_key)
+        if (parsed.isAppSession && parsed.contextKind === 'ticket') {
+          if (!latestTicketSessionById.has(parsed.contextId)) {
+            latestTicketSessionById.set(parsed.contextId, session)
+          }
+        }
+        if (parsed.isAppSession && parsed.contextKind === 'goal') {
+          if (!latestGoalSessionById.has(parsed.contextId)) {
+            latestGoalSessionById.set(parsed.contextId, session)
+          }
+        }
+        if (parsed.isAppSession && parsed.contextKind === 'routine') {
+          if (!latestRoutineSessionById.has(parsed.contextId)) {
+            latestRoutineSessionById.set(parsed.contextId, session)
+          }
+        }
+
+        return {
+          sessionKey: session.session_key,
+          title: session.title,
+          lastActivityAt: session.last_activity_at,
+          contextKind: parsed.isAppSession ? parsed.contextKind : null,
+          contextId: parsed.isAppSession ? parsed.contextId : null,
+        }
+      })
+
+      const ticketIds = [...latestTicketSessionById.keys()]
+      const goalIds = [...latestGoalSessionById.keys()]
+      const routineIds = [...latestRoutineSessionById.keys()]
+
+      const [tickets, goals, routines] = await Promise.all([
+        ticketIds.length
+          ? db
+              .selectFrom('tickets')
+              .select(['id', 'title', 'status'])
+              .where('id', 'in', ticketIds)
+              .execute()
+          : Promise.resolve([]),
+        goalIds.length
+          ? db
+              .selectFrom('goals')
+              .select(['id', 'title', 'status'])
+              .where('id', 'in', goalIds)
+              .execute()
+          : Promise.resolve([]),
+        routineIds.length
+          ? db
+              .selectFrom('routines')
+              .select(['id', 'name', 'agent_id'])
+              .where('id', 'in', routineIds)
+              .execute()
+          : Promise.resolve([]),
+      ])
+
+      return {
+        pluginConversations,
+        appSessions: appSessionItems,
+        tickets: tickets.map((ticket) => ({
+          id: ticket.id,
+          title: ticket.title,
+          status: ticket.status,
+          lastSessionKey: latestTicketSessionById.get(ticket.id)?.session_key ?? null,
+          lastActivityAt: latestTicketSessionById.get(ticket.id)?.last_activity_at ?? null,
+        })),
+        goals: goals.map((goal) => ({
+          id: goal.id,
+          title: goal.title,
+          status: goal.status,
+          lastSessionKey: latestGoalSessionById.get(goal.id)?.session_key ?? null,
+          lastActivityAt: latestGoalSessionById.get(goal.id)?.last_activity_at ?? null,
+        })),
+        routines: routines.map((routine) => ({
+          id: routine.id,
+          name: routine.name,
+          agentId: routine.agent_id,
+          lastSessionKey: latestRoutineSessionById.get(routine.id)?.session_key ?? null,
+          lastActivityAt: latestRoutineSessionById.get(routine.id)?.last_activity_at ?? null,
+        })),
+      }
     }),
 })
 

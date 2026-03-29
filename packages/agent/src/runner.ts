@@ -884,11 +884,7 @@ async function runInferenceLoop(
   if (carryForwardAttachments && carryForwardAttachments.length > 0) {
     const carryForwardNote =
       '[Attachment context] The current message has no new attachments, but the most recent user attachments in this session remain downloadable in this run. Use the same attachment indices from that prior message if you need the raw files.'
-    messages.splice(
-      issuePreamble ? 2 : 1,
-      0,
-      { role: 'system', content: carryForwardNote }
-    )
+    messages.splice(issuePreamble ? 2 : 1, 0, { role: 'system', content: carryForwardNote })
     await appendMessage(job.id, 'system', { text: carryForwardNote })
   }
   // Track where this run's messages start (after system + preamble + session history)
@@ -1148,12 +1144,12 @@ async function runInferenceLoop(
   // Get tools in OpenAI format (empty if no sprite)
   const [tavilyAvailable, imageGenAvailable, sttAvailable, ttsAvailable, resolvedPolicy] =
     await Promise.all([
-    isTavilyAvailable(),
-    isImageGenAvailable(),
-    isSTTAvailable(),
-    isTTSAvailable(),
-    resolveEffectivePolicy(agent.id),
-  ])
+      isTavilyAvailable(),
+      isImageGenAvailable(),
+      isSTTAvailable(),
+      isTTSAvailable(),
+      resolveEffectivePolicy(agent.id),
+    ])
 
   const toolAccess = deriveRuntimeToolAccess({
     grants: resolvedPolicy.grants,

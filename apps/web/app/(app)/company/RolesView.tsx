@@ -527,7 +527,9 @@ export function RolesView({
                       capabilities: GitHubRepoCapability[]
                     }>
                   ).map((policy) => {
-                    const repo = githubRepos.find((candidate) => candidate.id === policy.githubRepoId)
+                    const repo = githubRepos.find(
+                      (candidate) => candidate.id === policy.githubRepoId
+                    )
                     return {
                       githubRepoId: policy.githubRepoId,
                       repoFullName: repo?.full_name ?? `repo-${policy.githubRepoId}`,
@@ -589,8 +591,7 @@ export function RolesView({
       await utils.company.listRoles.invalidate()
       setSelectedRoleId((current) => {
         if (current !== input.roleId) return current
-        const remainingRoles = utils.company
-          .listRoles
+        const remainingRoles = utils.company.listRoles
           .getData()
           ?.filter((role) => role.id !== input.roleId)
         return remainingRoles?.[0]?.id ?? null
@@ -786,7 +787,9 @@ export function RolesView({
 
   const handleDeleteRole = useCallback(() => {
     if (!selectedRole) return
-    const confirmation = window.confirm(`Delete "${selectedRole.name}"? This removes the role, its grants, and its assignments.`)
+    const confirmation = window.confirm(
+      `Delete "${selectedRole.name}"? This removes the role, its grants, and its assignments.`
+    )
     if (!confirmation) return
     deleteRole.mutate({ roleId: selectedRole.id })
   }, [deleteRole, selectedRole])
@@ -1228,14 +1231,12 @@ export function RolesView({
                 GitHub repo role defaults
               </span>
               <p className="mt-1 text-[11px] text-white/35">
-                Reusable defaults that flow through role assignment. Direct per-agent repo access now
-                lives on the GitHub plugin instance page.
+                Reusable defaults that flow through role assignment. Direct per-agent repo access
+                now lives on the GitHub plugin instance page.
               </p>
               <div className="mt-1.5 rounded-lg border border-zinc-800/40">
                 {githubReposByAccount.length === 0 ? (
-                  <div className="px-3 py-3 text-xs text-zinc-500">
-                    No synced GitHub repos yet.
-                  </div>
+                  <div className="px-3 py-3 text-xs text-zinc-500">No synced GitHub repos yet.</div>
                 ) : (
                   githubReposByAccount.map((group) => (
                     <div

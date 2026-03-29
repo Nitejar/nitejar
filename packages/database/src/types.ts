@@ -968,6 +968,10 @@ export interface JobTable {
   id: Generated<string>
   work_item_id: string
   agent_id: string
+  parent_job_id: Generated<string | null>
+  root_job_id: Generated<string | null>
+  run_kind: Generated<string>
+  origin_tool_name: Generated<string | null>
   status: Generated<string> // 'PENDING', 'RUNNING', 'PAUSED', 'COMPLETED', 'FAILED', 'CANCELLED'
   error_text: string | null
   todo_state: string | null // JSON stored as text
@@ -1067,6 +1071,7 @@ export interface ScheduledItemTable {
   source_ref: string | null // optional link to PR, check run, etc.
   plugin_instance_id: string | null // plugin instance for response delivery
   response_context: string | null // JSON string for response delivery context
+  target_spec_json: string | null // JSON snapshot of typed routine target
   routine_id: string | null // optional link to parent routine
   routine_run_id: string | null // optional link to routine run receipt
   created_at: Generated<number>
@@ -1097,6 +1102,7 @@ export interface RoutineTable {
   target_plugin_instance_id: string | null
   target_session_key: string
   target_response_context: string | null // JSON context
+  target_spec_json: string | null // JSON typed target definition
   action_prompt: string
   next_run_at: number | null
   last_evaluated_at: number | null

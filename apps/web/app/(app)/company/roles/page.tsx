@@ -5,5 +5,5 @@ export const dynamic = 'force-dynamic'
 export const metadata = createPageMetadata('Company Roles')
 
 export default function CompanyRolesPage() {
-  return <CompanyPageShell />
+  return <CompanyPageShell activeViewId="roles" />
 }

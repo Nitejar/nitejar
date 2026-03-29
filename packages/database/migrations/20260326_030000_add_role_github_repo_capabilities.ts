@@ -25,10 +25,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .column('github_repo_id')
     .execute()
 
-  await db
-    .deleteFrom('role_grants')
-    .where('action', '=', 'capability.tool_execution')
-    .execute()
+  await db.deleteFrom('role_grants').where('action', '=', 'capability.tool_execution').execute()
 }
 
 export async function down(db: Kysely<any>): Promise<void> {

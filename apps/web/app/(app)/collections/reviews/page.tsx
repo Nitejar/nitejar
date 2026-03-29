@@ -1,8 +1,13 @@
+import loadable from 'next/dynamic'
 import { createPageMetadata } from '@/app/metadata'
 import { PageHeader } from '../../components/PageHeader'
 import { ClientErrorBoundary } from '../../components/ClientErrorBoundary'
 import { PageScrollShell } from '../../components/PageScrollShell'
-import { ReviewsClient } from './ReviewsClient'
+import { RouteClientFallback } from '../../components/RouteClientFallback'
+
+const ReviewsClient = loadable(() => import('./ReviewsClient').then((mod) => mod.ReviewsClient), {
+  loading: () => <RouteClientFallback label="Loading schema reviews..." />,
+})
 
 export const metadata = createPageMetadata('Schema Reviews')
 

@@ -787,16 +787,14 @@ function presentInboxAttentionItem(input: {
   item: Awaited<ReturnType<typeof listAttentionItems>>[number]
   resolved: Awaited<ReturnType<typeof resolveActors>>
   ticket: Awaited<ReturnType<typeof enrichTickets>>[number] | null
-  comment:
-    | {
-        id: string
-        kind: string
-        body: string
-        created_at: number
-        author_kind: string
-        author_ref: string | null
-      }
-    | null
+  comment: {
+    id: string
+    kind: string
+    body: string
+    created_at: number
+    author_kind: string
+    author_ref: string | null
+  } | null
 }) {
   const target = presentActor(input.item.target_kind, input.item.target_ref, input.resolved)
   const sourceAuthor = input.comment
@@ -1418,7 +1416,9 @@ export const workRouter = router({
 
     const goalRows = await enrichGoals(goals)
     const ticketRows = await enrichTickets(openTickets)
-    const attentionTicketIds = [...new Set(attentionItems.map((item) => item.ticket_id).filter(Boolean))]
+    const attentionTicketIds = [
+      ...new Set(attentionItems.map((item) => item.ticket_id).filter(Boolean)),
+    ]
     const attentionTickets =
       attentionTicketIds.length > 0
         ? await enrichTickets(
@@ -1604,11 +1604,7 @@ export const workRouter = router({
         ticketIds.length > 0
           ? enrichTickets(
               (
-                await db
-                  .selectFrom('tickets')
-                  .selectAll()
-                  .where('id', 'in', ticketIds)
-                  .execute()
+                await db.selectFrom('tickets').selectAll().where('id', 'in', ticketIds).execute()
               ).filter(Boolean)
             )
           : Promise.resolve([]),
@@ -1637,7 +1633,9 @@ export const workRouter = router({
             resolved: actors,
             ticket: item.ticket_id ? (ticketById.get(item.ticket_id) ?? null) : null,
             comment:
-              item.source_kind === 'ticket_comment' ? (commentById.get(item.source_ref) ?? null) : null,
+              item.source_kind === 'ticket_comment'
+                ? (commentById.get(item.source_ref) ?? null)
+                : null,
           })
         ),
       }
@@ -2163,35 +2161,33 @@ export const workRouter = router({
       const db = getDb()
       const [updates, related, receiptSummary, comments, participants, attentionItems] =
         await Promise.all([
-        listWorkUpdates({ ticketId: ticket.id, limit: 30 }),
-        listRelatedTickets({
-          text: `${ticket.title} ${ticket.body ?? ''}`,
-          excludeTicketId: ticket.id,
-          limit: 5,
-        }),
-        buildTicketReceiptSummary(ticket.id),
-        listTicketComments({ ticketId: ticket.id, limit: 100 }),
-        listTicketParticipants(ticket.id),
-        listAttentionItems({ ticketId: ticket.id, statuses: ['open'], limit: 50 }),
-      ])
-      const updateActors = await resolveActors(
-        [
-          ...updates.map((update) => ({ kind: update.author_kind, ref: update.author_ref })),
-          ...comments.flatMap((comment) => {
-            const metadata = parseTicketCommentMetadata(comment.metadata_json)
-            return [
-              { kind: comment.author_kind, ref: comment.author_ref },
-              ...(metadata.mentionAgentIds ?? []).map((id) => ({ kind: 'agent', ref: id })),
-              ...(metadata.mentionUserIds ?? []).map((id) => ({ kind: 'user', ref: id })),
-            ]
+          listWorkUpdates({ ticketId: ticket.id, limit: 30 }),
+          listRelatedTickets({
+            text: `${ticket.title} ${ticket.body ?? ''}`,
+            excludeTicketId: ticket.id,
+            limit: 5,
           }),
-          ...participants.map((participant) => ({
-            kind: participant.participant_kind,
-            ref: participant.participant_ref,
-          })),
-          ...attentionItems.map((item) => ({ kind: item.target_kind, ref: item.target_ref })),
-        ]
-      )
+          buildTicketReceiptSummary(ticket.id),
+          listTicketComments({ ticketId: ticket.id, limit: 100 }),
+          listTicketParticipants(ticket.id),
+          listAttentionItems({ ticketId: ticket.id, statuses: ['open'], limit: 50 }),
+        ])
+      const updateActors = await resolveActors([
+        ...updates.map((update) => ({ kind: update.author_kind, ref: update.author_ref })),
+        ...comments.flatMap((comment) => {
+          const metadata = parseTicketCommentMetadata(comment.metadata_json)
+          return [
+            { kind: comment.author_kind, ref: comment.author_ref },
+            ...(metadata.mentionAgentIds ?? []).map((id) => ({ kind: 'agent', ref: id })),
+            ...(metadata.mentionUserIds ?? []).map((id) => ({ kind: 'user', ref: id })),
+          ]
+        }),
+        ...participants.map((participant) => ({
+          kind: participant.participant_kind,
+          ref: participant.participant_ref,
+        })),
+        ...attentionItems.map((item) => ({ kind: item.target_kind, ref: item.target_ref })),
+      ])
 
       // Fetch full descendant tree iteratively (breadth-first)
       type DescendantRow = {
@@ -2261,7 +2257,11 @@ export const workRouter = router({
             kind: participant.participant_kind,
             ref: participant.participant_ref,
             addedAt: participant.created_at,
-            actor: presentActor(participant.participant_kind, participant.participant_ref, updateActors),
+            actor: presentActor(
+              participant.participant_kind,
+              participant.participant_ref,
+              updateActors
+            ),
           }))
           .filter((participant) => participant.actor),
         attentionItems: attentionItems.map((item) => presentAttentionItem(item, updateActors)),

@@ -1,7 +1,15 @@
+import loadable from 'next/dynamic'
 import { createPageMetadata } from '@/app/metadata'
 import { PageHeader } from '@/app/(app)/components/PageHeader'
 import { PageScrollShell } from '@/app/(app)/components/PageScrollShell'
-import { CapabilitiesClient } from './CapabilitiesClient'
+import { RouteClientFallback } from '@/app/(app)/components/RouteClientFallback'
+
+const CapabilitiesClient = loadable(
+  () => import('./CapabilitiesClient').then((mod) => mod.CapabilitiesClient),
+  {
+    loading: () => <RouteClientFallback label="Loading capabilities..." />,
+  }
+)
 
 export const metadata = createPageMetadata('Capabilities')
 

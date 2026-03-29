@@ -1,11 +1,21 @@
 import type { Metadata } from 'next'
-import { Suspense } from 'react'
+import loadable from 'next/dynamic'
 import { findTeamById } from '@nitejar/database'
 import { createPageMetadata } from '@/app/metadata'
 import { ClientErrorBoundary } from '../../../components/ClientErrorBoundary'
 import { PageScrollShell } from '../../../components/PageScrollShell'
 import { SkeletonTeamDetail } from '@/app/(app)/work/skeletons'
-import { TeamDetailClient } from './TeamDetailClient'
+
+const TeamDetailClient = loadable(
+  () => import('./TeamDetailClient').then((mod) => mod.TeamDetailClient),
+  {
+    loading: () => (
+      <PageScrollShell className="">
+        <SkeletonTeamDetail />
+      </PageScrollShell>
+    ),
+  }
+)
 
 export const dynamic = 'force-dynamic'
 
@@ -23,17 +33,9 @@ export default async function TeamDetailPage({ params }: Props) {
   const { id } = await params
   return (
     <ClientErrorBoundary label="Team Detail">
-      <Suspense
-        fallback={
-          <PageScrollShell className="">
-            <SkeletonTeamDetail />
-          </PageScrollShell>
-        }
-      >
-        <PageScrollShell className="">
-          <TeamDetailClient teamId={id} />
-        </PageScrollShell>
-      </Suspense>
+      <PageScrollShell className="">
+        <TeamDetailClient teamId={id} />
+      </PageScrollShell>
     </ClientErrorBoundary>
   )
 }

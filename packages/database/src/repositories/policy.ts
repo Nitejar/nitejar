@@ -17,15 +17,14 @@ function uuid(): string {
   return crypto.randomUUID()
 }
 
-export type ResolvedPolicySource =
-  | {
-      sourceType: 'agent_role' | 'team_role_default'
-      roleId: string
-      roleSlug: string
-      roleName: string
-      teamId?: string | null
-      teamName?: string | null
-    }
+export type ResolvedPolicySource = {
+  sourceType: 'agent_role' | 'team_role_default'
+  roleId: string
+  roleSlug: string
+  roleName: string
+  teamId?: string | null
+  teamName?: string | null
+}
 
 export type ResolvedPolicyGrant = {
   action: string

@@ -215,9 +215,7 @@ export function RolesSection({ agentId, permissionRows }: RolesSectionProps) {
                                 {d.value.rules.length === 1 ? '' : 's'}
                               </span>
                               {d.value.presetId ? (
-                                <span className="text-muted-foreground">
-                                  · {d.value.presetId}
-                                </span>
+                                <span className="text-muted-foreground">· {d.value.presetId}</span>
                               ) : null}
                             </div>
                             {d.value.rules.length > 0 ? (

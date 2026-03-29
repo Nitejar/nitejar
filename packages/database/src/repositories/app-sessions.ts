@@ -148,11 +148,14 @@ export async function listAppSessionParticipants(
     .execute()
 }
 
-export async function addAppSessionParticipants(input: {
-  sessionKey: string
-  agentIds: string[]
-  addedByUserId: string
-}, trx?: Kysely<Database>): Promise<void> {
+export async function addAppSessionParticipants(
+  input: {
+    sessionKey: string
+    agentIds: string[]
+    addedByUserId: string
+  },
+  trx?: Kysely<Database>
+): Promise<void> {
   if (input.agentIds.length === 0) return
 
   const db = trx ?? getDb()

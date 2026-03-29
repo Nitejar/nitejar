@@ -1,9 +1,9 @@
 import { createPageMetadata } from '@/app/metadata'
-import { CompanyPageShell } from './CompanyPageShell'
+import { redirect } from 'next/navigation'
 
 export const dynamic = 'force-dynamic'
 export const metadata = createPageMetadata('Company')
 
 export default function CompanyPage() {
-  return <CompanyPageShell />
+  redirect('/company/structure')
 }

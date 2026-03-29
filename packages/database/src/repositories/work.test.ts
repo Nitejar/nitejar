@@ -140,6 +140,7 @@ async function createSchema(database: ReturnType<typeof getDb>): Promise<void> {
     .addColumn('target_plugin_instance_id', 'text')
     .addColumn('target_session_key', 'text', (col) => col.notNull())
     .addColumn('target_response_context', 'text')
+    .addColumn('target_spec_json', 'text')
     .addColumn('action_prompt', 'text', (col) => col.notNull())
     .addColumn('next_run_at', 'integer')
     .addColumn('last_evaluated_at', 'integer')

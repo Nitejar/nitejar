@@ -35,7 +35,9 @@ const mockedListAgentGitHubRepoAssignments = vi.mocked(Database.listAgentGitHubR
 const mockedListGitHubRepos = vi.mocked(Database.listGitHubRepos)
 const mockedListRoleGitHubRepoPolicies = vi.mocked(Database.listRoleGitHubRepoPolicies)
 const mockedListRoles = vi.mocked(Database.listRoles)
-const mockedReplaceAgentGitHubRepoCapabilities = vi.mocked(Database.replaceAgentGitHubRepoCapabilities)
+const mockedReplaceAgentGitHubRepoCapabilities = vi.mocked(
+  Database.replaceAgentGitHubRepoCapabilities
+)
 const mockedReplaceRoleGitHubRepoPolicies = vi.mocked(Database.replaceRoleGitHubRepoPolicies)
 
 const baseContext: ToolContext = {

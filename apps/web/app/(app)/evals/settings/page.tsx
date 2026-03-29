@@ -1,7 +1,15 @@
+import loadable from 'next/dynamic'
 import { createPageMetadata } from '@/app/metadata'
 import { PageHeader } from '@/app/(app)/components/PageHeader'
 import { PageScrollShell } from '@/app/(app)/components/PageScrollShell'
-import { EvalSettingsClient } from './EvalSettingsClient'
+import { RouteClientFallback } from '@/app/(app)/components/RouteClientFallback'
+
+const EvalSettingsClient = loadable(
+  () => import('./EvalSettingsClient').then((mod) => mod.EvalSettingsClient),
+  {
+    loading: () => <RouteClientFallback label="Loading eval settings..." />,
+  }
+)
 
 export const dynamic = 'force-dynamic'
 export const metadata = createPageMetadata('Eval Settings')

@@ -1393,8 +1393,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
                   </div>
                   {goal.tickets.length > 0 && (
                     <span className="text-xs text-zinc-500 tabular-nums">
-                      ${ticketSubtotalCostUsd.toFixed(2)}{' '}
-                      cost
+                      ${ticketSubtotalCostUsd.toFixed(2)} cost
                     </span>
                   )}
                 </div>
@@ -1625,8 +1624,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
                     <div className="flex items-center justify-between">
                       <span className="text-white/40">Cost</span>
                       <span className="tabular-nums text-white/60">
-                        $
-                        {goalTotalCostUsd.toFixed(2)}
+                        ${goalTotalCostUsd.toFixed(2)}
                       </span>
                     </div>
                     {/* Progress bar */}

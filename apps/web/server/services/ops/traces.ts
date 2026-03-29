@@ -7,6 +7,8 @@ import {
   findJobById,
   getCostByJobs,
   getJobSpanSummary,
+  listChildJobs,
+  listJobsByWorkItem,
   listBackgroundTasksByJobPaged,
   listExternalApiCallsByJobPaged,
   listInferenceCallsByJobPaged,
@@ -16,6 +18,7 @@ import {
   findRunDispatchByJobId,
 } from '@nitejar/database'
 import type { GetRunTraceInput } from '@/server/services/ops/schemas'
+import { buildJobCostRollups, toJobCostSummary } from '../run-cost-rollups'
 import { buildPageInfo, normalizeOffset, resolvePageLimit, truncateUtf8 } from './chunking'
 
 export async function getRunTraceOp(input: GetRunTraceInput) {
@@ -31,6 +34,8 @@ export async function getRunTraceOp(input: GetRunTraceInput) {
   const [
     spanSummary,
     costs,
+    childRuns,
+    workItemJobs,
     spanTotal,
     messageTotal,
     inferenceCallTotal,
@@ -40,6 +45,8 @@ export async function getRunTraceOp(input: GetRunTraceInput) {
   ] = await Promise.all([
     getJobSpanSummary(run.id),
     getCostByJobs([run.id]),
+    listChildJobs(run.id),
+    listJobsByWorkItem(run.work_item_id),
     input.includeSpans ? countSpansByJob(run.id) : Promise.resolve(0),
     input.includeMessages ? countMessagesByJob(run.id) : Promise.resolve(0),
     input.includeInferenceCalls ? countInferenceCallsByJob(run.id) : Promise.resolve(0),
@@ -69,6 +76,13 @@ export async function getRunTraceOp(input: GetRunTraceInput) {
     500
   )
   const includeInferencePayloads = input.includeInferencePayloads === true
+  const workItemCostRows =
+    workItemJobs.length > 1
+      ? await getCostByJobs(workItemJobs.map((workItemJob) => workItemJob.id))
+      : costs
+  const directCostMap = new Map(workItemCostRows.map((entry) => [entry.job_id, entry]))
+  const costRollups = buildJobCostRollups(workItemJobs, workItemCostRows)
+  const runCostRollup = costRollups.get(run.id)
 
   const [spans, messages, inferenceCalls, backgroundTasks, externalCalls] = await Promise.all([
     input.includeSpans
@@ -253,7 +267,21 @@ export async function getRunTraceOp(input: GetRunTraceInput) {
 
   return {
     run,
-    cost: costs[0] ?? null,
+    cost: directCostMap.get(run.id) ?? null,
+    rolledUpCost: runCostRollup ? toJobCostSummary(run.id, runCostRollup.inclusive) : null,
+    descendantRunCount: runCostRollup?.descendantRunCount ?? 0,
+    childRuns: childRuns.map((child) => {
+      const childCostRollup = costRollups.get(child.id)
+      return {
+        run: child,
+        cost: directCostMap.get(child.id) ?? null,
+        rolledUpCost: childCostRollup
+          ? toJobCostSummary(child.id, childCostRollup.inclusive)
+          : null,
+        descendantRunCount: childCostRollup?.descendantRunCount ?? 0,
+        summaryPreview: child.final_response,
+      }
+    }),
     summary: spanSummary,
     ...(spans
       ? {

@@ -40,22 +40,28 @@ async function finalizeSession(input: {
   participantAgentIds?: string[]
   trx?: SessionTransaction
 }) {
-  const session = await createAppSession({
-    session_key: input.sessionKey,
-    owner_user_id: input.userId,
-    primary_agent_id: input.agentId,
-    title: normalizeTitle(input.title),
-    forked_from_session_key: input.forkedFromSessionKey?.trim() || null,
-  }, input.trx)
+  const session = await createAppSession(
+    {
+      session_key: input.sessionKey,
+      owner_user_id: input.userId,
+      primary_agent_id: input.agentId,
+      title: normalizeTitle(input.title),
+      forked_from_session_key: input.forkedFromSessionKey?.trim() || null,
+    },
+    input.trx
+  )
 
   const participantAgentIds = Array.from(
     new Set([input.agentId, ...(input.participantAgentIds ?? [])].filter(Boolean))
   )
-  await addAppSessionParticipants({
-    sessionKey: input.sessionKey,
-    agentIds: participantAgentIds,
-    addedByUserId: input.userId,
-  }, input.trx)
+  await addAppSessionParticipants(
+    {
+      sessionKey: input.sessionKey,
+      agentIds: participantAgentIds,
+      addedByUserId: input.userId,
+    },
+    input.trx
+  )
 
   return session
 }
@@ -122,15 +128,18 @@ export async function createTicketAppSession(
     trx: input.trx,
   })
 
-  await createTicketLink({
-    ticket_id: input.ticketId,
-    kind: 'session',
-    ref: sessionKey,
-    label: normalizeTitle(input.title),
-    metadata_json: null,
-    created_by_kind: input.createdBy.kind,
-    created_by_ref: input.createdBy.ref,
-  }, input.trx)
+  await createTicketLink(
+    {
+      ticket_id: input.ticketId,
+      kind: 'session',
+      ref: sessionKey,
+      label: normalizeTitle(input.title),
+      metadata_json: null,
+      created_by_kind: input.createdBy.kind,
+      created_by_ref: input.createdBy.ref,
+    },
+    input.trx
+  )
 
   return session
 }

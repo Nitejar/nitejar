@@ -137,14 +137,25 @@ function buildTicketExecutionMessage(input: {
       .join('\n\n')
   }
 
-  return [header, DEFAULT_TICKET_EXECUTION_MESSAGE, `Ticket: ${input.title}\nScope:\n${bodySnippet}`]
+  return [
+    header,
+    DEFAULT_TICKET_EXECUTION_MESSAGE,
+    `Ticket: ${input.title}\nScope:\n${bodySnippet}`,
+  ]
     .filter(Boolean)
     .join('\n\n')
 }
 
 function normalizeStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return []
-  return [...new Set(value.filter((entry): entry is string => typeof entry === 'string').map((entry) => entry.trim()).filter(Boolean))]
+  return [
+    ...new Set(
+      value
+        .filter((entry): entry is string => typeof entry === 'string')
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+    ),
+  ]
 }
 
 function parseTicketCommentMetadata(value: string | null): {
@@ -356,7 +367,10 @@ export const getTicketTool: ToolHandler = async (input, context) => {
   if (participants.length > 0) {
     lines.push('Participants:')
     for (const participant of participants.slice(0, 10)) {
-      const label = await resolveActorLabel(participant.participant_kind, participant.participant_ref)
+      const label = await resolveActorLabel(
+        participant.participant_kind,
+        participant.participant_ref
+      )
       lines.push(`- ${label}`)
     }
   }
@@ -668,7 +682,8 @@ export const postTicketCommentDefinition: Anthropic.Tool = {
       },
       kickstart_agent_mentions: {
         type: 'boolean',
-        description: 'When true (default), mentioned agents are queued immediately on their ticket lane.',
+        description:
+          'When true (default), mentioned agents are queued immediately on their ticket lane.',
       },
     },
     required: ['ticket_id', 'body'],
@@ -684,7 +699,9 @@ export const postTicketCommentTool: ToolHandler = async (input, context) => {
     ['comment', 'question', 'decision_needed', 'review_requested', 'blocked'].includes(input.kind)
       ? input.kind
       : 'comment'
-  const mentionAgentIds = normalizeStringArray(input.mention_agent_ids).filter((id) => id !== agentId)
+  const mentionAgentIds = normalizeStringArray(input.mention_agent_ids).filter(
+    (id) => id !== agentId
+  )
   const mentionUserIds = normalizeStringArray(input.mention_user_ids)
   const markBlocked = input.mark_blocked === true || kind === 'blocked'
   const kickstartAgentMentions = input.kickstart_agent_mentions !== false
@@ -706,7 +723,11 @@ export const postTicketCommentTool: ToolHandler = async (input, context) => {
   const db = getDb()
   const [mentionedAgents, mentionedUsers] = await Promise.all([
     mentionAgentIds.length > 0
-      ? db.selectFrom('agents').select(['id', 'name', 'handle']).where('id', 'in', mentionAgentIds).execute()
+      ? db
+          .selectFrom('agents')
+          .select(['id', 'name', 'handle'])
+          .where('id', 'in', mentionAgentIds)
+          .execute()
       : Promise.resolve([]),
     mentionUserIds.length > 0
       ? db.selectFrom('users').select(['id', 'name']).where('id', 'in', mentionUserIds).execute()
@@ -819,7 +840,12 @@ export const postTicketCommentTool: ToolHandler = async (input, context) => {
     queuedAgentWorkItems.push(workItem.id)
   }
 
-  if (markBlocked && ticket.status !== 'done' && ticket.status !== 'canceled' && ticket.status !== 'blocked') {
+  if (
+    markBlocked &&
+    ticket.status !== 'done' &&
+    ticket.status !== 'canceled' &&
+    ticket.status !== 'blocked'
+  ) {
     await updateTicket(ticket.id, {
       goal_id: ticket.goal_id,
       parent_ticket_id: ticket.parent_ticket_id,
@@ -956,7 +982,10 @@ export const linkTicketReceiptDefinition: Anthropic.Tool = {
         enum: ['session', 'work_item', 'external'],
         description: 'Receipt kind.',
       },
-      ref: { type: 'string', description: 'Receipt reference such as session key, work item ID, or URL.' },
+      ref: {
+        type: 'string',
+        description: 'Receipt reference such as session key, work item ID, or URL.',
+      },
       label: { type: 'string', description: 'Optional human-friendly label.' },
       metadata_json: {
         description:
@@ -1003,14 +1032,20 @@ export const linkTicketReceiptTool: ToolHandler = async (input, context) => {
   if (kind === 'session') {
     const existing = await findTicketBySessionKey(ref)
     if (existing && existing.id !== ticket.id) {
-      return { success: false, error: `Session "${ref}" is already linked to ticket ${existing.id}.` }
+      return {
+        success: false,
+        error: `Session "${ref}" is already linked to ticket ${existing.id}.`,
+      }
     }
   }
 
   if (kind === 'work_item') {
     const existing = await findTicketByWorkItemId(ref)
     if (existing && existing.id !== ticket.id) {
-      return { success: false, error: `Work item "${ref}" is already linked to ticket ${existing.id}.` }
+      return {
+        success: false,
+        error: `Work item "${ref}" is already linked to ticket ${existing.id}.`,
+      }
     }
   }
 
@@ -1164,7 +1199,9 @@ export const runTicketNowTool: ToolHandler = async (input, context) => {
       sourceRef: `ticket:${ticket.id}`,
       targetPluginInstanceId: context.pluginInstanceId ?? null,
       targetSessionKey: sessionKey,
-      targetResponseContext: context.responseContext ? JSON.stringify(context.responseContext) : null,
+      targetResponseContext: context.responseContext
+        ? JSON.stringify(context.responseContext)
+        : null,
       createdByKind: 'agent',
       createdByRef: agentId,
     })

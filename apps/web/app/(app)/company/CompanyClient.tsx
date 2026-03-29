@@ -1,7 +1,8 @@
 'use client'
 
+import dynamic from 'next/dynamic'
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bot,
@@ -28,8 +29,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { AvatarCircle } from '../work/shared'
 import { SkeletonCompanyTree, SkeletonDetailPanel } from '../work/skeletons'
-import { CompanyOrgChart } from './CompanyOrgChart'
-import { RolesView } from './RolesView'
 import {
   useTreeSelection,
   useAutoSelectFirst,
@@ -50,6 +49,26 @@ import {
   TreeDetailLayout,
 } from '../work/tree-components'
 import { AgentAssignmentControl, LeadPicker } from './team-management-controls'
+import type { CompanyViewId } from './view-types'
+
+const CompanyOrgChart = dynamic(
+  () => import('./CompanyOrgChart').then((mod) => mod.CompanyOrgChart),
+  {
+    loading: () => (
+      <div className="flex h-full min-h-[320px] items-center justify-center text-sm text-zinc-500">
+        Loading org chart…
+      </div>
+    ),
+  }
+)
+
+const RolesView = dynamic(() => import('./RolesView').then((mod) => mod.RolesView), {
+  loading: () => (
+    <div className="flex min-h-[320px] items-center justify-center text-sm text-zinc-500">
+      Loading roles…
+    </div>
+  ),
+})
 
 // ---------------------------------------------------------------------------
 // Types
@@ -924,14 +943,15 @@ type GitHubRepoCapabilityDescriptor = {
 }
 
 export function CompanyClient({
+  activeViewId,
   permissionRows,
   githubRepoCapabilities,
 }: {
+  activeViewId: CompanyViewId
   permissionRows: PermissionRow[]
   githubRepoCapabilities: readonly GitHubRepoCapabilityDescriptor[]
 }) {
   const router = useRouter()
-  const pathname = usePathname()
   const utils = trpc.useUtils()
   const overviewQuery = trpc.company.getOverview.useQuery(undefined, {
     refetchInterval: 15_000,
@@ -964,12 +984,6 @@ export function CompanyClient({
 
   const [search, setSearch] = useState('')
   const [creatingRootTeam, setCreatingRootTeam] = useState(false)
-
-  const activeViewId = useMemo<'structure' | 'org_chart' | 'roles'>(() => {
-    if (pathname === '/company/roles') return 'roles'
-    if (pathname === '/company/org-chart') return 'org_chart'
-    return 'structure'
-  }, [pathname])
 
   // Mutations
   const moveTeam = trpc.company.moveTeam.useMutation({

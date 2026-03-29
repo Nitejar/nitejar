@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('@nitejar/database', () => ({
   searchRuns: vi.fn(),
   findJobById: vi.fn(),
+  listChildJobs: vi.fn(),
+  listJobsByWorkItem: vi.fn(),
   listMessagesByJobPaged: vi.fn(),
   listBackgroundTasksByJobPaged: vi.fn(),
   countMessagesByJob: vi.fn(),
@@ -17,6 +19,8 @@ vi.mock('@/server/services/runtime-control', () => ({
 import {
   searchRuns,
   findJobById,
+  listChildJobs,
+  listJobsByWorkItem,
   listMessagesByJobPaged,
   listBackgroundTasksByJobPaged,
   countMessagesByJob,
@@ -28,6 +32,8 @@ import { getRunOp, searchRunsOp } from './runs'
 
 const mockedSearchRuns = vi.mocked(searchRuns)
 const mockedFindJobById = vi.mocked(findJobById)
+const mockedListChildJobs = vi.mocked(listChildJobs)
+const mockedListJobsByWorkItem = vi.mocked(listJobsByWorkItem)
 const mockedListMessagesByJobPaged = vi.mocked(listMessagesByJobPaged)
 const mockedListBackgroundTasksByJobPaged = vi.mocked(listBackgroundTasksByJobPaged)
 const mockedCountMessagesByJob = vi.mocked(countMessagesByJob)
@@ -69,6 +75,10 @@ describe('runs ops', () => {
       id: 'job-1',
       work_item_id: 'wi-1',
       agent_id: 'agent-1',
+      parent_job_id: null,
+      root_job_id: 'job-1',
+      run_kind: 'primary',
+      origin_tool_name: null,
       status: 'RUNNING',
       error_text: null,
       todo_state: null,
@@ -80,6 +90,61 @@ describe('runs ops', () => {
     })
     mockedCountMessagesByJob.mockResolvedValue(1)
     mockedCountBackgroundTasksByJob.mockResolvedValue(1)
+    mockedListChildJobs.mockResolvedValue([
+      {
+        id: 'job-child',
+        work_item_id: 'wi-1',
+        agent_id: 'agent-1',
+        parent_job_id: 'job-1',
+        root_job_id: 'job-1',
+        run_kind: 'child_explore',
+        origin_tool_name: 'explore_codebase',
+        status: 'COMPLETED',
+        error_text: null,
+        todo_state: null,
+        final_response: 'Answer: child summary',
+        started_at: 2,
+        completed_at: 3,
+        created_at: 2,
+        updated_at: 3,
+      } as never,
+    ])
+    mockedListJobsByWorkItem.mockResolvedValue([
+      {
+        id: 'job-1',
+        work_item_id: 'wi-1',
+        agent_id: 'agent-1',
+        parent_job_id: null,
+        root_job_id: 'job-1',
+        run_kind: 'primary',
+        origin_tool_name: null,
+        status: 'RUNNING',
+        error_text: null,
+        todo_state: null,
+        final_response: null,
+        started_at: null,
+        completed_at: null,
+        created_at: 1,
+        updated_at: 1,
+      },
+      {
+        id: 'job-child',
+        work_item_id: 'wi-1',
+        agent_id: 'agent-1',
+        parent_job_id: 'job-1',
+        root_job_id: 'job-1',
+        run_kind: 'child_explore',
+        origin_tool_name: 'explore_codebase',
+        status: 'COMPLETED',
+        error_text: null,
+        todo_state: null,
+        final_response: 'Answer: child summary',
+        started_at: 2,
+        completed_at: 3,
+        created_at: 2,
+        updated_at: 3,
+      },
+    ] as never)
     mockedListMessagesByJobPaged.mockResolvedValue([
       { id: 'm-1', content: '{"text":"hello"}' } as never,
     ])
@@ -91,6 +156,17 @@ describe('runs ops', () => {
         total_cost: 1,
         prompt_tokens: 1,
         completion_tokens: 1,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        call_count: 1,
+        passive_memory_cost: 0,
+        external_cost: 0,
+      },
+      {
+        job_id: 'job-child',
+        total_cost: 0.2,
+        prompt_tokens: 2,
+        completion_tokens: 3,
         cache_read_tokens: 0,
         cache_write_tokens: 0,
         call_count: 1,
@@ -113,5 +189,10 @@ describe('runs ops', () => {
     expect(result.backgroundTasksPage?.total).toBe(1)
     expect(result.runControl).toBeDefined()
     expect(result.cost?.total_cost).toBe(1)
+    expect(result.rolledUpCost?.total_cost).toBe(1.2)
+    expect(result.descendantRunCount).toBe(1)
+    expect(result.childRuns).toHaveLength(1)
+    expect(result.childRuns?.[0]?.run.run_kind).toBe('child_explore')
+    expect(result.childRuns?.[0]?.rolledUpCost?.total_cost).toBe(0.2)
   })
 })

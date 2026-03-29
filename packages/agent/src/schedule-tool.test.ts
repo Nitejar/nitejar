@@ -35,6 +35,11 @@ function makeScheduledItem(overrides: Partial<ScheduledItem> = {}): ScheduledIte
     source_ref: null,
     plugin_instance_id: 'integration-1',
     response_context: '{"chatId":123}',
+    target_spec_json: JSON.stringify({
+      kind: 'plugin_conversation',
+      pluginInstanceId: 'integration-1',
+      sessionKey: 'telegram:123',
+    }),
     routine_id: 'routine-1',
     routine_run_id: 'run-1',
     created_at: Math.floor(Date.now() / 1000),
@@ -73,6 +78,11 @@ describe('scheduleCheckTool', () => {
     expect(mockedCreateOneShotRoutineSchedule).toHaveBeenCalledWith(
       expect.objectContaining({
         agentId: 'agent-1',
+        targetSpecJson: JSON.stringify({
+          kind: 'plugin_conversation',
+          pluginInstanceId: 'integration-1',
+          sessionKey: 'telegram:123',
+        }),
         targetPluginInstanceId: 'integration-1',
         targetSessionKey: 'telegram:123',
         createdByKind: 'agent',
@@ -93,15 +103,20 @@ describe('scheduleCheckTool', () => {
 
     const result = await scheduleCheckTool(
       { delay_minutes: 10, instructions: 'follow up in this app session' },
-      { ...baseContext, pluginInstanceId: undefined }
+      { ...baseContext, pluginInstanceId: undefined, sessionKey: 'app:standalone:user-1:s1' }
     )
 
     expect(result.success).toBe(true)
     expect(mockedCreateOneShotRoutineSchedule).toHaveBeenCalledWith(
       expect.objectContaining({
         agentId: 'agent-1',
+        targetSpecJson: JSON.stringify({
+          kind: 'app_session',
+          sessionKey: 'app:standalone:user-1:s1',
+          sessionMode: 'resume',
+        }),
         targetPluginInstanceId: null,
-        targetSessionKey: 'telegram:123',
+        targetSessionKey: 'app:standalone:user-1:s1',
         createdByKind: 'agent',
       })
     )

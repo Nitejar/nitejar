@@ -4,7 +4,6 @@ const {
   mockRouteWebhook,
   mockGetPluginInstanceWithConfig,
   mockPluginHandlerGet,
-  mockEnsureRuntimeWorkers,
   mockGetAgentsForPluginInstance,
   mockCreateQueueMessage,
   mockUpsertQueueLaneOnMessage,
@@ -13,7 +12,7 @@ const {
   mockRunAgent,
   mockParseAgentConfig,
   mockPublishRoutineEnvelopeFromWorkItem,
-  mockEnsureBuiltinPluginHandlersLoaded,
+  mockEnsurePluginHandlerLoaded,
   routeResults,
   postedMessages,
   runCalls,
@@ -21,8 +20,7 @@ const {
   const routeWebhook = vi.fn()
   const getPluginInstanceWithConfig = vi.fn()
   const pluginHandlerGet = vi.fn()
-  const ensureRuntimeWorkers = vi.fn(() => Promise.resolve(undefined))
-  const ensureBuiltinPluginHandlersLoaded = vi.fn(() => Promise.resolve(undefined))
+  const ensurePluginHandlerLoaded = vi.fn(() => Promise.resolve(undefined))
   const getAgentsForPluginInstance = vi.fn()
   const createQueueMessage = vi.fn((_input: Record<string, unknown>) => Promise.resolve(null))
   const upsertQueueLaneOnMessage = vi.fn((_input: { debounceMs: number }) => Promise.resolve(null))
@@ -58,8 +56,7 @@ const {
     mockRouteWebhook: routeWebhook,
     mockGetPluginInstanceWithConfig: getPluginInstanceWithConfig,
     mockPluginHandlerGet: pluginHandlerGet,
-    mockEnsureRuntimeWorkers: ensureRuntimeWorkers,
-    mockEnsureBuiltinPluginHandlersLoaded: ensureBuiltinPluginHandlersLoaded,
+    mockEnsurePluginHandlerLoaded: ensurePluginHandlerLoaded,
     mockGetAgentsForPluginInstance: getAgentsForPluginInstance,
     mockCreateQueueMessage: createQueueMessage,
     mockUpsertQueueLaneOnMessage: upsertQueueLaneOnMessage,
@@ -124,16 +121,34 @@ vi.mock('@nitejar/database', () => ({
   getRuntimeControl: mockGetRuntimeControl,
 }))
 
-vi.mock('../../../../../../server/services/runtime-workers', () => ({
-  ensureRuntimeWorkers: mockEnsureRuntimeWorkers,
-}))
-
 vi.mock('../../../../../../server/services/plugins/ensure-builtin-handlers', () => ({
-  ensureBuiltinPluginHandlersLoaded: mockEnsureBuiltinPluginHandlersLoaded,
+  ensurePluginHandlerLoaded: mockEnsurePluginHandlerLoaded,
 }))
 
 vi.mock('../../../../../../server/services/routines/publish', () => ({
   publishRoutineEnvelopeFromWorkItem: mockPublishRoutineEnvelopeFromWorkItem,
+}))
+
+vi.mock('@nitejar/sprites', () => ({
+  closeSpriteSessionForConversation: vi.fn(() => Promise.resolve(undefined)),
+}))
+
+vi.mock('../../../../../../server/services/plugins/hook-dispatch', () => ({
+  dispatchHook: vi.fn((_hookName: string, _context: unknown, data: unknown) =>
+    Promise.resolve({
+      blocked: false,
+      data,
+      receipts: [],
+    })
+  ),
+  createRunnerHookDispatch: vi.fn(
+    () =>
+      <TData>(_hookName: string, _context: unknown, data: TData) =>
+        Promise.resolve({
+          blocked: false,
+          data,
+        })
+  ),
 }))
 
 import { POST } from './route'
@@ -145,7 +160,7 @@ describe('webhook route agent-origin exclusion collaboration', () => {
     postedMessages.length = 0
     runCalls.length = 0
     mockPublishRoutineEnvelopeFromWorkItem.mockResolvedValue(undefined)
-    mockEnsureBuiltinPluginHandlersLoaded.mockResolvedValue(undefined)
+    mockEnsurePluginHandlerLoaded.mockResolvedValue(undefined)
 
     const agents = [
       {
@@ -199,7 +214,7 @@ describe('webhook route agent-origin exclusion collaboration', () => {
     })
   })
 
-  it('loads builtin plugin handlers before routing the webhook', async () => {
+  it('loads the requested plugin handler before routing the webhook', async () => {
     routeResults.push({ status: 200, body: { ignored: true } })
 
     const req = new Request('http://localhost/api/webhooks/plugins/telegram/instance-1', {
@@ -212,7 +227,8 @@ describe('webhook route agent-origin exclusion collaboration', () => {
       params: Promise.resolve({ type: 'telegram', instanceId: 'instance-1' }),
     })
 
-    expect(mockEnsureBuiltinPluginHandlersLoaded).toHaveBeenCalledTimes(1)
+    expect(mockEnsurePluginHandlerLoaded).toHaveBeenCalledTimes(1)
+    expect(mockEnsurePluginHandlerLoaded).toHaveBeenCalledWith('telegram')
     expect(mockRouteWebhook).toHaveBeenCalledTimes(1)
   })
 

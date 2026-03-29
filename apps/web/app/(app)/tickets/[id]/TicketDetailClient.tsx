@@ -3,7 +3,15 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, Link2, Pencil, Play } from 'lucide-react'
+import {
+  ArrowLeft,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Link2,
+  Pencil,
+  Play,
+} from 'lucide-react'
 import { trpc } from '@/lib/trpc'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -48,7 +56,10 @@ function slugifyMentionToken(value: string): string {
   )
 }
 
-function getMentionTokenContext(text: string, cursorPos: number): { token: string; start: number } | null {
+function getMentionTokenContext(
+  text: string,
+  cursorPos: number
+): { token: string; start: number } | null {
   const safePos = Math.max(0, Math.min(cursorPos, text.length))
   const before = text.slice(0, safePos)
   const tokenStart = Math.max(before.lastIndexOf(' '), before.lastIndexOf('\n')) + 1
@@ -710,7 +721,10 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
                 key={`${participant.kind}:${participant.ref}`}
                 className="inline-flex items-center gap-1.5 rounded-full border border-zinc-800/80 bg-zinc-950/60 px-2 py-1 text-zinc-300"
               >
-                <AvatarCircle name={participant.actor?.label ?? participant.ref} className="h-4 w-4 text-[8px]" />
+                <AvatarCircle
+                  name={participant.actor?.label ?? participant.ref}
+                  className="h-4 w-4 text-[8px]"
+                />
                 {participant.actor?.label ?? participant.ref}
               </span>
             ))}
@@ -859,7 +873,9 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
       {/* Related sessions */}
       {linkedSession && (
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-[10px] uppercase tracking-[0.16em] text-white/35">Conversations</span>
+          <span className="text-[10px] uppercase tracking-[0.16em] text-white/35">
+            Conversations
+          </span>
           <Link
             href={`/sessions/${encodeURIComponent(linkedSession.sessionKey)}`}
             className="inline-flex items-center gap-2 text-zinc-300 transition hover:text-white"
@@ -868,7 +884,9 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
             <ChevronRight className="h-3.5 w-3.5" />
           </Link>
           {relatedSessionsQuery.data && relatedSessionsQuery.data.items.length > 1 ? (
-            <span className="text-xs text-zinc-500">+{relatedSessionsQuery.data.items.length - 1} more</span>
+            <span className="text-xs text-zinc-500">
+              +{relatedSessionsQuery.data.items.length - 1} more
+            </span>
           ) : null}
         </div>
       )}
@@ -1021,7 +1039,10 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
         <div className="space-y-3">
           {ticket.comments.length > 0 ? (
             ticket.comments.map((comment) => (
-              <div key={comment.id} className="rounded-lg border border-zinc-800/60 bg-zinc-950/40 px-3 py-3">
+              <div
+                key={comment.id}
+                className="rounded-lg border border-zinc-800/60 bg-zinc-950/40 px-3 py-3"
+              >
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="outline">{comment.kind}</Badge>
                   <span className="text-sm text-zinc-300">
@@ -1062,7 +1083,12 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
               value={commentKind}
               onChange={(e) =>
                 setCommentKind(
-                  e.target.value as 'comment' | 'question' | 'decision_needed' | 'review_requested' | 'blocked'
+                  e.target.value as
+                    | 'comment'
+                    | 'question'
+                    | 'decision_needed'
+                    | 'review_requested'
+                    | 'blocked'
                 )
               }
               className="h-8 w-[180px] text-xs"
@@ -1088,8 +1114,16 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
               ref={commentComposerRef}
               value={commentValue}
               onChange={(event) => setCommentValue(event.target.value)}
-              onClick={(event) => setCommentCursor(event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
-              onKeyUp={(event) => setCommentCursor(event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
+              onClick={(event) =>
+                setCommentCursor(
+                  event.currentTarget.selectionStart ?? event.currentTarget.value.length
+                )
+              }
+              onKeyUp={(event) =>
+                setCommentCursor(
+                  event.currentTarget.selectionStart ?? event.currentTarget.value.length
+                )
+              }
               placeholder="Ask a question, request approval, or @mention the next person who needs to act…"
               rows={4}
               className="min-h-[100px] resize-y text-sm"
@@ -1112,7 +1146,8 @@ export function TicketDetailClient({ ticketId }: { ticketId: string }) {
           </div>
           <div className="mt-3 flex items-center justify-between gap-3">
             <p className="text-[11px] text-zinc-500">
-              Agent handles keep their real `@handle`. People get local mention tokens for this composer.
+              Agent handles keep their real `@handle`. People get local mention tokens for this
+              composer.
             </p>
             <Button
               size="sm"

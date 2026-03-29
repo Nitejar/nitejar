@@ -8,6 +8,7 @@ import type {
   NetworkPolicyRule,
   EditToolMode,
   TriageSettings,
+  ExploreSettings,
 } from './types'
 
 /**
@@ -176,6 +177,9 @@ function validateAgentConfig(config: unknown): AgentConfig {
   if (c.triageSettings && typeof c.triageSettings === 'object') {
     result.triageSettings = validateTriageSettings(c.triageSettings as Record<string, unknown>)
   }
+  if (c.exploreSettings && typeof c.exploreSettings === 'object') {
+    result.exploreSettings = validateExploreSettings(c.exploreSettings as Record<string, unknown>)
+  }
 
   return result
 }
@@ -241,6 +245,16 @@ function validateAgentQueueConfig(config: Record<string, unknown>): AgentQueueCo
   }
   if (typeof config.maxQueued === 'number' && config.maxQueued > 0) {
     result.maxQueued = Math.floor(config.maxQueued)
+  }
+
+  return result
+}
+
+function validateExploreSettings(settings: Record<string, unknown>): ExploreSettings {
+  const result: ExploreSettings = {}
+
+  if (typeof settings.model === 'string' && settings.model.trim()) {
+    result.model = settings.model.trim()
   }
 
   return result

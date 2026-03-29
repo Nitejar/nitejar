@@ -1,8 +1,17 @@
-import { Suspense } from 'react'
+import loadable from 'next/dynamic'
 import { createPageMetadata } from '@/app/metadata'
 import { PageHeader } from '../../../components/PageHeader'
 import { PageScrollShell } from '../../../components/PageScrollShell'
-import { GitHubManifestCallbackClient } from './GitHubManifestCallbackClient'
+import { RouteClientFallback } from '../../../components/RouteClientFallback'
+
+const GitHubManifestCallbackClient = loadable(
+  () => import('./GitHubManifestCallbackClient').then((mod) => mod.GitHubManifestCallbackClient),
+  {
+    loading: () => (
+      <RouteClientFallback label="Loading GitHub callback..." className="min-h-[240px]" />
+    ),
+  }
+)
 
 export const dynamic = 'force-dynamic'
 export const metadata = createPageMetadata('GitHub Setup')
@@ -16,16 +25,7 @@ export default function GitHubCallbackPage() {
         description="Finalize GitHub App registration."
         backLink={{ href: '/plugins', label: 'Back to Plugins' }}
       />
-
-      <Suspense
-        fallback={
-          <div className="rounded-lg border border-white/10 bg-white/[0.02] p-6 text-sm text-muted-foreground">
-            Loading...
-          </div>
-        }
-      >
-        <GitHubManifestCallbackClient />
-      </Suspense>
+      <GitHubManifestCallbackClient />
     </PageScrollShell>
   )
 }

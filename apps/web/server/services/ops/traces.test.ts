@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('@nitejar/database', () => ({
   findJobById: vi.fn(),
   getCostByJobs: vi.fn(),
+  listChildJobs: vi.fn(),
+  listJobsByWorkItem: vi.fn(),
   getJobSpanSummary: vi.fn(),
   listSpansByJobPaged: vi.fn(),
   listMessagesByJobPaged: vi.fn(),
@@ -21,6 +23,8 @@ vi.mock('@nitejar/database', () => ({
 import {
   findJobById,
   getCostByJobs,
+  listChildJobs,
+  listJobsByWorkItem,
   getJobSpanSummary,
   listBackgroundTasksByJobPaged,
   listExternalApiCallsByJobPaged,
@@ -39,6 +43,8 @@ import { getRunTraceOp } from './traces'
 
 const mockedFindJobById = vi.mocked(findJobById)
 const mockedGetCostByJobs = vi.mocked(getCostByJobs)
+const mockedListChildJobs = vi.mocked(listChildJobs)
+const mockedListJobsByWorkItem = vi.mocked(listJobsByWorkItem)
 const mockedGetJobSpanSummary = vi.mocked(getJobSpanSummary)
 const mockedListSpansByJobPaged = vi.mocked(listSpansByJobPaged)
 const mockedListMessagesByJobPaged = vi.mocked(listMessagesByJobPaged)
@@ -62,6 +68,10 @@ describe('trace ops', () => {
       id: 'job-1',
       work_item_id: 'wi-1',
       agent_id: 'agent-1',
+      parent_job_id: null,
+      root_job_id: 'job-1',
+      run_kind: 'primary',
+      origin_tool_name: null,
       status: 'COMPLETED',
       error_text: null,
       todo_state: null,
@@ -83,7 +93,73 @@ describe('trace ops', () => {
         passive_memory_cost: 0,
         external_cost: 0,
       },
+      {
+        job_id: 'job-child',
+        total_cost: 0.2,
+        prompt_tokens: 2,
+        completion_tokens: 3,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        call_count: 1,
+        passive_memory_cost: 0,
+        external_cost: 0,
+      },
     ])
+    mockedListChildJobs.mockResolvedValue([
+      {
+        id: 'job-child',
+        work_item_id: 'wi-1',
+        agent_id: 'agent-1',
+        parent_job_id: 'job-1',
+        root_job_id: 'job-1',
+        run_kind: 'child_explore',
+        origin_tool_name: 'explore_codebase',
+        status: 'COMPLETED',
+        error_text: null,
+        todo_state: null,
+        final_response: 'Answer: child summary',
+        started_at: 2,
+        completed_at: 3,
+        created_at: 2,
+        updated_at: 3,
+      } as never,
+    ])
+    mockedListJobsByWorkItem.mockResolvedValue([
+      {
+        id: 'job-1',
+        work_item_id: 'wi-1',
+        agent_id: 'agent-1',
+        parent_job_id: null,
+        root_job_id: 'job-1',
+        run_kind: 'primary',
+        origin_tool_name: null,
+        status: 'COMPLETED',
+        error_text: null,
+        todo_state: null,
+        final_response: null,
+        started_at: 1,
+        completed_at: 2,
+        created_at: 1,
+        updated_at: 2,
+      },
+      {
+        id: 'job-child',
+        work_item_id: 'wi-1',
+        agent_id: 'agent-1',
+        parent_job_id: 'job-1',
+        root_job_id: 'job-1',
+        run_kind: 'child_explore',
+        origin_tool_name: 'explore_codebase',
+        status: 'COMPLETED',
+        error_text: null,
+        todo_state: null,
+        final_response: 'Answer: child summary',
+        started_at: 2,
+        completed_at: 3,
+        created_at: 2,
+        updated_at: 3,
+      },
+    ] as never)
     mockedGetJobSpanSummary.mockResolvedValue({
       total_duration_ms: 1000,
       turn_count: 1,
@@ -101,6 +177,11 @@ describe('trace ops', () => {
   it('returns summary-only trace by default', async () => {
     const trace = await getRunTraceOp({ jobId: 'job-1' })
     expect(trace.summary.total_duration_ms).toBe(1000)
+    expect(trace.cost?.total_cost).toBe(1)
+    expect(trace.rolledUpCost?.total_cost).toBe(1.2)
+    expect(trace.descendantRunCount).toBe(1)
+    expect(trace.childRuns).toHaveLength(1)
+    expect(trace.childRuns[0]?.rolledUpCost?.total_cost).toBe(0.2)
     expect(trace.spans).toBeUndefined()
     expect(trace.messages).toBeUndefined()
   })

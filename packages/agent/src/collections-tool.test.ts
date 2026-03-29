@@ -26,7 +26,9 @@ const mockedFindCollectionByName = vi.mocked(Database.findCollectionByName)
 const mockedCanAgentReadCollection = vi.mocked(Database.canAgentReadCollection)
 const mockedCanAgentWriteCollection = vi.mocked(Database.canAgentWriteCollection)
 const mockedCanAgentAdminWriteCollection = vi.mocked(Database.canAgentAdminWriteCollection)
-const mockedCanAgentAdminWriteCollectionResource = vi.mocked(Database.canAgentAdminWriteCollectionResource)
+const mockedCanAgentAdminWriteCollectionResource = vi.mocked(
+  Database.canAgentAdminWriteCollectionResource
+)
 const mockedCountCollectionRows = vi.mocked(Database.countCollectionRows)
 const mockedListCollectionSchemaReviews = vi.mocked(Database.listCollectionSchemaReviews)
 const mockedGetCollectionSchemaReviewById = vi.mocked(Database.getCollectionSchemaReviewById)
@@ -113,7 +115,10 @@ describe('collection tools', () => {
       review: { ...makeReview('approved'), status: 'approved' },
       collection: makeCollection(),
     } as never)
-    mockedRejectCollectionSchemaReview.mockResolvedValue({ ...makeReview('rejected'), status: 'rejected' } as never)
+    mockedRejectCollectionSchemaReview.mockResolvedValue({
+      ...makeReview('rejected'),
+      status: 'rejected',
+    } as never)
 
     const listResult = await executeTool('collection_list_reviews', {}, context)
     expect(listResult.success).toBe(true)

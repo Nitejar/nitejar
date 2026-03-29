@@ -65,7 +65,9 @@ const mockedListAppSessionParticipantAgents = vi.mocked(Database.listAppSessionP
 const mockedListTicketComments = vi.mocked(Database.listTicketComments)
 const mockedListTicketParticipants = vi.mocked(Database.listTicketParticipants)
 const mockedListTicketLinksByTicket = vi.mocked(Database.listTicketLinksByTicket)
-const mockedResolveAttentionItemsForTargetOnTicket = vi.mocked(Database.resolveAttentionItemsForTargetOnTicket)
+const mockedResolveAttentionItemsForTargetOnTicket = vi.mocked(
+  Database.resolveAttentionItemsForTargetOnTicket
+)
 const mockedTouchAppSessionLastActivity = vi.mocked(Database.touchAppSessionLastActivity)
 const mockedListLinkedWorkItemsForTicket = vi.mocked(Database.listLinkedWorkItemsForTicket)
 const mockedUpdateTicket = vi.mocked(Database.updateTicket)
@@ -103,11 +105,13 @@ function createMentionLookupDbMock(): DbHandle {
     selectFrom: (table: string) => ({
       select: () => ({
         where: (_field: string, _op: string, value: string | string[]) => ({
-          execute: vi.fn().mockResolvedValue(
-            table === 'users'
-              ? [{ id: Array.isArray(value) ? value[0] : value, name: 'Josh' }]
-              : [{ id: Array.isArray(value) ? value[0] : value, name: 'Scout', handle: 'scout' }]
-          ),
+          execute: vi
+            .fn()
+            .mockResolvedValue(
+              table === 'users'
+                ? [{ id: Array.isArray(value) ? value[0] : value, name: 'Josh' }]
+                : [{ id: Array.isArray(value) ? value[0] : value, name: 'Scout', handle: 'scout' }]
+            ),
           executeTakeFirst: vi.fn().mockResolvedValue(null),
         }),
       }),

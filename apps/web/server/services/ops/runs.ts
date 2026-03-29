@@ -3,12 +3,15 @@ import {
   countMessagesByJob,
   findJobById,
   getCostByJobs,
+  listChildJobs,
+  listJobsByWorkItem,
   listBackgroundTasksByJobPaged,
   listMessagesByJobPaged,
   searchRuns,
 } from '@nitejar/database'
 import { type GetRunInput, type SearchRunsInput } from '@/server/services/ops/schemas'
 import { getRunControlByJob } from '@/server/services/runtime-control'
+import { buildJobCostRollups, toJobCostSummary } from '../run-cost-rollups'
 import { buildPageInfo, normalizeOffset, resolvePageLimit, truncateUtf8 } from './chunking'
 import { decodeCursor, encodeCursor } from './cursor'
 
@@ -47,12 +50,14 @@ export async function getRunOp(input: GetRunInput) {
   const messageOffset = normalizeOffset(input.messageOffset)
   const backgroundTaskOffset = normalizeOffset(input.backgroundTaskOffset)
 
-  const [messageTotal, backgroundTaskTotal, runControl, costs] = await Promise.all([
-    input.includeMessages ? countMessagesByJob(job.id) : Promise.resolve(0),
-    input.includeBackgroundTasks ? countBackgroundTasksByJob(job.id) : Promise.resolve(0),
-    input.includeControl ? getRunControlByJob(job.id) : Promise.resolve(undefined),
-    getCostByJobs([job.id]),
-  ])
+  const [messageTotal, backgroundTaskTotal, runControl, childRuns, workItemJobs] =
+    await Promise.all([
+      input.includeMessages ? countMessagesByJob(job.id) : Promise.resolve(0),
+      input.includeBackgroundTasks ? countBackgroundTasksByJob(job.id) : Promise.resolve(0),
+      input.includeControl ? getRunControlByJob(job.id) : Promise.resolve(undefined),
+      listChildJobs(job.id),
+      listJobsByWorkItem(job.work_item_id),
+    ])
 
   const messageLimit = resolvePageLimit(messageTotal, messageOffset, input.messageLimit, 500)
   const backgroundTaskLimit = resolvePageLimit(
@@ -61,6 +66,11 @@ export async function getRunOp(input: GetRunInput) {
     input.backgroundTaskLimit,
     500
   )
+
+  const costRows = await getCostByJobs(workItemJobs.map((workItemJob) => workItemJob.id))
+  const directCostMap = new Map(costRows.map((entry) => [entry.job_id, entry]))
+  const costRollups = buildJobCostRollups(workItemJobs, costRows)
+  const runCostRollup = costRollups.get(job.id)
 
   const [messages, backgroundTasks] = await Promise.all([
     input.includeMessages
@@ -123,7 +133,21 @@ export async function getRunOp(input: GetRunInput) {
 
   return {
     run: job,
-    cost: costs[0] ?? null,
+    cost: directCostMap.get(job.id) ?? null,
+    rolledUpCost: runCostRollup ? toJobCostSummary(job.id, runCostRollup.inclusive) : null,
+    descendantRunCount: runCostRollup?.descendantRunCount ?? 0,
+    childRuns: childRuns.map((child) => {
+      const childCostRollup = costRollups.get(child.id)
+      return {
+        run: child,
+        cost: directCostMap.get(child.id) ?? null,
+        rolledUpCost: childCostRollup
+          ? toJobCostSummary(child.id, childCostRollup.inclusive)
+          : null,
+        descendantRunCount: childCostRollup?.descendantRunCount ?? 0,
+        summaryPreview: child.final_response,
+      }
+    }),
     ...(normalizedMessages
       ? {
           messages: normalizedMessages,

@@ -1,7 +1,17 @@
 import Link from 'next/link'
+import loadable from 'next/dynamic'
 import { createPageMetadata } from '@/app/metadata'
+import { RouteClientFallback } from '@/app/(app)/components/RouteClientFallback'
 import { PageScrollShell } from '../../components/PageScrollShell'
-import { SkillBuilderClient } from './SkillBuilderClient'
+
+const SkillBuilderClient = loadable(
+  () => import('./SkillBuilderClient').then((mod) => mod.SkillBuilderClient),
+  {
+    loading: () => (
+      <RouteClientFallback label="Loading skill builder..." className="min-h-[420px]" />
+    ),
+  }
+)
 
 export const dynamic = 'force-dynamic'
 export const metadata = createPageMetadata('New Skill')
