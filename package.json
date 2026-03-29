@@ -18,7 +18,7 @@
     "screenshot:prep": "./scripts/prepare-screenshot-env.sh",
     "changeset": "changeset",
     "changeset:status": "changeset status --verbose",
-    "changeset:version": "changeset version",
+    "changeset:version": "node scripts/release/version-packages.mjs",
     "release:create-tag": "node scripts/release/create-version-tag.mjs",
     "db:generate": "pnpm --filter @nitejar/database db:generate",
     "db:migrate": "pnpm --filter @nitejar/database db:migrate",
