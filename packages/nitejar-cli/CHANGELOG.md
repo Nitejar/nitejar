@@ -1,5 +1,11 @@
 # @nitejar/cli
 
+## 0.3.1
+
+### Patch Changes
+
+- [`728fc99`](https://github.com/Nitejar/nitejar/commit/728fc990745bced9323b501504be6d0942272509) Thanks [@joshmatz](https://github.com/joshmatz)! - Fix release versioning so runtime bundle changes automatically advance the CLI-backed release version and publish a new upgrade target.
+
 ## 0.3.0
 
 ### Minor Changes
