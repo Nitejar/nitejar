@@ -1,5 +1,20 @@
 # @nitejar/web
 
+## 0.1.0
+
+### Minor Changes
+
+- [`efa992b`](https://github.com/Nitejar/nitejar/commit/efa992b53fbcae1164d145dabcb34a9b20bdce46) Thanks [@joshmatz](https://github.com/joshmatz)! - Reframe the app around Command Center, typed routine targets, and clearer work receipts.
+  - Replace the old Fleet landing flow with a Command Center-first navigation and tighten hierarchy across company, work, agent, and detail surfaces.
+  - Add typed routine targets for app sessions, tickets, goals, and routines so recurring work can resume or start fresh with clearer intent.
+  - Improve work-item receipts with descendant run cost rollups, better trace/context displays, and extracted webhook processing flow.
+  - Add agent explore-runner support for scoped read-only codebase investigation.
+
+### Patch Changes
+
+- Updated dependencies [[`efa992b`](https://github.com/Nitejar/nitejar/commit/efa992b53fbcae1164d145dabcb34a9b20bdce46)]:
+  - @nitejar/agent@0.2.0
+
 ## 0.0.2
 
 ### Patch Changes
