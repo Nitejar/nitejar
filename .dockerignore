@@ -49,3 +49,5 @@ docs/
 
 # Scripts
 scripts/
+!scripts/build/
+!scripts/build/build-web-with-isolated-db.mjs

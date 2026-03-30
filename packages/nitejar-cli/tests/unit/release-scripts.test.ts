@@ -229,6 +229,7 @@ describe('build-runtime-bundle script', () => {
 describe('Dockerfile release builder', () => {
   it('builds the web image through the shared isolated-db script so Docker matches CI and release bundles', () => {
     const dockerfile = readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf8')
+    const dockerignore = readFileSync(path.join(repoRoot, '.dockerignore'), 'utf8')
 
     expect(dockerfile).toContain('RUN pnpm install --frozen-lockfile --prod=false')
     expect(dockerfile).toContain(
@@ -236,6 +237,9 @@ describe('Dockerfile release builder', () => {
     )
     expect(dockerfile).not.toContain('RUN pnpm --filter @nitejar/web build')
     expect(dockerfile).not.toContain('RUN pnpm exec turbo run build --filter=@nitejar/web')
+    expect(dockerignore).toContain('scripts/')
+    expect(dockerignore).toContain('!scripts/build/')
+    expect(dockerignore).toContain('!scripts/build/build-web-with-isolated-db.mjs')
   })
 })
 
