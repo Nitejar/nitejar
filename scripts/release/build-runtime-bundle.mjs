@@ -55,13 +55,31 @@ export function parseArgs(argv = process.argv, env = process.env, defaultRoot = 
   return args
 }
 
-export function runCommand(cmd, args, cwd) {
-  execFileSync(cmd, args, { cwd, stdio: 'inherit' })
+export function runCommand(cmd, args, cwd, env = undefined) {
+  execFileSync(cmd, args, {
+    cwd,
+    stdio: 'inherit',
+    env: env ? { ...process.env, ...env } : process.env,
+  })
 }
 
-export function buildRuntimeAssets(root, deployedDatabaseDir, run = runCommand) {
+const WEB_BUILD_ENCRYPTION_KEY =
+  '0000000000000000000000000000000000000000000000000000000000000000'
+
+export function buildRuntimeAssets(root, deployedDatabaseDir, platform, run = runCommand) {
+  const buildDbDir = path.resolve(root, '.tmp', 'release-stage', 'build-databases')
+  const buildDbPath = path.join(buildDbDir, `web-build-${platform}.sqlite`)
+  mkdirSync(buildDbDir, { recursive: true })
+  rmSync(buildDbPath, { force: true })
+
   run('pnpm', ['exec', 'turbo', 'run', 'build', '--filter=@nitejar/database'], root)
-  run('pnpm', ['exec', 'turbo', 'run', 'build', '--filter=@nitejar/web'], root)
+  run('pnpm', ['--filter', '@nitejar/database', 'db:migrate'], root, {
+    DATABASE_URL: buildDbPath,
+  })
+  run('pnpm', ['exec', 'turbo', 'run', 'build', '--filter=@nitejar/web'], root, {
+    DATABASE_URL: buildDbPath,
+    ENCRYPTION_KEY: WEB_BUILD_ENCRYPTION_KEY,
+  })
   run(
     'pnpm',
     ['--filter', '@nitejar/database', 'deploy', '--prod', deployedDatabaseDir, '--force'],
@@ -100,7 +118,7 @@ export function stageRuntimeBundle(options) {
 
   if (!options.skipBuild) {
     rmSync(deployedDatabaseDir, { recursive: true, force: true })
-    buildRuntimeAssets(options.root, deployedDatabaseDir)
+    buildRuntimeAssets(options.root, deployedDatabaseDir, options.platform)
   }
 
   assertExists(standaloneDir, 'Next.js standalone build')
