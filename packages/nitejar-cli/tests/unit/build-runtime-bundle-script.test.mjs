@@ -31,19 +31,15 @@ describe('build-runtime-bundle script', () => {
     expect(calls).toEqual([
       ['pnpm', ['exec', 'turbo', 'run', 'build', '--filter=@nitejar/database'], root],
       [
-        'pnpm',
-        ['--filter', '@nitejar/database', 'db:migrate'],
+        'node',
+        [
+          path.join('scripts', 'build', 'build-web-with-isolated-db.mjs'),
+          '--repo-root',
+          root,
+          '--db-path',
+          path.join(root, '.tmp/release-stage/build-databases/web-build-linux-x64.sqlite'),
+        ],
         root,
-        { DATABASE_URL: path.join(root, '.tmp/release-stage/build-databases/web-build-linux-x64.sqlite') },
-      ],
-      [
-        'pnpm',
-        ['exec', 'turbo', 'run', 'build', '--filter=@nitejar/web'],
-        root,
-        {
-          DATABASE_URL: path.join(root, '.tmp/release-stage/build-databases/web-build-linux-x64.sqlite'),
-          ENCRYPTION_KEY: '0000000000000000000000000000000000000000000000000000000000000000',
-        },
       ],
       [
         'pnpm',

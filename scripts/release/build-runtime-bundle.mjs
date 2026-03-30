@@ -63,23 +63,13 @@ export function runCommand(cmd, args, cwd, env = undefined) {
   })
 }
 
-const WEB_BUILD_ENCRYPTION_KEY =
-  '0000000000000000000000000000000000000000000000000000000000000000'
-
 export function buildRuntimeAssets(root, deployedDatabaseDir, platform, run = runCommand) {
   const buildDbDir = path.resolve(root, '.tmp', 'release-stage', 'build-databases')
   const buildDbPath = path.join(buildDbDir, `web-build-${platform}.sqlite`)
-  mkdirSync(buildDbDir, { recursive: true })
-  rmSync(buildDbPath, { force: true })
+  const buildWebScript = path.join('scripts', 'build', 'build-web-with-isolated-db.mjs')
 
   run('pnpm', ['exec', 'turbo', 'run', 'build', '--filter=@nitejar/database'], root)
-  run('pnpm', ['--filter', '@nitejar/database', 'db:migrate'], root, {
-    DATABASE_URL: buildDbPath,
-  })
-  run('pnpm', ['exec', 'turbo', 'run', 'build', '--filter=@nitejar/web'], root, {
-    DATABASE_URL: buildDbPath,
-    ENCRYPTION_KEY: WEB_BUILD_ENCRYPTION_KEY,
-  })
+  run('node', [buildWebScript, '--repo-root', root, '--db-path', buildDbPath], root)
   run(
     'pnpm',
     ['--filter', '@nitejar/database', 'deploy', '--prod', deployedDatabaseDir, '--force'],

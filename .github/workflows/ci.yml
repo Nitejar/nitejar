@@ -123,20 +123,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Prepare DB for web build
+      - name: Build web with isolated DB
         if: matrix.app.name == 'web'
-        env:
-          DATABASE_URL: /tmp/nitejar-ci.db
-        run: pnpm --filter @nitejar/database db:migrate
-
-      - name: Build web
-        if: matrix.app.name == 'web'
-        env:
-          DATABASE_URL: /tmp/nitejar-ci.db
-          ENCRYPTION_KEY: 0000000000000000000000000000000000000000000000000000000000000000
-          # Intentionally unset in CI to catch module-scope auth initialization at build time.
-          # Runtime deployments must provide BETTER_AUTH_SECRET.
-        run: pnpm exec turbo run build --filter=@nitejar/web
+        run: node scripts/build/build-web-with-isolated-db.mjs --db-path /tmp/nitejar-ci.db
 
       - name: Build ${{ matrix.app.package }}
         if: matrix.app.name != 'web'

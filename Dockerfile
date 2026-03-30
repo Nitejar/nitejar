@@ -32,14 +32,14 @@ COPY packages/sprites/package.json ./packages/sprites/
 COPY packages/eslint-config/package.json ./packages/eslint-config/
 COPY packages/typescript-config/package.json ./packages/typescript-config/
 
-# Install dependencies
-RUN pnpm install --frozen-lockfile
+# Install dependencies, including build tooling used by workspace package builds.
+RUN pnpm install --frozen-lockfile --prod=false
 
 # Copy source code
 COPY . .
 
-# Build the web app and its workspace dependencies in clean checkouts.
-RUN pnpm exec turbo run build --filter=@nitejar/web
+# Build the web app and its workspace dependencies against an isolated temp DB.
+RUN node scripts/build/build-web-with-isolated-db.mjs --db-path /tmp/nitejar-docker-build.db
 
 # Production stage
 FROM base AS runner

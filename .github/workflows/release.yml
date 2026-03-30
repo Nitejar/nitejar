@@ -208,7 +208,7 @@ jobs:
         run: |
           unset NODE_AUTH_TOKEN
           npm config delete //registry.npmjs.org/:_authToken || true
-          npm publish --access public --provenance
+          node ../../scripts/release/publish-cli-if-needed.mjs
 
   publish-container:
     needs: artifact-contract-check
