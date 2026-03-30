@@ -232,6 +232,7 @@ describe('Dockerfile release builder', () => {
     const dockerignore = readFileSync(path.join(repoRoot, '.dockerignore'), 'utf8')
 
     expect(dockerfile).toContain('RUN pnpm install --frozen-lockfile --prod=false')
+    expect(dockerfile).toContain('RUN pnpm install --offline --frozen-lockfile --prod=false')
     expect(dockerfile).toContain(
       'RUN node scripts/build/build-web-with-isolated-db.mjs --db-path /tmp/nitejar-docker-build.db'
     )

@@ -38,6 +38,10 @@ RUN pnpm install --frozen-lockfile --prod=false
 # Copy source code
 COPY . .
 
+# Re-link workspace dependencies after copying the full tree so package-level
+# node_modules symlinks are present when Turbo fans out into workspace builds.
+RUN pnpm install --offline --frozen-lockfile --prod=false
+
 # Build the web app and its workspace dependencies against an isolated temp DB.
 RUN node scripts/build/build-web-with-isolated-db.mjs --db-path /tmp/nitejar-docker-build.db
 
