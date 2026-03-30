@@ -3,4 +3,7 @@ import { getAuth } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
-export const GET = oAuthDiscoveryMetadata(getAuth() as never)
+export async function GET(request: Request) {
+  const handler = oAuthDiscoveryMetadata(getAuth() as never)
+  return handler(request)
+}
